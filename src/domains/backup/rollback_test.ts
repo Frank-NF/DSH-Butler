@@ -309,6 +309,51 @@ Deno.test("apply git-reset：HEAD 退回目标提交，隔离区内容移回（�
   });
 });
 
+Deno.test("apply git-reset：copy 副本必须一并还原（reset 删掉/改坏的快照文件要以副本为准）", async () => {
+  await withTempStore(async () => {
+    const repo = Deno.makeTempDirSync();
+    const sh = (args: string[]) => run("git", ["-C", repo, ...args], { timeoutMs: 20_000, allowNonZero: true });
+
+    await run("git", ["init", repo], { timeoutMs: 20_000, allowNonZero: true });
+    await sh(["config", "user.email", "t@test.local"]);
+    await sh(["config", "user.name", "t"]);
+
+    const file = p(repo, "app.txt");
+    Deno.writeTextFileSync(file, "v1");
+    await sh(["add", "-A"]);
+    await sh(["commit", "-m", "c1"]);
+    const c1 = (await sh(["rev-parse", "HEAD"])).stdout.trim();
+
+    // 构建记录同款现场：c1 之后写入、钉点时拍 copy 快照
+    const record = p(repo, "build-record.json");
+    Deno.writeTextFileSync(record, "操作前记录");
+    const pt = await createRollbackPoint({
+      kind: "core-build",
+      trigger: "测试",
+      artifacts: [
+        { path: repo, mode: "git-ref", ref: "HEAD" },
+        { path: record, mode: "copy" },
+      ],
+      reverse: { op: "git-reset", commit: c1, quarantine: "" },
+    });
+
+    // 推进：记录被改 + 连同新提交进 git（c2 才有它，回退 c1 时 reset 会把它删掉）
+    Deno.writeTextFileSync(record, "跑挂的更新写坏的记录");
+    await sh(["add", "-A"]);
+    await sh(["commit", "-m", "c2"]);
+    assertEq((await sh(["rev-parse", "HEAD"])).stdout.trim() === c1, false, "前置：HEAD 应已推进");
+
+    const res = await applyRollbackPoint(pt.id);
+    assert(res.ok, `git-reset 回滚应成功，实际：${JSON.stringify(res)}`);
+    // reset --hard c1 会把 c2 才加入的记录删掉——copy 还原必须把它带回来
+    assert(isFile(record), "copy 副本必须把被 reset 删掉的文件还原回来");
+    assertEq(Deno.readTextFileSync(record), "操作前记录", "还原内容必须是快照时的操作前状态");
+    assertEq((await sh(["rev-parse", "HEAD"])).stdout.trim(), c1, "HEAD 应落在 c1");
+
+    Deno.removeSync(repo, { recursive: true });
+  });
+});
+
 // ── 索引纪律 ──────────────────────────────────────────────────────
 
 Deno.test("索引损坏：list 必须炸出来，绝不静默当成「回滚点全没了」", async () => {

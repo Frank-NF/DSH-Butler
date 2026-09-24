@@ -426,6 +426,18 @@ async function executeReverse(pt: RollbackPoint): Promise<ReverseOutcome> {
         }
       }
 
+      // copy 产物也必须还原：reset 只管 git 跟踪的文件，快照里的副本（如构建记录）
+      // 是操作前状态的权威备份——reset 可能把它删掉（新提交里才有、回退后消失）
+      // 或留下被改过的版本，都要以副本覆盖回来；放进 restoredFiles 让③回读比哈希。
+      for (const [i, a] of pt.artifacts.entries()) {
+        if (a.mode !== "copy") continue;
+        const stored = storedArtifactPath(pt.id, i, a.path);
+        if (!isFile(stored)) throw new Error(`备份副本缺失：${stored}`);
+        Deno.mkdirSync(dirname(a.path), { recursive: true });
+        Deno.copyFileSync(stored, a.path);
+        out.restoredFiles.push({ path: a.path, sha256: a.sha256 });
+      }
+
       out.headExpect = { repo: gitArt.path, commit: rev.commit };
       break;
     }

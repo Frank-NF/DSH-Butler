@@ -18,6 +18,7 @@ import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
 import type { CoreVerifyReport } from "../domains/core/verify.ts";
 import type { FinishUpdateReport } from "../domains/core/finish_update.ts";
+import type { CoreRollbackReport } from "../domains/core/rollback.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
@@ -49,6 +50,7 @@ DSH Butler · 命令行
   backup apply <id>                   回滚到指定回滚点（先校验完整性，验证不过保留回滚点）
   backup delete <id>                  删除回滚点
   core finishUpdate                   完成更新六步：停服 → 清残留 → 装依赖 → 全量重建 → 核对 → 重启（约 5-30 分钟）
+  core rollback [id]                  回滚本体到最近的构建回滚点（缺省取最新；验证不过保留回滚点，绝不静默成功）
 
 其它：
   actions                             列出所有可用动作
@@ -102,7 +104,11 @@ export async function runCli(argv: string[]): Promise<number> {
       if (sub === "status") return await runOne("core.status", {}, json);
       if (sub === "verify") return await runOne("core.verify", {}, json);
       if (sub === "finishUpdate") return await runWrite("core.finishUpdate", {}, args, json);
-      return usage(`core 的可用子命令：status / verify / finishUpdate`);
+      if (sub === "rollback") {
+        const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+        return await runWrite("core.rollback", id ? { id } : {}, args, json);
+      }
+      return usage(`core 的可用子命令：status / verify / finishUpdate / rollback`);
     case "runtime":
       if (sub === "status") return await runOne("runtime.status", {}, json);
       if (sub === "diagnose") return await runOne("runtime.diagnose", {}, json);
@@ -456,6 +462,18 @@ function printHuman(action: string, result: unknown): void {
           (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
       );
       console.log(`需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"} · 源码 ${r.head?.slice(0, 12) ?? "未知"}`);
+      return;
+    }
+    case "core.rollback": {
+      const r = result as CoreRollbackReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `回滚点 ${r.rollbackId} → ${r.targetCommit.slice(0, 12)}… · 重建：${
+          r.rebuild === "done" ? "已完成" : r.rebuild === "skipped-no-script" ? "跳过（无 build 脚本）" : "跳过（未找到 pnpm）"
+        }${r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""}`,
+      );
+      console.log(`复核：${r.green ? "全绿 ✓" : "未通过 ✗"} · 源码 ${r.head?.slice(0, 12) ?? "未知"} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`);
       return;
     }
     case "backup.list": {
