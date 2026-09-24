@@ -332,6 +332,26 @@ p { margin: 0; }
 .cell-guard .cell-icon { background: rgba(250, 248, 245, 0.06); border-color: rgba(250, 248, 245, 0.2); color: var(--brand-light); }
 .cell-guard .cell-list li::before { background: var(--brand-light); }
 
+/* ── 界面实拍（主图整宽，副图靠右下沉一线）────────────── */
+
+.shots {
+  margin-top: clamp(32px, 4vw, 52px);
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: start;
+  gap: clamp(16px, 2vw, 28px);
+}
+.shot {
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.shot img { display: block; width: 100%; height: auto; }
+.shot-main { grid-column: 1 / -1; }
+.shot-side { grid-column: 7 / -1; margin-top: clamp(8px, 1.8vw, 32px); }
+
 /* ── 工作方式（流程行）────────────────────────────────── */
 
 .steps {
@@ -447,6 +467,7 @@ p { margin: 0; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cell-plugins, .cell-guard, .cell-repair, .cell-update { grid-column: span 6; }
   .clusters { grid-template-columns: minmax(0, 1fr); }
+  .shot-side { grid-column: 1 / -1; margin-top: 0; }
 }
 
 @media (max-width: 760px) {
