@@ -1,6 +1,8 @@
+<img src="icons/128x128.png" width="88" alt="DSH管家">
+
 # DSH管家
 
-> 项目中文名：**DSH管家**　｜　软件产品名：**DSH Butler**
+> 项目中文名：**DSH管家**　｜　软件产品名：**DSH Butler**　｜　**让 DSH 始终好用**
 
 DSH Desktop（DeepSeek 桌面 AI 助手）的增强外壳。用一个本地桌面程序，把「装 DSH、修 DSH、管 DSH 插件、查 DSH 环境」这些事一次性做掉。
 
@@ -26,6 +28,24 @@ DSH Desktop（DeepSeek 桌面 AI 助手）的增强外壳。用一个本地桌�
 | 界面文案 | 中文 | 走 UTF-8 HTML，安全 |
 
 守卫测试：`src/version_test.ts` 会在产品名含非 ASCII 字符时失败。
+
+---
+
+## 品牌资产
+
+| 东西 | 位置 |
+|---|---|
+| 品牌源文件（VI 板） | `docs/DSH管家_品牌VI_assets/` |
+| 抠好的透明标志 | `icons/build/mark-raw.png` |
+| 应用 / 托盘图标 | `icons/icon.ico`、`icon.icns`、`tray.ico`、`tray.png` |
+| 界面内用的标志 | `icons/mark-chip.png`（base64 内嵌进 `src/web/`） |
+| 官网与静态资源 | `site/` |
+
+调色：主橙红 `#F06A3D`、深橙红 `#E55A2E`、浅橙 `#F0894E`、墨黑 `#222122`、米白 `#FAF8F5`。
+界面里的语义令牌与可访问性取舍见 `docs/UI-DESIGN-SYSTEM.md` §5.5。
+
+**生产线**：`python tmp/extract-mark.py`（从 VI 板抠图）→ `python icons/build-icons.py`（出全部尺寸
++ 官网资产 + 内嵌 base64）。**换标志就换源文件重跑这两步，不要手改 PNG。**
 
 ---
 
