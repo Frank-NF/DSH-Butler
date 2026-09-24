@@ -16,6 +16,7 @@ import { EXIT } from "../util/result.ts";
 import { renderMarkdown, type HealthReport } from "../domains/diag/health.ts";
 import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
+import type { CoreVerifyReport } from "../domains/core/verify.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
@@ -33,6 +34,7 @@ DSH Butler · 命令行
   doctor                              全面体检
   env probe                           环境体检
   core status                         本体状态（含「是否需要完成更新」判定）
+  core verify                         本体校验（产物完整性 + 僵尸 lib / 缺失包 / 未提交包）
   runtime status                      服务状态（进程 / 端口 / 健康 / 僵尸锁）
   runtime logs [-n 200]               日志收集与错误定位
   runtime diagnose                    运行时诊断（进程/服务/插件树分层 + 13 条规则）
@@ -88,7 +90,8 @@ export async function runCli(argv: string[]): Promise<number> {
       return usage(`env 的可用子命令：probe`);
     case "core":
       if (sub === "status") return await runOne("core.status", {}, json);
-      return usage(`core 的可用子命令：status`);
+      if (sub === "verify") return await runOne("core.verify", {}, json);
+      return usage(`core 的可用子命令：status / verify`);
     case "runtime":
       if (sub === "status") return await runOne("runtime.status", {}, json);
       if (sub === "diagnose") return await runOne("runtime.diagnose", {}, json);
@@ -253,6 +256,36 @@ function printHuman(action: string, result: unknown): void {
         if (r.plugins.inBox.length > 0) {
           console.log(`      其中 ${r.plugins.inBox.length} 个是本体自带基座包（不必写进依赖）：${r.plugins.inBox.join("、")}`);
         }
+      }
+      printFindings(r.findings);
+      return;
+    }
+    case "core.verify": {
+      const r = result as CoreVerifyReport;
+      console.log(`本体位置：${r.sourceRoot ?? "未找到"}`);
+      const st = r.status;
+      if (st) {
+        console.log(`需要完成更新：${st.needsFinishUpdate ? "是" : "否"}${st.finishReason ? " — " + st.finishReason : ""}`);
+        if (st.integrity) {
+          if (st.integrity.official && st.integrity.verified) {
+            console.log(`产物完整性：通过官方校验（${st.integrity.fileCount} 个文件）`);
+          } else if (st.integrity.official) {
+            console.log(`产物完整性：官方判定不一致 —— ${st.integrity.error}`);
+          } else {
+            console.log(`产物完整性：无法校验 —— ${st.integrity.error}`);
+          }
+        }
+      }
+      if (r.libs) {
+        console.log(
+          `工作区包清单：${r.libs.patterns.length} 条 globs → 展开 ${r.libs.candidates} 个候选目录 · HEAD ${r.libs.headPackages} 个包`,
+        );
+        console.log(
+          `残留判定：僵尸 lib ${r.libs.zombieLibs.length} · 缺失包 ${r.libs.missingPackages.length} · 未提交包 ${r.libs.untrackedPackages.length}`,
+        );
+        for (const z of r.libs.zombieLibs.slice(0, 20)) console.log(`      ⚠ 僵尸 ${z.libPath}`);
+        for (const m of r.libs.missingPackages.slice(0, 20)) console.log(`      ✗ 缺失 ${m}/package.json`);
+        for (const u of r.libs.untrackedPackages.slice(0, 20)) console.log(`      · 未提交 ${u}`);
       }
       printFindings(r.findings);
       return;

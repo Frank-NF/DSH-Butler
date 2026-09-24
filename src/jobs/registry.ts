@@ -8,6 +8,7 @@
 import { engine } from "./engine.ts";
 import { envProbeAction } from "../domains/env/probe.ts";
 import { coreStatusAction } from "../domains/core/status.ts";
+import { coreVerifyAction } from "../domains/core/verify.ts";
 import { runtimeStatusAction } from "../domains/runtime/status.ts";
 import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
@@ -16,10 +17,11 @@ import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
 import { log } from "../util/log.ts";
 
 export function registerAllActions(): void {
-  const defs = [
-    envProbeAction,
-    coreStatusAction,
-    runtimeStatusAction,
+const defs = [
+  envProbeAction,
+  coreStatusAction,
+  coreVerifyAction,
+  runtimeStatusAction,
     runtimeLogsAction,
     runtimeDiagnoseAction,
     diagHealthAction,
