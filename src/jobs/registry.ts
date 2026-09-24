@@ -25,6 +25,7 @@ import {
 } from "../domains/plugin/mutate.ts";
 import { pluginCleanResidueAction } from "../domains/plugin/clean_residue.ts";
 import { runtimeRepairAction } from "../domains/runtime/repair.ts";
+import { runtimeRestartAction } from "../domains/runtime/restart.ts";
 import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";
 import { coreUpdateAction } from "../domains/core/update.ts";
 import { coreRollbackAction } from "../domains/core/rollback.ts";
@@ -56,6 +57,7 @@ export function registerAllActions(): void {
     pluginRepairAction,
     pluginCleanResidueAction,
     runtimeRepairAction,
+    runtimeRestartAction,
     backupListAction,
     backupVerifyAction,
     backupCreateAction,

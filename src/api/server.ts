@@ -12,7 +12,10 @@ import { collectOverview } from "./overview.ts";
 import { INDEX_HTML } from "../web/markup.ts";
 import { STYLE_CSS } from "../web/styles.ts";
 import { CLIENT_JS } from "../web/client.ts";
-import { APP_NAME, APP_VERSION } from "../version.ts";
+import { APP_NAME, APP_VERSION, DSH_PORT_DEFAULT } from "../version.ts";
+import { collectRuntimeStatus } from "../domains/runtime/status.ts";
+import { findDshAuthUrl } from "../domains/runtime/dsh-url.ts";
+import { desktopAvailable, dshWindowState, openDshWindow } from "../host/desktop.ts";
 import { log } from "../util/log.ts";
 
 export interface ServerHandle {
@@ -309,6 +312,36 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     if (req.method === "POST" && cancelMatch?.[1]) {
       const okCancel = await engine.cancel(cancelMatch[1]);
       return json({ ok: okCancel });
+    }
+
+    // ── DSH 独立窗口（只有桌面态能做到；headless 会如实返回不可用） ──
+    if (req.method === "GET" && path === "/api/dsh/state") {
+      return json({ ok: true, available: desktopAvailable(), ...dshWindowState() });
+    }
+    if (req.method === "POST" && path === "/api/dsh/open") {
+      if (!desktopAvailable()) {
+        return json(
+          { ok: false, error: "当前不是桌面态（或运行时未提供窗口能力），打不开独立窗口" },
+          400,
+        );
+      }
+      // 端口：优先用正在跑的 DSH 服务端口，其次默认 3081
+      const st = await collectRuntimeStatus().catch(() => null);
+      const port = st?.port ?? DSH_PORT_DEFAULT;
+      // 【必须带令牌】DSH 的界面不是公开页面：裸地址会拿到 401 与一片白。
+      // 令牌只在它启动时打印的那行地址里（源码 browser-auth.ts 的 launchToken），
+      // 管家启动的服务会把它落到自己的日志里，就在这里捞。
+      const found = findDshAuthUrl(port);
+      if (!found.url) {
+        return json({
+          ok: false,
+          port,
+          error: `打不开 DSH 界面：${found.note}。可以在「运行状态」页点「重启服务」——` +
+            `由管家启动的 DSH 会把访问令牌写进日志，之后这里就能一键打开。`,
+        }, 400);
+      }
+      const r = openDshWindow(found.url, { title: "DSH" });
+      return json({ ...r, url: found.url, port }, r.ok ? 200 : 400);
     }
 
     if (req.method === "GET" && path === "/api/events") {

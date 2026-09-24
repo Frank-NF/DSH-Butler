@@ -20,6 +20,8 @@ import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS, STAGE_LABEL } from "./vers
 import { isDir } from "./host/fs.ts";
 import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.ts";
 import { hideOwnConsole } from "./host/console-hide.ts";
+import { createTray, openDshWindow } from "./host/desktop.ts";
+import { findDshAuthUrl } from "./domains/runtime/dsh-url.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -89,6 +91,15 @@ async function main(): Promise<void> {
     log.info("main", `有 ${interrupted.length} 个上次未完成的任务，可在界面「任务」中查看`);
   }
 
+  // 优雅退出（托盘菜单也要用它，所以先于窗口/托盘定义）
+  const shutdown = () => {
+    log.info("main", "收到退出信号，正在关闭…");
+    server.shutdown();
+    try {
+      Deno.exit(0);
+    } catch { /* ignore */ }
+  };
+
   if (headless) {
     // 无界面模式：把地址打到 stdout，便于脚本抓取
     console.log(`READY ${appUrl}`);
@@ -100,20 +111,13 @@ async function main(): Promise<void> {
     // 接管手法与 tmp/probe-window.ts / win-v4 的实测一致：第一个构造函数
     // 接管隐式窗口，不会多开一个。曾经用 `typeof Deno.desktopVersion === "string"`
     // 判断而该值实际是 null，导致编译态被误判、额外弹出一次系统浏览器 —— 别回去。
-    adoptDesktopWindow(appUrl);
+    const mainWin = adoptDesktopWindow(appUrl);
+    setupDesktopTray(mainWin, shutdown);
   } else if (!wantsNoOpen(argv)) {
     // 纯 `deno run` 态：本来就没有窗口，用系统浏览器打开便于调试。
     await openBrowser(appUrl);
   }
 
-  // 优雅退出
-  const shutdown = () => {
-    log.info("main", "收到退出信号，正在关闭…");
-    server.shutdown();
-    try {
-      Deno.exit(0);
-    } catch { /* ignore */ }
-  };
   for (const sig of ["SIGINT", "SIGTERM"] as const) {
     try {
       Deno.addSignalListener(sig, shutdown);
@@ -149,13 +153,21 @@ function wantsNoOpen(argv: string[]): boolean {
  * 否则 `Deno.BrowserWindow` 不存在。
  * 任何一步失败都只记日志 —— 窗口是运行时开的，接管失败不影响程序活着。
  */
-function adoptDesktopWindow(url: string): void {
+interface ButlerWindow {
+  navigate: (u: string) => void;
+  show: () => void;
+  hide?: () => void;
+  focus?: () => void;
+  isClosed?: () => boolean;
+  setTitle?: (t: string) => void;
+  addEventListener?: (t: string, cb: (e: unknown) => void) => void;
+}
+
+/** 主窗口句柄（托盘菜单要拿它 show/focus）。 */
+let mainWindow: ButlerWindow | null = null;
+
+function adoptDesktopWindow(url: string): ButlerWindow | null {
   try {
-    interface ButlerWindow {
-      navigate: (u: string) => void;
-      show: () => void;
-      setTitle?: (t: string) => void;
-    }
     const BW = (Deno as unknown as Record<string, unknown>).BrowserWindow as new (
       o: Record<string, unknown>,
     ) => ButlerWindow;
@@ -165,9 +177,92 @@ function adoptDesktopWindow(url: string): void {
     try {
       win.show();
     } catch { /* 某些平台构造即显示 */ }
+    mainWindow = win;
     log.info("main", `已接管桌面窗口并导航（标题=${APP_NAME}，${WINDOW_WIDTH}×${WINDOW_HEIGHT}）`);
+    return win;
   } catch (e) {
     log.warn("main", `接管桌面窗口失败（不影响使用，运行时会自行导航）：${(e as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * 托盘常驻（方案 §6.5）。
+ *
+ * 为什么要有它：DSH 是个"挂着跑"的服务型程序 —— 用户最小化/关掉管家之后，
+ * 还得能一键把 DSH 界面叫回来、或者把服务重启一下，而不是满桌面找图标。
+ *
+ * 【降级纪律】拿不到托盘不算错（有的精简桌面没有状态区）：创建失败就什么都不做，
+ * 退出路径照旧只有"关窗口"，不给用户留下"关了窗口还赖着不走"的进程。
+ */
+function setupDesktopTray(
+  win: ButlerWindow | null,
+  shutdown: () => void,
+): void {
+  let trayOk = false;
+  const focusMain = () => {
+    if (!win) return;
+    try {
+      win.show();
+      win.focus?.();
+    } catch { /* 窗口可能已关 */ }
+  };
+
+  const tray = createTray({
+    tooltip: `${APP_NAME} ${APP_VERSION}`,
+    menu: [
+      { item: { label: "打开管家", id: "butler", enabled: true } },
+      { item: { label: "打开 DSH 界面", id: "dsh", enabled: true } },
+      "separator",
+      { item: { label: "重启 DSH 服务", id: "restart", enabled: true } },
+      "separator",
+      { item: { label: "退出管家", id: "quit", enabled: true } },
+    ],
+    onClick: focusMain,
+    onMenuClick: (id) => {
+      if (id === "butler") {
+        focusMain();
+        return;
+      }
+      if (id === "dsh") {
+        // 必须用带令牌的地址：DSH 界面不是公开页面，裸地址进去是一片白（401）
+        const found = findDshAuthUrl(loadConfig().dshPort);
+        if (!found.url) {
+          log.warn("main", `打开 DSH 界面失败：${found.note}`);
+          return;
+        }
+        const r = openDshWindow(found.url, { title: "DSH" });
+        if (!r.ok) log.warn("main", `打开 DSH 界面失败：${r.error ?? "未知原因"}`);
+        return;
+      }
+      if (id === "restart") {
+        // 走任务通道：这样重启也有步骤、有审计、能在「任务」页回看
+        engine.create("runtime.restart", {}).then((res) => {
+          log.info(
+            "main",
+            res.ok ? `已发起重启任务：${res.jobId}` : `重启任务创建失败：${res.error}`,
+          );
+        }).catch((e) => log.warn("main", `重启任务创建异常：${(e as Error).message}`));
+        return;
+      }
+      if (id === "quit") shutdown();
+    },
+  });
+  trayOk = tray.ok;
+
+  // 有托盘才拦「关窗」：关掉主窗口改成收进托盘，DSH 与管家继续在后台跑。
+  // 没托盘时绝不能拦 —— 否则用户关不掉这个程序。
+  if (trayOk && win?.addEventListener) {
+    win.addEventListener("close", (e) => {
+      try {
+        (e as { preventDefault?: () => void }).preventDefault?.();
+        win.hide?.();
+        tray.setTooltip(`${APP_NAME}：已收到托盘（右键图标可再打开）`);
+        log.info("main", "主窗口已收进托盘（托盘菜单「退出管家」才会真正退出）");
+      } catch (err) {
+        log.warn("main", `收进托盘失败，按正常关闭处理：${(err as Error).message}`);
+      }
+    });
   }
 }
 

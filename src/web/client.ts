@@ -113,7 +113,8 @@ export const CLIENT_JS = `(function () {
     upload: SVG_OPEN + '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
     check: SVG_OPEN + '<path d="M5 13l4 4L19 7"/></svg>',
     chevron: SVG_OPEN + '<path d="M9 6l6 6-6 6"/></svg>',
-    deploy: SVG_OPEN + '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
+    deploy: SVG_OPEN + '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+    external: SVG_OPEN + '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>'
   };
   function icon(name) { return ICON[name] || ''; }
 
@@ -216,6 +217,17 @@ export const CLIENT_JS = `(function () {
   }
   function navBtn(iconName, label, page, cls) {
     return '<button class="btn ' + (cls || 'sm') + '" data-page="' + esc(page) + '">' + icon(iconName) + '<span>' + esc(label) + '</span></button>';
+  }
+  function openDshBtn(cls) {
+    return '<button class="btn ' + (cls || 'sm') + '" data-open-dsh title="用独立窗口打开 DSH 界面">' + icon('external') + '<span>打开 DSH 界面</span></button>';
+  }
+
+  function openDsh() {
+    return api('/api/dsh/open', { method: 'POST' }).then(function (r) {
+      toast(r.reused ? ('DSH 窗口已在前面（端口 ' + (r.port || '-') + '）') : ('已打开 DSH 界面 · 端口 ' + (r.port || '-')));
+    }).catch(function (e) {
+      toast('打不开 DSH 窗口：' + (e && e.message ? e.message : e), 'warn');
+    });
   }
 
   function renderFindings(findings) {
@@ -640,6 +652,7 @@ export const CLIENT_JS = `(function () {
         + navBtn('box', 'DSH 本体', 'core')
         + navBtn('activity', '运行状态', 'runtime')
         + navBtn('puzzle', '插件', 'plugins')
+        + openDshBtn()
         + '</div></div>';
       html += '<div class="card"><div class="card-title">问题概览<span class="sub">来自最近一次体检</span></div><div id="overview-findings">'
         + (state.cache.report && state.cache.report.findings ? renderFindings(state.cache.report.findings) : emptyBox('还没有体检结果', '点上面的「运行全面体检」开始检查。'))
@@ -759,7 +772,10 @@ export const CLIENT_JS = `(function () {
   // ── 页面：运行状态 ───────────────────────────────────────────────
 
   function renderRuntime(r) {
-    var tools = actBtn('activity', '运行时诊断', 'runtime.diagnose') + writeBtn('wrench', '修复僵尸锁', 'runtime.repair');
+    var tools = openDshBtn()
+      + actBtn('activity', '运行时诊断', 'runtime.diagnose')
+      + writeBtn('wrench', '修复僵尸锁', 'runtime.repair')
+      + writeBtn('refresh', '重启服务', 'runtime.restart');
     var html = pageHead('运行状态', '服务进程、HTTP 健康检查、僵尸锁与 profile 残留物。', tools);
     if (state.extra.runtimeDiag) html += diagCard('运行时诊断结论', state.extra.runtimeDiag);
     html += '<div class="card"><div class="card-title">服务</div>'
@@ -1274,6 +1290,7 @@ export const CLIENT_JS = `(function () {
     if (hit('#btn-cancel')) { cancelJob(); return; }
     if (hit('#btn-copy-report')) { copyReport(); return; }
     if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
+    if (hit('[data-open-dsh]')) { openDsh(); return; }
     if (hit('#modal-cancel') || hit('#modal-close')) { closeModal(); return; }
   });
 
