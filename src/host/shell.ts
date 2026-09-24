@@ -1,0 +1,267 @@
+/**
+ * 子进程执行 —— 全项目唯一允许 spawn 的地方。
+ *
+ * 为什么必须统一：
+ * 1) Windows 上不能让子进程闪出黑窗（旧版管家的祖传坑：弹一堆关不掉的 CMD 抢焦点）。
+ * 2) 参数必须数组传递，绝不过 shell 拼接（注入风险 + 引号地狱）。
+ * 3) 所有调用都要有超时与输出捕获，否则卡住就没人知道。
+ *
+ * ⚠️ 实测结论（2026-09-24，见 host/console-hide.ts 头注释）：
+ *   Deno.Command 确实没有 windowsHide / CREATE_NO_WINDOW 选项，GUI 父进程直接
+ *   spawn 控制台子进程会各自弹新窗口（实测一次体检弹 22 个 WindowsTerminal 窗）。
+ *   解法不是包装子命令 —— `conhost --headless` 包装会丢失退出码（失败 128→0），
+ *   体检判不了成败。正解是主进程启动时 AllocConsole + SW_HIDE 持有隐藏控制台，
+ *   子进程按 Windows 原生语义【继承】它：零新窗口、退出码与管道原样。
+ *   hideArgs 因此保持透传（子进程继承已藏好的控制台，无需再动）。
+ *   前提：main() 必须在任何 spawn 之前调用过 hideOwnConsole()。
+ */
+
+import { log } from "../util/log.ts";
+import { isWindows, p } from "../util/paths.ts";
+
+export interface RunOptions {
+  cwd?: string;
+  env?: Record<string, string | undefined>;
+  /** 逐行回调（用于实时进度）。stdout/stderr 都会被喂进来。 */
+  onLine?: (line: string, stream: "stdout" | "stderr") => void;
+  /** 允许非 0 退出码而不报错（默认 false）。 */
+  allowNonZero?: boolean;
+  timeoutMs?: number;
+  scope?: string;
+}
+
+export interface RunResult {
+  code: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  durationMs: number;
+}
+
+/** 把任意命令包装成 Windows 下隐藏窗口的形式。 */
+function hideArgs(cmd: string, args: string[]): { cmd: string; args: string[] } {
+  if (Deno.build.os !== "windows") return { cmd, args };
+  // 实测结论：无需包装 —— 主进程的隐藏控制台（console-hide.ts）已被子进程继承，
+  // 且包装（conhost --headless）会丢退出码。保持透传。
+  return { cmd, args };
+}
+
+/**
+ * 执行命令并等待结束。
+ * 默认不抛异常：调用方拿 RunResult 自行判断（很多系统命令非 0 退出是正常情况）。
+ */
+export async function run(cmd: string, args: string[] = [], options: RunOptions = {}): Promise<RunResult> {
+  const started = Date.now();
+  const scope = options.scope ?? "shell";
+  const wrapped = hideArgs(cmd, args);
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  let stdout = "";
+  let stderr = "";
+  let code = -1;
+
+  try {
+    const command = new Deno.Command(wrapped.cmd, {
+      args: wrapped.args,
+      cwd: options.cwd,
+      env: options.env as Record<string, string> | undefined,
+      stdin: "null",
+      stdout: "piped",
+      stderr: "piped",
+      signal: controller.signal,
+    });
+    const child = command.spawn();
+
+    const pump = async (stream: ReadableStream<Uint8Array>, kind: "stdout" | "stderr") => {
+      const decoder = new TextDecoder();
+      let rest = "";
+      for await (const chunk of stream) {
+        const text = decoder.decode(chunk, { stream: true });
+        rest += text;
+        let idx: number;
+        while ((idx = rest.indexOf("\n")) >= 0) {
+          const line = rest.slice(0, idx).replace(/\r$/, "");
+          rest = rest.slice(idx + 1);
+          if (kind === "stdout") stdout += line + "\n";
+          else stderr += line + "\n";
+          options.onLine?.(line, kind);
+        }
+      }
+      if (rest) {
+        if (kind === "stdout") stdout += rest;
+        else stderr += rest;
+        options.onLine?.(rest, kind);
+      }
+    };
+
+    const [, , status] = await Promise.all([
+      pump(child.stdout, "stdout"),
+      pump(child.stderr, "stderr"),
+      child.status,
+    ]);
+    code = status.code;
+  } catch (e) {
+    const err = e as Error;
+    if (err.name === "AbortError" || timedOut) {
+      log.warn(scope, `命令超时（${timeoutMs}ms）：${cmd} ${args.join(" ")}`);
+    } else {
+      log.warn(scope, `命令执行失败：${cmd} — ${err.message}`);
+      stderr += err.message;
+    }
+    code = -1;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const result: RunResult = { code, stdout, stderr, timedOut, durationMs: Date.now() - started };
+  if (code !== 0 && !options.allowNonZero && !timedOut) {
+    log.debug(scope, `命令非零退出(${code})：${cmd} ${args.join(" ")}`);
+  }
+  return result;
+}
+
+/** 执行并返回是否成功 + stdout（用于"只关心成不成、结果是什么"的场景）。 */
+export async function runOk(cmd: string, args: string[] = [], options: RunOptions = {}): Promise<string | null> {
+  const r = await run(cmd, args, { ...options, allowNonZero: true });
+  return r.code === 0 ? r.stdout : null;
+}
+
+/**
+ * 定位可执行文件。
+ *
+ * 【Windows 坑】npm / pnpm / npx 实际是 .cmd 包装脚本，直接 spawn "pnpm" 会失败
+ * （CreateProcess 不认 PATHEXT）。所以必须先解析出真实路径（含 .cmd 后缀）再执行。
+ *
+ * 【为什么不用 where】`where` 是个子进程，每次要 ~237 ms（实测），而环境体检要
+ * 定位 4 个运行时 —— 光这一步就近 1 秒。改成自己扫 PATH + PATHEXT：
+ * 纯文件系统查询，无进程启动开销，结果还带缓存。
+ * （Windows 文件系统大小写不敏感，所以只需按小写扩展名探测一次。）
+ */
+export async function locate(name: string): Promise<string | null> {
+  if (isWindows) return locateOnWindows(name);
+  const r = await run("sh", ["-c", `command -v ${name}`], {
+    timeoutMs: 8000,
+    allowNonZero: true,
+    scope: "locate",
+  });
+  return r.stdout.trim().split(/\r?\n/).find((s) => s.trim().length > 0)?.trim() ?? null;
+}
+
+const locateCache = new Map<string, string | null>();
+
+function locateOnWindows(name: string): string | null {
+  if (locateCache.has(name)) return locateCache.get(name) ?? null;
+
+  const rawPath = Deno.env.get("PATH") ?? "";
+  const rawExts = Deno.env.get("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
+  const dirs = rawPath.split(";").map((d) => d.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  const exts = rawExts.split(";").map((e) => e.trim()).filter(Boolean);
+  const hasExt = /\.[A-Za-z0-9]{1,4}$/.test(name);
+
+  let hit: string | null = null;
+  for (const dir of dirs) {
+    const clean = dir.replace(/[/\\]+$/, "");
+    if (!clean) continue;
+    if (hasExt) {
+      if (isFileSync(p(clean, name))) {
+        hit = p(clean, name);
+        break;
+      }
+      continue;
+    }
+    for (const ext of exts) {
+      const candidate = p(clean, name + ext);
+      if (isFileSync(candidate)) {
+        hit = candidate;
+        break;
+      }
+    }
+    if (hit) break;
+  }
+
+  locateCache.set(name, hit);
+  return hit;
+}
+
+/** 本地实现而非引入 fs.ts：shell 是更底层的模块，不该反向依赖它。 */
+function isFileSync(path: string): boolean {
+  try {
+    return Deno.statSync(path).isFile;
+  } catch {
+    return false;
+  }
+}
+
+/** 探测某个可执行文件是否可用（不抛异常）。 */
+export async function which(name: string): Promise<string | null> {
+  return await locate(name);
+}
+
+/**
+ * 在【已知路径】上取版本号。
+ *
+ * 与 versionOf 的区别：不再做一次 locate。
+ * versionOf 内部会自己 locate，调用方若已经 locate 过就会白起一个子进程 ——
+ * 环境体检里每个运行时都要多花一次 where 的时间（实测四个运行时合计多等 1 秒以上）。
+ */
+export async function versionAt(path: string, args: string[] = ["--version"]): Promise<string | null> {
+  const r = await run(path, args, { timeoutMs: 15_000, allowNonZero: true, scope: "version" });
+  const text = (r.stdout || r.stderr).trim().split(/\r?\n/)[0]?.trim();
+  return text && text.length > 0 ? extractVersion(text) : null;
+}
+
+/** 执行可执行文件并取版本号（先定位真实路径，避免 Windows 的 .cmd 问题）。 */
+export async function versionOf(name: string, args: string[] = ["--version"]): Promise<string | null> {
+  const path = await locate(name);
+  if (!path) return null;
+  return await versionAt(path, args);
+}
+
+/**
+ * 从版本输出里挑出真正的版本号。
+ *
+ * 各工具输出格式完全不同：node 是 "v22.22.2"、git 是 "git version 2.55.0.windows.3"、
+ * pnpm 是纯 "11.7.0"。直接展示原文会出现「Git git version 2.55.0.windows.3」这种
+ * 标签与内容重复的怪东西（实测确实如此）。这里统一取第一段版本号，
+ * 取不到就退回原文，保证不丢信息。
+ */
+export function extractVersion(text: string): string {
+  const m = /\bv?(\d+(?:\.\d+){1,3}(?:[-+][0-9A-Za-z.-]+)?)/.exec(text);
+  return m?.[1] ?? text.trim();
+}
+
+/**
+ * 执行 PowerShell 脚本并取回文本。
+ * 编码处理：显式设置 OutputEncoding 为 UTF8 —— 否则中文路径会被搅成乱码
+ * （旧版踩过：PowerShell 重定向把中文变成问号）。
+ */
+export async function powershell(script: string, options: RunOptions = {}): Promise<RunResult> {
+  if (Deno.build.os !== "windows") {
+    return { code: -1, stdout: "", stderr: "非 Windows 平台", timedOut: false, durationMs: 0 };
+  }
+  const prelude = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;";
+  return await run(
+    "powershell.exe",
+    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", prelude + script],
+    { timeoutMs: 20_000, allowNonZero: true, scope: "powershell", ...options },
+  );
+}
+
+/** 执行 PowerShell 并把输出按 JSON 解析（失败返回 null）。 */
+export async function powershellJson<T>(script: string, options: RunOptions = {}): Promise<T | null> {
+  const r = await powershell(script, options);
+  const text = r.stdout.trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}

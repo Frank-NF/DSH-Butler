@@ -1,0 +1,334 @@
+/**
+ * HTTP 接口层：REST + SSE + 静态资源。
+ *
+ * 设计要点（方案 §4.2）：
+ *   - 只监听 127.0.0.1，绝不对外暴露
+ *   - 所有请求校验本地 token（header 或 query —— EventSource 无法设置请求头）
+ *   - 有副作用的操作走统一 Job 通道，纯读走 /api/state/* 快照
+ */
+
+import { engine } from "../jobs/engine.ts";
+import { collectOverview } from "./overview.ts";
+import { INDEX_HTML } from "../web/markup.ts";
+import { STYLE_CSS } from "../web/styles.ts";
+import { CLIENT_JS } from "../web/client.ts";
+import { APP_NAME, APP_VERSION } from "../version.ts";
+import { log } from "../util/log.ts";
+
+export interface ServerHandle {
+  port: number;
+  token: string;
+  origin: string;
+  shutdown: () => void;
+}
+
+const SSE_HEADERS = {
+  "content-type": "text/event-stream; charset=utf-8",
+  "cache-control": "no-cache, no-transform",
+  "connection": "keep-alive",
+  "x-accel-buffering": "no",
+} as const;
+
+/**
+ * 会话令牌的 cookie 名。
+ *
+ * 为什么必须走 cookie，而不是把令牌挂在 URL 上：
+ * 桌面态下，窗口是由 `deno desktop` 运行时**自己**导航到 `http://127.0.0.1:<端口>/` 的，
+ * 那个 URL 我们控制不了 —— 于是 `?t=<令牌>` 根本送不进去，界面上每一条接口都会 401，
+ * 现象就是「窗口开了、布局也在，但永远停在『正在加载…』」。
+ *
+ * 同源 cookie 由浏览器自动携带，EventSource（SSE）也一样吃这套 —— 而 SSE 恰恰无法自定义请求头，
+ * 这正是原先不得不把令牌塞进 query 的原因。
+ *
+ * 三个属性各有理由：
+ *   HttpOnly       页面 JS 不需要读它 —— 这是优点，令牌不再出现在任何 JS 可达的位置；
+ *   SameSite=Strict 别的站点发起的请求不会带上它，挡掉 CSRF；
+ *   Path=/         全站有效。
+ *
+ * 威胁模型没变差：本服务只监听 127.0.0.1，令牌挡的是「浏览器里的其它网页」这类跨源来源。
+ */
+const AUTH_COOKIE = "butler_token";
+
+export function createApiServer(opts: { token: string; port?: number }): ServerHandle {
+  const token = opts.token;
+
+  function json(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
+  }
+
+  /**
+   * 读取请求里的 cookie。
+   * 不用 Deno 的 Cookie 解析工具，是因为这里只需要一个键，手写更少依赖也更直观。
+   */
+  function readCookie(req: Request, name: string): string | null {
+    const raw = req.headers.get("cookie");
+    if (!raw) return null;
+    for (const part of raw.split(";")) {
+      const eq = part.indexOf("=");
+      if (eq < 0) continue;
+      if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+    }
+    return null;
+  }
+
+  function authed(req: Request, url: URL): boolean {
+    const fromHeader = req.headers.get("x-butler-token");
+    if (fromHeader && fromHeader === token) return true;
+    const fromQuery = url.searchParams.get("t");
+    if (fromQuery === token) return true;
+    // cookie 是桌面态的主通道 —— 见下方 AUTH_COOKIE 说明。
+    return readCookie(req, AUTH_COOKIE) === token;
+  }
+
+  /** 单任务的 SSE：先补一份当前快照，再持续推增量事件。 */
+  function jobEventStream(jobId: string): Response {
+    const encoder = new TextEncoder();
+    let unsub: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const send = (obj: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+          } catch { /* 客户端已断开 */ }
+        };
+
+        const job = engine.get(jobId);
+        if (!job) {
+          send({ type: "error", message: "任务不存在" });
+          controller.close();
+          return;
+        }
+
+        // 先补快照，避免客户端错过之前的事件
+        send({
+          type: "snapshot",
+          jobId,
+          message: job.actionTitle,
+          data: { status: job.status, steps: job.steps, progress: job.progress },
+        });
+        if (job.status !== "running" && job.status !== "queued") {
+          send({ type: "done", jobId, message: job.error ?? "任务已结束", data: { status: job.status } });
+        }
+
+        unsub = engine.subscribe((ev) => {
+          if (ev.jobId !== jobId) return;
+          const payload: Record<string, unknown> = {
+            type: ev.type,
+            jobId: ev.jobId,
+            ts: ev.ts,
+            seq: ev.seq,
+          };
+          if (ev.message) payload.message = ev.message;
+          if (ev.stepId) payload.stepId = ev.stepId;
+          const cur = engine.get(jobId);
+          if (cur) {
+            payload.data = { status: cur.status, steps: cur.steps, progress: cur.progress, ...(ev.data ?? {}) };
+          } else if (ev.data) {
+            payload.data = ev.data;
+          }
+          send(payload);
+          if (ev.type === "done") {
+            try {
+              controller.close();
+            } catch { /* ignore */ }
+          }
+        });
+
+        // 心跳：防止中间层/浏览器判定超时
+        heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": ping\n\n"));
+          } catch { /* ignore */ }
+        }, 15_000);
+      },
+      cancel() {
+        unsub?.();
+        if (heartbeat !== null) clearInterval(heartbeat);
+      },
+    });
+
+    return new Response(stream, { headers: SSE_HEADERS });
+  }
+
+  /** 全局事件流：服务状态变化、任务创建等。 */
+  function globalEventStream(): Response {
+    const encoder = new TextEncoder();
+    let unsub: (() => void) | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const send = (obj: unknown) => {
+          try {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
+          } catch { /* ignore */ }
+        };
+        send({ type: "hello", message: `已连接 ${APP_NAME} ${APP_VERSION}` });
+
+        unsub = engine.subscribe((ev) => {
+          send({ type: ev.type, jobId: ev.jobId, ts: ev.ts, message: ev.message, data: ev.data });
+        });
+        heartbeat = setInterval(() => {
+          try {
+            controller.enqueue(encoder.encode(": ping\n\n"));
+          } catch { /* ignore */ }
+        }, 15_000);
+      },
+      cancel() {
+        unsub?.();
+        if (heartbeat !== null) clearInterval(heartbeat);
+      },
+    });
+
+    return new Response(stream, { headers: SSE_HEADERS });
+  }
+
+  async function handle(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const path = url.pathname;
+
+    if (path === "/healthz") {
+      return json({ ok: true, app: APP_NAME, version: APP_VERSION });
+    }
+
+    // 静态资源不需要 token（本身不含敏感数据，且要能被 webview 首次加载）
+    if (req.method === "GET" && (path === "/" || path === "/index.html")) {
+      return new Response(INDEX_HTML, {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
+    }
+    if (req.method === "GET" && path === "/style.css") {
+      return new Response(STYLE_CSS, {
+        headers: { "content-type": "text/css; charset=utf-8" },
+      });
+    }
+    if (req.method === "GET" && path === "/app.js") {
+      return new Response(CLIENT_JS, {
+        headers: { "content-type": "application/javascript; charset=utf-8" },
+      });
+    }
+
+    if (!authed(req, url)) {
+      return json({ ok: false, error: "未授权：缺少或错误的本地令牌" }, 401);
+    }
+
+    // ── 只读快照 ──────────────────────────────────────────────
+    if (req.method === "GET" && path === "/api/state/overview") {
+      return json(await collectOverview(url.searchParams.get("force") === "1"));
+    }
+    if (req.method === "GET" && path === "/api/actions") {
+      return json(
+        engine.definitions().map((d) => ({
+          name: d.name,
+          domain: d.domain,
+          title: d.title,
+          description: d.description ?? "",
+          readonly: d.readonly,
+          steps: d.steps ?? [],
+        })),
+      );
+    }
+
+    // ── 任务 ─────────────────────────────────────────────────
+    if (req.method === "POST" && path === "/api/jobs") {
+      let body: { action?: string; params?: Record<string, unknown> };
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      if (!body.action) return json({ ok: false, error: "缺少 action" }, 400);
+      const result = await engine.create(body.action, body.params ?? {});
+      return json(result, result.ok ? 200 : 400);
+    }
+
+    if (req.method === "GET" && path === "/api/jobs") {
+      const limit = Number(url.searchParams.get("limit") ?? 50);
+      return json(engine.list(Number.isFinite(limit) ? limit : 50));
+    }
+
+    const jobMatch = /^\/api\/jobs\/([^/]+)$/.exec(path);
+    if (req.method === "GET" && jobMatch?.[1]) {
+      const job = engine.get(jobMatch[1]);
+      return job ? json(job) : json({ ok: false, error: "任务不存在" }, 404);
+    }
+
+    const eventsMatch = /^\/api\/jobs\/([^/]+)\/events$/.exec(path);
+    if (req.method === "GET" && eventsMatch?.[1]) {
+      return jobEventStream(eventsMatch[1]);
+    }
+
+    const cancelMatch = /^\/api\/jobs\/([^/]+)\/cancel$/.exec(path);
+    if (req.method === "POST" && cancelMatch?.[1]) {
+      const okCancel = await engine.cancel(cancelMatch[1]);
+      return json({ ok: okCancel });
+    }
+
+    if (req.method === "GET" && path === "/api/events") {
+      return globalEventStream();
+    }
+
+    // ── 日志 tail（供界面直接取，不必建任务） ────────────────────
+    if (req.method === "GET" && path === "/api/logs/butler") {
+      const n = Number(url.searchParams.get("n") ?? 200);
+      const { log: logger } = await import("../util/log.ts");
+      return json(logger.tail(Number.isFinite(n) ? n : 200));
+    }
+
+    return json({ ok: false, error: `未找到路由：${req.method} ${path}` }, 404);
+  }
+
+  /**
+   * 如果请求里还没有正确的会话 cookie，就给响应补一个。
+   *
+   * 只在缺失时补：避免每条响应（含 SSE 心跳）都重复下发同一个 Set-Cookie。
+   * 任何一条响应都能完成"发牌"—— 窗口加载的 `/` 自然就拿到了。
+   */
+  function withSessionCookie(req: Request, res: Response): Response {
+    if (readCookie(req, AUTH_COOKIE) === token) return res;
+    const h = new Headers(res.headers);
+    h.append("set-cookie", `${AUTH_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict`);
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: h });
+  }
+
+  const server = Deno.serve(
+    {
+      hostname: "127.0.0.1",
+      ...(opts.port ? { port: opts.port } : {}),
+      onListen: () => { /* 端口在下方读取 */ },
+    },
+    (req) => {
+      // debug 级请求日志：排查「窗口到底加载到哪一步」时，这是唯一能看到 webview
+      // 实际请求序列的地方（渲染进程崩溃时不会有任何其它痕迹）。
+      // 默认级别是 info，不会刷屏；需要时把配置的 logLevel 调成 debug。
+      const p = new URL(req.url).pathname;
+      log.debug("api", `← ${req.method} ${p}`);
+      return handle(req)
+        .then((res) => withSessionCookie(req, res))
+        .catch((e) => {
+          log.error("api", `请求处理异常：${(e as Error).message} — ${p}`);
+          return withSessionCookie(req, json({ ok: false, error: (e as Error).message }, 500));
+        });
+    },
+  );
+
+  const addr = server.addr as Deno.NetAddr;
+  const origin = `http://127.0.0.1:${addr.port}`;
+  log.info("api", `本地服务已启动：${origin}`);
+
+  return {
+    port: addr.port,
+    token,
+    origin,
+    shutdown: () => {
+      try {
+        server.shutdown();
+      } catch { /* ignore */ }
+    },
+  };
+}

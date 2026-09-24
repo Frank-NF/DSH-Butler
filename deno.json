@@ -1,0 +1,46 @@
+{
+  "name": "dsh-butler",
+  "version": "2.0.0-alpha.1",
+  "exports": "./src/main.ts",
+  "tasks": {
+    "dev": "deno desktop -A --hmr src/main.ts",
+    "headless": "deno run -A src/main.ts --headless",
+    "check": "deno check src/main.ts",
+    "lint": "deno lint src",
+    "fmt": "deno fmt src web",
+    "test": "deno test -A",
+    "build": "deno desktop -A --compress --output ./dist/dsh-butler src/main.ts",
+    "build:plain": "deno desktop -A --output ./dist/dsh-butler src/main.ts"
+  },
+  "desktop": {
+    "app": {
+      "name": "DSH Butler",
+      "identifier": "com.dsh.plugin-updater",
+      "icons": {
+        "windows": "./icons/icon.ico"
+      }
+    },
+    "backend": "webview",
+    "output": {
+      "windows": "./dist/dsh-butler"
+    },
+    "release": {
+      "baseUrl": "https://dsh.huilinsh.cn/api/butler"
+    }
+  },
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true
+  },
+  "fmt": {
+    "lineWidth": 100,
+    "exclude": ["dist"]
+  },
+  "lint": {
+    "exclude": ["dist"],
+    "rules": {
+      "exclude": ["no-explicit-any", "require-await"]
+    }
+  },
+  "exclude": ["dist"]
+}
