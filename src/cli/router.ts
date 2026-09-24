@@ -18,12 +18,15 @@ import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
 import type { CoreVerifyReport } from "../domains/core/verify.ts";
 import type { FinishUpdateReport } from "../domains/core/finish_update.ts";
+import type { CoreUpdateReport } from "../domains/core/update.ts";
 import type { CoreRollbackReport } from "../domains/core/rollback.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
+import type { RuntimeRepairReport } from "../domains/runtime/repair.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
 import type { BackupListReport, BackupVerifyReport } from "../domains/backup/actions.ts";
-import type { PluginOpReport, PluginScanReport } from "../domains/plugin/mutate.ts";
+import type { PluginOpReport, PluginRepairReport, PluginScanReport } from "../domains/plugin/mutate.ts";
+import type { CleanResidueReport } from "../domains/plugin/clean_residue.ts";
 import { humanSize } from "../host/mod.ts";
 
 export const CLI_HELP = `
@@ -52,9 +55,13 @@ DSH Butler · 命令行
   backup apply <id>                   回滚到指定回滚点（先校验完整性，验证不过保留回滚点）
   backup delete <id>                  删除回滚点
   core finishUpdate                   完成更新六步：停服 → 清残留 → 装依赖 → 全量重建 → 核对 → 重启（约 5-30 分钟）
+  core update                         更新 DSH 本体：写前回滚点 → 停服 → git pull → 清残留 → 装依赖 → 全量重建 → 核对 → 重启（约 5-30 分钟）
   core rollback [id]                  回滚本体到最近的构建回滚点（缺省取最新；验证不过保留回滚点，绝不静默成功）
   plugin install <名字> [--version v]  安装插件（写前回滚点 + 事务日志；失败或中途被杀，重启后自动回到操作前状态）
   plugin uninstall <名字>              卸载插件（先摘名单再隔离目录 —— 绝不留「启动即崩」的半成品）
+  plugin repair [名字]                 修复插件双名单：一键补登记（缺省修全部可修目标；不可作层的会被写前检查拦下）
+  plugin cleanResidue                 清理 pnpm 安装残留（移入隔离区并留清单；不碰 package.json，垃圾移动无害）
+  runtime repair                      清理僵尸/失效写锁（改名留证，不动正常锁，无需停服）
 
 其它：
   actions                             列出所有可用动作
@@ -108,18 +115,20 @@ export async function runCli(argv: string[]): Promise<number> {
       if (sub === "status") return await runOne("core.status", {}, json);
       if (sub === "verify") return await runOne("core.verify", {}, json);
       if (sub === "finishUpdate") return await runWrite("core.finishUpdate", {}, args, json);
+      if (sub === "update") return await runWrite("core.update", {}, args, json);
       if (sub === "rollback") {
         const id = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
         return await runWrite("core.rollback", id ? { id } : {}, args, json);
       }
-      return usage(`core 的可用子命令：status / verify / finishUpdate / rollback`);
+      return usage(`core 的可用子命令：status / verify / finishUpdate / update / rollback`);
     case "runtime":
       if (sub === "status") return await runOne("runtime.status", {}, json);
       if (sub === "diagnose") return await runOne("runtime.diagnose", {}, json);
       if (sub === "logs") {
         return await runOne("runtime.logs", { lines: numberArg(args, "-n") ?? 200 }, json);
       }
-      return usage(`runtime 的可用子命令：status / diagnose / logs`);
+      if (sub === "repair") return await runWrite("runtime.repair", {}, args, json);
+      return usage(`runtime 的可用子命令：status / diagnose / logs / repair`);
     case "plugin":
       if (sub === "diagnose") return await runOne("plugin.diagnose", {}, json);
       if (sub === "scan") return await runOne("plugin.scan", {}, json);
@@ -134,7 +143,12 @@ export async function runCli(argv: string[]): Promise<number> {
         if (!name) return usage("plugin uninstall 需要插件名：plugin uninstall <名字>");
         return await runWrite("plugin.uninstall", { name }, args, json);
       }
-      return usage(`plugin 的可用子命令：diagnose / scan / install / uninstall`);
+      if (sub === "repair") {
+        const name = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+        return await runWrite("plugin.repair", name ? { name } : {}, args, json);
+      }
+      if (sub === "cleanResidue") return await runWrite("plugin.cleanResidue", {}, args, json);
+      return usage(`plugin 的可用子命令：diagnose / scan / install / uninstall / repair / cleanResidue`);
     case "backup": {
       if (sub === "list") return await runOne("backup.list", {}, json);
       if (sub === "verify") return await runOne("backup.verify", args[2] ? { id: args[2] } : {}, json);
@@ -475,6 +489,42 @@ function printHuman(action: string, result: unknown): void {
       for (const w of r.warnings) console.log(`  ⚠ ${w}`);
       return;
     }
+    case "plugin.repair": {
+      const r = result as PluginRepairReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `修复完成：补登记 ${r.repaired.length} 个${r.repaired.length ? `（${r.repaired.join("、")}）` : ""}` +
+          ` · 回滚点 ${r.rollbackId} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`,
+      );
+      for (const w of r.warnings) console.log(`  ⚠ ${w}`);
+      return;
+    }
+    case "plugin.cleanResidue": {
+      const r = result as CleanResidueReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `清理完成：移入隔离区 ${r.moved} 项 · 复扫剩余 ${r.remaining}` +
+          (r.remaining > 0 ? " ⚠" : " ✓") +
+          ` · 隔离区 ${r.backupDir} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`,
+      );
+      for (const f of r.failed) console.log(`  ⚠ ${f.name}：${f.error}`);
+      return;
+    }
+    case "runtime.repair": {
+      const r = result as RuntimeRepairReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `写锁清理完成：改名留证 ${r.renamed.length} 个 · 复扫剩余失效锁 ${r.remaining}${r.remaining > 0 ? " ⚠" : " ✓"} · 耗时 ${
+          Math.round(r.elapsedMs / 1000)
+        } 秒`,
+      );
+      for (const s of r.skipped) console.log(`  · 保留 ${s.file}（${s.verdict}）`);
+      for (const f of r.failed) console.log(`  ⚠ ${f.file}：${f.error}`);
+      return;
+    }
     case "runtime.diagnose": {
       const r = result as {
         facts: {
@@ -514,6 +564,18 @@ function printHuman(action: string, result: unknown): void {
           (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
       );
       console.log(`需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"} · 源码 ${r.head?.slice(0, 12) ?? "未知"}`);
+      return;
+    }
+    case "core.update": {
+      const r = result as CoreUpdateReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(`源码：${r.fromCommit.slice(0, 12)} → ${r.toCommit.slice(0, 12)}${r.fromCommit === r.toCommit ? "（远端暂无新提交）" : ""}`);
+      console.log(
+        `耗时 ${Math.round(r.elapsedMs / 1000)} 秒 · 回滚点 ${r.rollbackId}` +
+          (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
+      );
+      console.log(`需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"}`);
       return;
     }
     case "core.rollback": {

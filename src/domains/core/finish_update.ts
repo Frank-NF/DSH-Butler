@@ -290,7 +290,11 @@ export interface FinishUpdateReport {
 
 // ── preflight（写前检查，error 级直接拦截） ──────────────────────────
 
-async function preflight(): Promise<Finding[]> {
+/**
+ * 写前三条硬检查：本体存在、git 源码形态、pnpm 可用。
+ * core.finishUpdate 与 core.update 共用（update 另加工作区脏检查）。
+ */
+export async function finishPreflightBase(): Promise<Finding[]> {
   const out: Finding[] = [];
 
   const probe = resolveDshSourceRoot();
@@ -419,9 +423,57 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
   }
   ctx.throwIfCancelled();
 
+  await runFinishTail({
+    ctx,
+    root,
+    tc,
+    destRoot,
+    restartPort: port,
+    report,
+    line,
+    stepIds: ["s2", "s3", "s4", "s5", "s6"],
+    stepTitles: [FINISH_STEPS[1], FINISH_STEPS[2], FINISH_STEPS[3], FINISH_STEPS[4], FINISH_STEPS[5]],
+    mapProgress: (v) => v,
+  });
+  ctx.progress(1);
+  report.elapsedMs = Date.now() - t0;
+  return report;
+}
+
+// ── 尾段共享（finish 与 update 同一份实现，防语义漂移） ───────────────
+
+interface FinishTailOptions {
+  ctx: ActionContext;
+  root: string;
+  tc: PnpmToolchain;
+  destRoot: string;
+  restartPort: number;
+  report: FinishUpdateReport;
+  line: (s: string) => void;
+  /** 尾段 5 步的 step id（finish: s2..s6；update: s4..s8）。 */
+  stepIds: readonly [string, string, string, string, string];
+  /** 尾段 5 步的标题（finish: FINISH_STEPS[1..5]；update: UPDATE_STEPS[3..7]）。 */
+  stepTitles: readonly [string, string, string, string, string];
+  /** 内部进度（finish 口径 0..1）→ 对外进度；update 传 v => 0.3 + v*0.7 防进度倒退。 */
+  mapProgress: (v: number) => number;
+}
+
+/**
+ * 「清理 → 装依赖 → 重建 → 核对 → 重启 → 收尾复核」尾段。
+ *
+ * core.finishUpdate 与 core.update 共用这一份实现 —— 铁律 9 要求本体更新
+ * 必须走完整四步（pull → 装依赖 → 全量重建 → 重启），两边各写一份必然漂移，
+ * 所以抽在这里，调用方只注入步骤 id / 标题 / 进度映射。
+ * 各步失败语义（警告继续 vs 致命）见 FINISH_STEPS 头注释，不因调用方而异。
+ */
+export async function runFinishTail(o: FinishTailOptions): Promise<void> {
+  const { ctx, root, tc, destRoot, restartPort, report, line } = o;
+  const pg = (v: number) => ctx.progress(o.mapProgress(v));
+  const beginStep = (i: 0 | 1 | 2 | 3 | 4) => ctx.step(o.stepIds[i], o.stepTitles[i]);
+
   // ── ② 深度清理（失败不阻断：本就无残留时也可能因权限报错） ──────────
-  ctx.step("s2", FINISH_STEPS[1]);
-  ctx.progress(0.15);
+  beginStep(0);
+  pg(0.15);
   try {
     const { report: clean, lines } = await deepCleanInto(root, destRoot);
     for (const l of lines) ctx.log(l);
@@ -442,8 +494,8 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
   ctx.throwIfCancelled();
 
   // ── ③ 安装依赖（失败警告继续：依赖没变时网络不通也报错，构建照样能成） ──
-  ctx.step("s3", FINISH_STEPS[2]);
-  ctx.progress(0.3);
+  beginStep(1);
+  pg(0.3);
   const inst = await run(tc.node, [tc.pnpmCjs, "install"], {
     cwd: root,
     timeoutMs: TIMEOUTS.install,
@@ -463,8 +515,8 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
   ctx.throwIfCancelled();
 
   // ── ④ 全量重建（致命；只对纯瞬断重试，最多 3 次） ───────────────────
-  ctx.step("s4", FINISH_STEPS[3]);
-  ctx.progress(0.4);
+  beginStep(2);
+  pg(0.4);
   let outcome: RunResult | null = null;
   let attempt = 0;
   let lineCount = 0;
@@ -504,12 +556,12 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
     );
   }
   line("全量重建：完成");
-  ctx.progress(0.85);
+  pg(0.85);
   ctx.throwIfCancelled();
 
   // ── ⑤ 核对产物（非致命：校验依赖 tsx，环境异常不判死已成功的构建） ────
-  ctx.step("s5", FINISH_STEPS[4]);
-  ctx.progress(0.9);
+  beginStep(3);
+  pg(0.9);
   invalidateBuildIntegrityCache();
   const integ = await verifyBuildIntegrity(root, { fresh: true });
   report.verify = { official: integ.official, verified: integ.verified, error: integ.error };
@@ -524,9 +576,9 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
   ctx.throwIfCancelled();
 
   // ── ⑥ 重启服务（致命：重建完成起不来 = 用户什么都没拿到） ─────────────
-  ctx.step("s6", FINISH_STEPS[5]);
-  ctx.progress(0.95);
-  const started = await startDshServer(root, port);
+  beginStep(4);
+  pg(0.95);
+  const started = await startDshServer(root, restartPort);
   if (!started.ok) {
     throw new Error(
       `重建已完成，但重启服务失败：${started.message}\n可在面板上用「启动」按钮手动启动。`,
@@ -544,9 +596,7 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
   } else {
     line(`完成更新：产物已重建到源码提交 ${after.git?.headShort ?? after.git?.head ?? "未知"}。`);
   }
-  ctx.progress(1);
-  report.elapsedMs = Date.now() - t0;
-  return report;
+  pg(1);
 }
 
 export const coreFinishUpdateAction: ActionDef<Record<string, never>, FinishUpdateReport> = {
@@ -557,7 +607,7 @@ export const coreFinishUpdateAction: ActionDef<Record<string, never>, FinishUpda
     "停服 → 深度清理（孤儿包 / 残留源文件 / 编译缓存，只移动不删除）→ 装依赖 → 官方全量重建 → 核对产物 → 重启。动手前自动创建回滚点。",
   readonly: false,
   steps: [...FINISH_STEPS],
-  preflight,
+  preflight: finishPreflightBase,
   run: (ctx) => runUpdate(ctx),
   // 六步最坏预算：装依赖 15 分钟 + 3×构建 30 分钟 + 余量 —— 比默认 jobTotal 宽
   timeoutMs: 7_200_000,

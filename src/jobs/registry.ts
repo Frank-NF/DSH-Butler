@@ -17,8 +17,11 @@ import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
-import { pluginInstallAction, pluginScanAction, pluginUninstallAction } from "../domains/plugin/mutate.ts";
+import { pluginInstallAction, pluginRepairAction, pluginScanAction, pluginUninstallAction } from "../domains/plugin/mutate.ts";
+import { pluginCleanResidueAction } from "../domains/plugin/clean_residue.ts";
+import { runtimeRepairAction } from "../domains/runtime/repair.ts";
 import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";
+import { coreUpdateAction } from "../domains/core/update.ts";
 import { coreRollbackAction } from "../domains/core/rollback.ts";
 import {
   backupApplyAction,
@@ -42,12 +45,16 @@ export function registerAllActions(): void {
     pluginScanAction,
     pluginInstallAction,
     pluginUninstallAction,
+    pluginRepairAction,
+    pluginCleanResidueAction,
+    runtimeRepairAction,
     backupListAction,
     backupVerifyAction,
     backupCreateAction,
     backupApplyAction,
     backupDeleteAction,
     coreFinishUpdateAction,
+    coreUpdateAction,
     coreRollbackAction,
   ];
   for (const def of defs) engine.register(def);

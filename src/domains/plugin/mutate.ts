@@ -59,6 +59,7 @@ import { findDshPort } from "../../host/port.ts";
 import { startDshServer, stopDshServer, type StopOutcome } from "../core/finish_update.ts";
 import { applyRollbackPoint, createRollbackPoint } from "../backup/rollback.ts";
 import { collectPluginFacts, judgeLayer, locateBundleDir } from "./facts.ts";
+import { repairBlockers } from "./rules.ts";
 import { readPluginLists, type PluginListCheck } from "../core/status.ts";
 
 // ── 测试隔离旋钮 ──────────────────────────────────────────────────
@@ -97,7 +98,7 @@ function activeJournalPath(): string {
 export interface PluginTxnJournal {
   kind: "plugin-txn";
   version: 1;
-  op: "install" | "uninstall";
+  op: "install" | "uninstall" | "repair";
   name: string;
   profileDir: string;
   /** 关联的写前回滚点（还原双名单靠它）。 */
@@ -359,7 +360,7 @@ async function rollbackActiveTxn(j: PluginTxnJournal): Promise<RollbackOutcome> 
 
 export interface RecoverResult {
   recovered: boolean;
-  op?: "install" | "uninstall";
+  op?: "install" | "uninstall" | "repair";
   name?: string;
   warnings: string[];
 }
@@ -399,6 +400,14 @@ export const UNINSTALL_STEPS = [
   "把插件目录移入隔离区",
   "同步依赖锁（npm）",
   "校验卸载结果",
+  "提交事务并重启服务",
+] as const;
+
+export const REPAIR_STEPS = [
+  "停止 DSH 服务",
+  "创建回滚点并登记事务日志",
+  "补登记双名单（依赖清单 + 生效名单）",
+  "校验修复结果",
   "提交事务并重启服务",
 ] as const;
 
@@ -510,6 +519,85 @@ async function uninstallPreflight(params: PluginUninstallParams): Promise<Findin
   return out;
 }
 
+// ── repair（一键补登记双名单，AC-P2 拦截契约的执行方） ─────────────────
+
+interface PluginRepairParams {
+  /** 指定要修复的插件名；缺省 = 修复全部可修目标。 */
+  name?: string;
+}
+
+async function repairPreflight(params: PluginRepairParams): Promise<Finding[]> {
+  const name = typeof params.name === "string" ? params.name.trim() : "";
+  const out: Finding[] = [];
+
+  const profileDir = dshProfileDir();
+  const manifestPath = profileManifestPath(profileDir);
+  const pkg = readJson<ProfilePkg>(manifestPath);
+  if (!pkg) {
+    out.push(
+      finding("plugin.no-profile", "error", "找不到插件配置（profile 的 package.json）", {
+        cause: `以下位置没有可解析的 package.json：${manifestPath}`,
+        impact: "双名单没地方补登记",
+        action: "先确认 DSH 已安装并至少启动过一次",
+        evidence: [manifestPath],
+      }),
+    );
+    return out;
+  }
+  if (pathExists(p(txnDir(), "active.json"))) {
+    out.push(
+      finding("plugin.txn-pending", "error", "上一个插件事务尚未收尾", {
+        cause: "事务日志还在 —— 上次安装/卸载没走完（可能中途被关闭）",
+        impact: "此时再动手，两个事务的现场会互相踩踏",
+        action: "重启管家（启动时自动恢复上次事务），收尾后再试",
+      }),
+    );
+    return out;
+  }
+  if (name && !validPkgName(name)) {
+    out.push(
+      finding("plugin.bad-name", "error", `插件名不合法：${name}`, {
+        cause: "插件名要像包名（如 dsh-market 或 @scope/name），不能带路径、空格或 ..",
+        impact: "按这个名去找包可能写到奇怪的位置",
+        action: "检查名字拼写，填包名而不是路径",
+      }),
+    );
+    return out;
+  }
+
+  // AC-P2 全局拦截：repair-blocked / not-a-layer / bundled-but-undeclared 任一为
+  // error 级就拒绝执行（rules_test 钉死的两条契约就是测这个入口的行为）。
+  const installRoot = resolveDshSourceRoot()?.path ?? null;
+  const facts = await collectPluginFacts({ profileDir, installRoot });
+  const blockers = repairBlockers(facts);
+  if (blockers.some((f) => f.severity === "error")) return [...out, ...blockers];
+
+  // 可修目标 = declaredButInactive ∧ canLayer（judgeLayer 守卫通过才允许补登记）
+  const repairable = facts.inactiveLayers.filter((l) => l.canLayer);
+  const targets = name ? repairable.filter((l) => l.name === name) : repairable;
+  if (targets.length === 0) {
+    let cause: string;
+    if (name && !facts.lists.dependencies.includes(name)) {
+      cause = `依赖清单里没有「${name}」—— 它没装，没有可补登记的对象`;
+    } else if (name && !facts.lists.declaredButInactive.includes(name)) {
+      cause = `「${name}」已在生效名单里 —— 已经生效，无需修复`;
+    } else if (name) {
+      cause = `「${name}」声明了但包目录不存在（多半安装中断过）—— 要先重装，不能只补登记`;
+    } else {
+      cause = "没有「装了但没生效且可作层」的插件 —— 双名单当前无需修复";
+    }
+    out.push(
+      finding("plugin.nothing-to-repair", "error", name ? `没有可修复的插件：${name}` : "没有可修复的插件", {
+        cause,
+        impact: "没有需要补登记的目标，执行无意义",
+        action: name ? "用 plugin diagnose 查这个插件的真实状态" : "双名单健康，无需此操作",
+        fixAction: "plugin.diagnose",
+      }),
+    );
+  }
+  return out;
+}
+
 // ── 报告 ────────────────────────────────────────────────────────────
 
 export interface PluginOpReport {
@@ -529,16 +617,29 @@ export interface PluginOpReport {
   elapsedMs: number;
 }
 
+export interface PluginRepairReport {
+  op: "repair";
+  /** 本次补登记进生效名单的插件名。 */
+  repaired: string[];
+  rollbackId: string;
+  lines: string[];
+  warnings: string[];
+  serviceWasRunning: boolean;
+  serviceRestarted: boolean;
+  elapsedMs: number;
+}
+
 // ── 公共流程段（收尾重启） ─────────────────────────────────────────
 
 /** 停过的服务拉回来（失败路径与成功路径共用；root 找不到时降级为 warning）。 */
 async function restartPhase(
   _ctx: ActionContext,
-  report: PluginOpReport,
+  report: { serviceWasRunning: boolean; serviceRestarted: boolean; op: "install" | "uninstall" | "repair" },
   line: (s: string) => void,
   restartPort: number,
   softFailWarnings: string[] | null,
 ): Promise<void> {
+  const doneText = report.op === "install" ? "插件已安装" : report.op === "uninstall" ? "插件已卸载" : "插件已修复";
   if (!report.serviceWasRunning) {
     line("重启 DSH 服务：无需重启");
     return;
@@ -547,7 +648,7 @@ async function restartPhase(
   if (!root) {
     const msg = "未找到 DSH 本体目录，无法自动重启服务 —— 请手动启动";
     if (softFailWarnings) softFailWarnings.push(msg);
-    else throw new Error(`${report.op === "install" ? "插件已安装" : "插件已卸载"}，但${msg}`);
+    else throw new Error(`${doneText}，但${msg}`);
     return;
   }
   const r = await startDshServer(root, restartPort);
@@ -558,7 +659,7 @@ async function restartPhase(
     softFailWarnings.push(`重启服务失败：${r.message}（可在面板手动启动）`);
   } else {
     throw new Error(
-      `${report.op === "install" ? "插件已安装" : "插件已卸载"}，但重启服务失败：${r.message}；可在面板上用「启动」按钮手动启动`,
+      `${doneText}，但重启服务失败：${r.message}；可在面板上用「启动」按钮手动启动`,
     );
   }
 }
@@ -852,6 +953,135 @@ async function runUninstall(ctx: ActionContext, params: PluginUninstallParams): 
   return report;
 }
 
+// ── repair ────────────────────────────────────────────────────────────
+
+async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promise<PluginRepairReport> {
+  const t0 = Date.now();
+  const name = (params.name ?? "").trim();
+
+  const profileDir = dshProfileDir();
+  const manifestPath = profileManifestPath(profileDir);
+  const installRoot = resolveDshSourceRoot()?.path ?? null;
+
+  const report: PluginRepairReport = {
+    op: "repair",
+    repaired: [],
+    rollbackId: "",
+    lines: [],
+    warnings: [],
+    serviceWasRunning: false,
+    serviceRestarted: false,
+    elapsedMs: 0,
+  };
+  const line = (s: string) => {
+    report.lines.push(s);
+    ctx.log(s);
+  };
+
+  // preflight 的同一道闸（run 是唯一入口，防绕过）
+  if (pathExists(activeJournalPath())) {
+    throw new Error("检测到上次未收尾的插件事务；重启管家会自动恢复收尾，之后再试");
+  }
+  if (!isFile(manifestPath)) throw new Error(`找不到插件配置：${manifestPath}`);
+
+  // ── s1 停服 ──
+  ctx.step("s1", REPAIR_STEPS[0]);
+  ctx.progress(0.05);
+  let stop: StopOutcome = { wasRunning: false, stopped: 0, port: null };
+  if (skipService()) {
+    line("停止 DSH 服务：隔离模式跳过（BUTLER_SKIP_SERVICE_OPS=1）");
+  } else {
+    stop = await stopDshServer();
+    report.serviceWasRunning = stop.wasRunning;
+    line(stop.wasRunning ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程` : "停止 DSH 服务：服务未运行，跳过");
+  }
+  const restartPort = stop.port ?? (await findDshPort(DSH_PORT_CANDIDATES)) ?? DSH_PORT_DEFAULT;
+  ctx.throwIfCancelled();
+
+  let journal: PluginTxnJournal | null = null;
+  try {
+    // ── s2 写前回滚点 + 事务日志（repair 只改 manifest，不动目录） ──
+    ctx.step("s2", REPAIR_STEPS[1]);
+    ctx.progress(0.1);
+    const rollbackId = await createManifestPoint(manifestPath, profileDir, `plugin.repair ${name || "(全部)"}`);
+    journal = {
+      kind: "plugin-txn",
+      version: 1,
+      op: "repair",
+      name: name || "(全部)",
+      profileDir,
+      rollbackPointId: rollbackId,
+      quarantinedDir: "",
+      originalDir: "",
+      startedAt: new Date().toISOString(),
+    };
+    beginTxn(journal);
+    report.rollbackId = rollbackId;
+    line(`回滚点 ${rollbackId} · 事务日志已落盘（中断也能恢复到操作前状态）`);
+    ctx.throwIfCancelled();
+
+    // ── s3 补登记（重新采集 + 再过一次 AC-P2 拦截，与 preflight 同口径） ──
+    ctx.step("s3", REPAIR_STEPS[2]);
+    ctx.progress(0.4);
+    const facts = await collectPluginFacts({ profileDir, installRoot });
+    const blockers = repairBlockers(facts).filter((f) => f.severity === "error");
+    if (blockers.length > 0) {
+      throw new Error(`修复被安全守卫拦下：${blockers.map((f) => f.title).join("；")}`);
+    }
+    const targets = facts.inactiveLayers.filter((l) => l.canLayer && (!name || l.name === name));
+    if (targets.length === 0) {
+      throw new Error(name ? `没有可修复的插件：${name}` : "没有可修复的插件（双名单当前无需修复）");
+    }
+    for (const t of targets) {
+      ctx.throwIfCancelled();
+      const ver = facts.depEntries[t.name] ?? "*";
+      const reg = registerIntoProfile(manifestPath, t.name, ver, profileDir, installRoot);
+      if (reg.activated) {
+        report.repaired.push(t.name);
+        line(`补登记 ${t.name}：依赖清单 ✓ · 生效名单 ✓（下次启动即生效）`);
+      } else {
+        // 理论不可达（targets 已按 canLayer 过滤）；真到了这一步说明守卫口径漂移，如实报
+        report.warnings.push(`${t.name} 补登记后仍未进生效名单（${reg.layerReason ?? "不可作层"}）`);
+      }
+    }
+
+    // ── s4 校验 ──
+    ctx.step("s4", REPAIR_STEPS[3]);
+    ctx.progress(0.75);
+    const lists = readPluginLists(manifestPath, { installRoot: installRoot ?? "", profileDir });
+    if (!lists) throw new Error(`登记后读不回清单：${manifestPath}`);
+    for (const rn of report.repaired) {
+      if (!lists.bundles.includes(rn)) throw new Error(`校验失败：生效名单里没有 ${rn}`);
+    }
+    line(`校验修复结果：${report.repaired.length} 个插件已进生效名单`);
+
+    // ── s5 提交 ──
+    ctx.step("s5", REPAIR_STEPS[4]);
+    ctx.progress(0.9);
+    commitTxn();
+    journal = null;
+    line("提交事务：日志已收尾");
+  } catch (e) {
+    const orig = (e as Error).message;
+    const warnings: string[] = [];
+    if (journal) {
+      const out = await rollbackActiveTxn(journal);
+      warnings.push(...out.warnings);
+    }
+    if (report.serviceWasRunning) {
+      await restartPhase(ctx, report, line, restartPort, warnings);
+    }
+    report.warnings.push(...warnings);
+    const extra = warnings.length > 0 ? `；${warnings.join("；")}` : "";
+    throw new Error(`${orig}${extra}（已回滚到操作前状态）`);
+  }
+
+  await restartPhase(ctx, report, line, restartPort, null);
+  ctx.progress(1);
+  report.elapsedMs = Date.now() - t0;
+  return report;
+}
+
 // ── plugin.scan（AC-P3 的比对基准，只读） ────────────────────────────
 
 interface PluginScanParams {
@@ -934,5 +1164,18 @@ export const pluginUninstallAction: ActionDef<PluginUninstallParams, PluginOpRep
   steps: [...UNINSTALL_STEPS],
   preflight: uninstallPreflight,
   run: (ctx, params) => runUninstall(ctx, params),
+  timeoutMs: TIMEOUTS.install,
+};
+
+export const pluginRepairAction: ActionDef<PluginRepairParams, PluginRepairReport> = {
+  name: "plugin.repair",
+  domain: "plugin",
+  title: "修复插件双名单（一键补登记）",
+  description:
+    "停服 → 写前回滚点 + 事务日志 → 把「装了但没生效且可作层」的插件补登记进生效名单 → 校验 → 提交。动手前必过 AC-P2 安全守卫（不可作层 / 名单有洞一律拦下）。",
+  readonly: false,
+  steps: [...REPAIR_STEPS],
+  preflight: repairPreflight,
+  run: (ctx, params) => runRepair(ctx, params),
   timeoutMs: TIMEOUTS.install,
 };
