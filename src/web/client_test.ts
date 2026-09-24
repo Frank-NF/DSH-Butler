@@ -8,7 +8,7 @@
  *
  * 所以：每次改 client.ts，这条测试就是「页面到底能不能跑」的最底线。
  */
-import { assertEquals } from "jsr:@std/assert@1";
+import { assertEquals } from "@std/assert";
 
 import { CLIENT_JS } from "./client.ts";
 

@@ -18,6 +18,7 @@ import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
+import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
 import { humanSize } from "../host/mod.ts";
 
 export const CLI_HELP = `
@@ -34,6 +35,7 @@ DSH Butler · 命令行
   core status                         本体状态（含「是否需要完成更新」判定）
   runtime status                      服务状态（进程 / 端口 / 健康 / 僵尸锁）
   runtime logs [-n 200]               日志收集与错误定位
+  runtime diagnose                    运行时诊断（进程/服务/插件树分层 + 13 条规则）
   plugin diagnose                     插件诊断（双名单 / 作层资格 / 重复注册 / 僵尸锁）
 
 其它：
@@ -89,10 +91,11 @@ export async function runCli(argv: string[]): Promise<number> {
       return usage(`core 的可用子命令：status`);
     case "runtime":
       if (sub === "status") return await runOne("runtime.status", {}, json);
+      if (sub === "diagnose") return await runOne("runtime.diagnose", {}, json);
       if (sub === "logs") {
         return await runOne("runtime.logs", { lines: numberArg(args, "-n") ?? 200 }, json);
       }
-      return usage(`runtime 的可用子命令：status / logs`);
+      return usage(`runtime 的可用子命令：status / diagnose / logs`);
     case "plugin":
       if (sub === "diagnose") return await runOne("plugin.diagnose", {}, json);
       return usage(`plugin 的可用子命令：diagnose`);
@@ -291,6 +294,36 @@ function printHuman(action: string, result: unknown): void {
       console.log(`profile：${r.profileDir}`);
       console.log(
         `插件：依赖 ${r.summary.deps} · 名单 ${r.summary.bundles} · 生效 ${r.summary.active} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
+      );
+      printFindings(r.findings);
+      return;
+    }
+    case "runtime.diagnose": {
+      const r = result as {
+        facts: {
+          procCount: number;
+          port: number | null;
+          http: { reachable: boolean; status: number | null } | null;
+          startupDump: { failed: boolean; ageMs: number | null; failedPlugins: string[] };
+        };
+        findings: Array<{ severity: string; title: string; action?: string }>;
+        health: string;
+        rulesRun: number;
+      };
+      // 分层与规则同口径：只有 15 分钟内的失败转储才算「现场」，
+      // 陈旧转储由 boot-failed / 日志规则以 info 报历史，不进分层结论。
+      const dumpFresh = r.facts.startupDump.failed &&
+        r.facts.startupDump.ageMs !== null &&
+        r.facts.startupDump.ageMs <= DUMP_FRESH_MS;
+      const layer = r.facts.procCount === 0
+        ? "未运行"
+        : !r.facts.http?.reachable
+        ? "进程活着但服务没起来"
+        : dumpFresh
+        ? "服务通了但插件树没加载完"
+        : "正常（进程 / 服务 / 插件树三层全通）";
+      console.log(
+        `分层结论：${layer} · 进程 ${r.facts.procCount} · 端口 ${r.facts.port ?? "?"} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
       );
       printFindings(r.findings);
       return;

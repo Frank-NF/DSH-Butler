@@ -18,7 +18,7 @@ export * as priv from "./privileges.ts";
 export * as facts from "./windows-facts.ts";
 
 import { powershell } from "./shell.ts";
-import { hostFacts, onWindows } from "./windows-facts.ts";
+import { hostFacts } from "./windows-facts.ts";
 import { isWindows, volumeOf } from "../util/paths.ts";
 
 export interface SystemInfo {

@@ -20,7 +20,6 @@ import {
   dshRoot,
   dshSessionsDir,
   legacyConfigPath,
-  p,
   resolveDshSourceRoot,
   rememberDshRoot,
   sameVolume,

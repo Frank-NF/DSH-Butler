@@ -7,7 +7,7 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, healthOf, type Finding } from "../../util/result.ts";
+import { healthOf, type Finding } from "../../util/result.ts";
 import { collectEnv, type EnvReport } from "../env/probe.ts";
 import { collectCoreStatus, type CoreStatus } from "../core/status.ts";
 import { collectRuntimeStatus, type RuntimeStatus } from "../runtime/status.ts";

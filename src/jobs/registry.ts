@@ -10,6 +10,7 @@ import { envProbeAction } from "../domains/env/probe.ts";
 import { coreStatusAction } from "../domains/core/status.ts";
 import { runtimeStatusAction } from "../domains/runtime/status.ts";
 import { runtimeLogsAction } from "../domains/runtime/logs.ts";
+import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
 import { log } from "../util/log.ts";
@@ -20,6 +21,7 @@ export function registerAllActions(): void {
     coreStatusAction,
     runtimeStatusAction,
     runtimeLogsAction,
+    runtimeDiagnoseAction,
     diagHealthAction,
     pluginDiagnoseAction,
   ];
