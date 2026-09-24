@@ -19,6 +19,8 @@
 
 import { hasDesktopRuntime } from "../util/runtime-kind.ts";
 import { log } from "../util/log.ts";
+import { dirname, p } from "../util/paths.ts";
+import { createWin32Tray } from "./win32-tray.ts";
 
 // ── 最小接口（只声明我们真正用到的部分） ──────────────────────────────
 
@@ -438,6 +440,8 @@ export function trayIconBytes(): Uint8Array {
 export interface TrayHandle {
   trayId: number;
   ok: boolean;
+  /** 托盘实现来源：win32 = 我们自己的 FFI 实现；deno = 运行时自带。 */
+  source?: "win32" | "deno";
   setTooltip(t: string | null): void;
   destroy(): void;
 }
@@ -456,7 +460,57 @@ export interface CreateTrayOptions {
  * 失败一律降级：拿不到托盘不算错误（有些精简 Linux 桌面没有状态区），
  * 返回 ok=false，调用方据此决定"关窗即退出"还是"关窗留托盘"。
  */
+/** 托盘图标文件候选（编译产物目录 / 源码目录），找不到就用系统默认图标。 */
+function resolveTrayIconPath(): string | undefined {
+  const candidates: string[] = [];
+  try {
+    candidates.push(p(dirname(Deno.execPath()), "AppIcon.ico"));
+  } catch { /* 取不到 exe 路径就算了 */ }
+  candidates.push(p(Deno.cwd(), "icons", "icon.ico"));
+  for (const c of candidates) {
+    try {
+      if (Deno.statSync(c).isFile) return c;
+    } catch { /* 试下一个 */ }
+  }
+  return undefined;
+}
+
 export function createTray(o: CreateTrayOptions): TrayHandle {
+  // 【Windows 用自己的实现】实测：deno desktop 的 Deno.Tray 在这个平台上
+  // 只画图标、不派发任何点击/菜单事件（addEventListener 与 on* prop 都试过）。
+  // 用户看到的就是"托盘图标没有用"。所以这里优先走 Win32 FFI 自绘实现。
+  if (Deno.build.os === "windows") {
+    const win32 = createWin32Tray({
+      tooltip: o.tooltip,
+      menu: o.menu.map((m) =>
+        m === "separator" ? "separator" as const : { id: m.item.id, label: m.item.label }
+      ),
+      onSelect: (id) => o.onMenuClick(id),
+      onLeftClick: () => o.onClick?.(),
+      ...(resolveTrayIconPath() ? { iconPath: resolveTrayIconPath()! } : {}),
+    });
+    if (win32.ok) {
+      // 把图标位置打一次日志：用户报"找不到图标"时，有它才能确定图标落在哪
+      setTimeout(() => {
+        const b = win32.getBounds();
+        log.info(
+          "tray",
+          b
+            ? `托盘图标位置：${b.x},${b.y}（${b.width}×${b.height}）—— 若任务栏没看到，点任务栏的 ^ 在隐藏区里找`
+            : "取不到托盘图标位置（图标可能收在隐藏区）",
+        );
+      }, 1500);
+      return {
+        trayId: 1,
+        ok: true,
+        source: "win32",
+        setTooltip: (t) => win32.setTooltip(t ?? ""),
+        destroy: () => win32.destroy(),
+      };
+    }
+    log.warn("desktop", "Win32 托盘不可用，回退到 Deno.Tray（该平台可能不派发点击事件）");
+  }
+
   const Ctor = trayCtor();
   const dead: TrayHandle = { trayId: 0, ok: false, setTooltip: () => {}, destroy: () => {} };
   if (!Ctor) {
@@ -483,8 +537,14 @@ export function createTray(o: CreateTrayOptions): TrayHandle {
     } catch (e) {
       log.warn("desktop", `设置托盘菜单失败：${(e as Error).message}`);
     }
+    // 【两条路都试】官方文档写的是 addEventListener，但实测（2026-09-24）这个运行时
+    // 的 Windows 托盘后端对 addEventListener 完全没反应；原型上还有 on* 属性赋值这条路，
+    // 所以两种都挂上，谁先通就用谁 —— 事件日志会告诉我们到底是哪条。
+    tray.addEventListener("click", () => log.info("desktop", "托盘事件[listen]：左键单击"));
+    tray.addEventListener("dblclick", () => log.info("desktop", "托盘事件[listen]：左键双击"));
     tray.addEventListener("menuclick", (e) => {
       const id = e?.detail?.id;
+      log.info("desktop", `托盘事件：菜单项 ${String(id)}`);
       if (typeof id === "string") {
         try {
           o.onMenuClick(id);
@@ -493,6 +553,31 @@ export function createTray(o: CreateTrayOptions): TrayHandle {
         }
       }
     });
+    // on* 属性赋值（与上面的 addEventListener 并存，哪条通都行）
+    const trayProps = tray as unknown as Record<string, unknown>;
+    const safeCall = (fn: () => void) => {
+      try {
+        fn();
+      } catch { /* 忽略 */ }
+    };
+    if (typeof trayProps.onclick === "function") {
+      (trayProps.onclick as (cb: () => void) => void)(() => {
+        log.info("desktop", "托盘事件[prop]：左键单击");
+        if (o.onClick) safeCall(o.onClick);
+      });
+    }
+    if (typeof trayProps.ondblclick === "function") {
+      (trayProps.ondblclick as (cb: () => void) => void)(() =>
+        log.info("desktop", "托盘事件[prop]：左键双击")
+      );
+    }
+    if (typeof trayProps.onmenuclick === "function") {
+      (trayProps.onmenuclick as (cb: (e: { detail?: { id?: string } }) => void) => void)((e) => {
+        const id = e?.detail?.id;
+        log.info("desktop", `托盘事件[prop]：菜单项 ${String(id)}`);
+        if (typeof id === "string") safeCall(() => o.onMenuClick(id));
+      });
+    }
     if (o.onClick) {
       tray.addEventListener("click", () => {
         try {
@@ -501,6 +586,18 @@ export function createTray(o: CreateTrayOptions): TrayHandle {
       });
     }
     log.info("desktop", `托盘已就绪（trayId=${tray.trayId}，菜单 ${o.menu.length} 项）`);
+    // 诊断：把图标在屏幕上的位置打出来（拿不到就是 null，说明这个平台不报位置）。
+    // 有它才能自动化验证"点托盘到底有没有反应"。
+    for (const delay of [1000, 3000, 6000]) {
+      setTimeout(() => {
+        try {
+          const b = tray.getBounds();
+          log.info("desktop", `托盘图标位置（${delay}ms）：${b ? JSON.stringify(b) : "null"}`);
+        } catch (e) {
+          log.warn("desktop", `取托盘位置失败：${(e as Error).message}`);
+        }
+      }, delay);
+    }
     return {
       trayId: tray.trayId,
       ok: true,

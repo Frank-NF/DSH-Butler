@@ -463,8 +463,10 @@ function setupDesktopTray(
       if (cur && !cur.isClosed?.()) {
         hiddenToTray = false;
         showMainWindow();
+        log.info("main", "托盘左键：把窗口叫回前台");
         return;
       }
+      log.info("main", "托盘左键：窗口已被关掉过，重新建一扇");
       if (shellView === "dsh") goToDsh();
       else backToButler();
     },
