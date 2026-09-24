@@ -123,10 +123,12 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 14px; }
 .brand-mark {
   width: 26px; height: 26px; border-radius: 8px;
-  background: var(--brand-fill); color: #fff;
+  background: var(--brand-weak);
   display: grid; place-items: center;
-  font-size: 11px; font-weight: 600; letter-spacing: .02em;
+  flex: none;
 }
+/* 深色下浅橙底会发灰，换更淡的暖底，让橙红鲸鱼保持对比 */
+:root[data-theme="dark"] .brand-mark { background: rgba(244, 97, 35, .14); }
 .brand-sub { color: var(--text-3); font-size: 12.5px; font-weight: 400; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 

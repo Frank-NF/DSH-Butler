@@ -17,9 +17,10 @@
  *   - 事件统一走 addEventListener（窗口与托盘都是 EventTarget）。
  */
 
+import { isDir } from "./fs.ts";
 import { hasDesktopRuntime } from "../util/runtime-kind.ts";
 import { log } from "../util/log.ts";
-import { dirname, p } from "../util/paths.ts";
+import { butlerRoot, dirname, p } from "../util/paths.ts";
 import { createWin32Tray } from "./win32-tray.ts";
 
 // ── 最小接口（只声明我们真正用到的部分） ──────────────────────────────
@@ -428,13 +429,46 @@ function safe<T>(fn: () => T, fallback: T): T {
  * 运行时拼路径读图标是"开发能跑、打包就白"的经典坑。
  */
 const TRAY_ICON_PNG_BASE64 =
-  "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";
+  "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAD70lEQVR4nO1WTWhcVRT+zrn3TebND01NW7GkxpJpxehGY39czUIq2P1k6U8SQ124yFIUpqELV4GCuimmBbUIxo2K6EIxcafUhYIRQ6YtFgtB2qbJ/L2fe4/cN5NSzcyQCt1oPnjwuPPOPd8953zfHWAHO9jB/x30b4LkH3GULN1HCEBSgpJiUff8vVzUUgZvaz/Z5uGlw4YyPeivvfrwbnHP9KDfjdB21qlX8o9LUGPzMO47mTp0Mrb2ZGxxzIg8SKAksZDUWWiVCMtK0Q+e5W9pbvnnO+RnIK5FLjG19oKMP5qvUpjJz11Z7UrABdMM7O2XHzmW0d5ZTTju6FoLGCuw7e9ceTQDxAQQoRFaqxnfWcjZ9HuVT903l6ZGvafP/RjdenGoP+fpaWKeDGP7h3+gcrwjgU22jYnCCc34TBOlN0Jr+lgksuCkfdSunrQGkAhWXGOJdNZzjIAolo+8Jk7RxZX16njhuT7Gu1pTwUXUAvtrdqjyBHWd8KnDA43YLHlMexuxxB6Lvh4qPNDHSNkIvWZIAAMRyWW1rjfMlwR87SmehQgasa3m0zrXCMz5zIXKxNaJLReV61kjNi/4fWpvPbJRxmO9fKuJsasP4RM+DBUHEOo+7AQoV4lq3ZgU0/O+5tnIWJcfeV/ngsjeJsZb7rBbZbW02NK04FkYEWJiF7w/7+PItSvI/s5QB3yEsXVl7wlHpBmLJRI3iM0YUlHGLhmxs9nzl1eSOevUAleB+vjw977io7XYGgGUJiCtCWKBmtmuiFvt0ARSTJeZMaPPrXyYrBehaRHx1jq2PU0EwabFuWSOxXooqMb3kFxgU0zKCNhaFBTog+iVwqXaSwePuOSuAlsIzI9tGo80gDtqS+CGo622hIQj182DRSTOesSxSEWAZiQi1cgaTTSqNX8TjBeedDLfQqA0UkwOqIAvoIkhEktbaptwM+G8QDMlz98PnRTL5DJaN4wsplimch6nlZOtiGyEJvCY85HYd5y1d5ZhGYSbBa9elc8zvjoRBAahgWUSG1vBL9duJM3Jpj0M5HwZyPmtOBGVcR6QkJT315t4bc/FlfX6xPDrmumMp0iZWKA8Rr1pVjOkD3U2ovYgSmkkFe8K3hBg0mPenzTHCn67fhPVZgRjW0roz/RhaM8uCKs6ExZI5G1vrvLV3Y5amxweTYFOxYKnUgproZEz/lxlobsVt0m4d2eh/Sn1TCB8VKwctMC+jXqYrgWhXWsEN9ZrAXLpVOaxwd1v5i5c/anXPXBPkC63Ws+YMrjjTXjXevLevmVpu0RQAmOkSAsLi/hzH6Q0DzkN4PFSa4/SCASnIUT3+c/JDnbwn8Nft5fusQvscO8AAAAASUVORK5CYII=";
 
 export function trayIconBytes(): Uint8Array {
   const bin = atob(TRAY_ICON_PNG_BASE64);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
+}
+
+/**
+ * 托盘 .ico（16/24/32/48 多尺寸，透明底）。
+ *
+ * 为什么还要 .ico：Windows 的 LoadImageW 不认 PNG，只认 ICO/BMP。
+ * 同样内嵌，启动时原样落到管家数据目录再交给系统加载 —— 这样开发态与编译态都不依赖
+ * 源码目录里有没有 icons 文件夹。
+ */
+const TRAY_ICON_ICO_BASE64 =
+  "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";
+
+/** 把内嵌的 .ico 落到磁盘并返回路径（失败返回 null，调用方会退回系统默认图标）。 */
+export function ensureTrayIconFile(): string | null {
+  try {
+    const dir = butlerRoot();
+    if (!isDir(dir)) Deno.mkdirSync(dir, { recursive: true });
+    const file = p(dir, "tray.ico");
+    const bin = atob(TRAY_ICON_ICO_BASE64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    // 内容不一致就重写（换了图标能自动跟上），一致就不动盘
+    let same = false;
+    try {
+      const old = Deno.readFileSync(file);
+      same = old.length === bytes.length && old.every((b, i) => b === bytes[i]);
+    } catch { /* 没有就写 */ }
+    if (!same) Deno.writeFileSync(file, bytes);
+    return file;
+  } catch (e) {
+    log.warn("desktop", "落地托盘图标失败：" + (e as Error).message);
+    return null;
+  }
 }
 
 export interface TrayHandle {
@@ -463,10 +497,14 @@ export interface CreateTrayOptions {
 /** 托盘图标文件候选（编译产物目录 / 源码目录），找不到就用系统默认图标。 */
 function resolveTrayIconPath(): string | undefined {
   const candidates: string[] = [];
+  // 首选：内嵌的托盘专用图标（透明底、无方砖，16px 下最清楚）
+  const embedded = ensureTrayIconFile();
+  if (embedded) candidates.push(embedded);
+  // 备选：产物目录里 deno desktop 生成的应用图标（方砖版，缩到 16px 会糊一点）
   try {
     candidates.push(p(dirname(Deno.execPath()), "AppIcon.ico"));
   } catch { /* 取不到 exe 路径就算了 */ }
-  candidates.push(p(Deno.cwd(), "icons", "icon.ico"));
+  candidates.push(p(Deno.cwd(), "icons", "tray.ico"));
   for (const c of candidates) {
     try {
       if (Deno.statSync(c).isFile) return c;

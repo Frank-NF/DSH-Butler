@@ -32,7 +32,7 @@ export const INDEX_HTML = `<!doctype html>
 <div class="app">
   <header class="topbar">
     <div class="brand">
-      <span class="brand-mark">DSH</span>
+      <span class="brand-mark"><svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.6 18.8c0-4.7 4-7.9 9.1-7.9 4.3 0 7.9 1.7 9.7 4.4l4.7-3.2c.4-.3.9 0 .9.5v3.1c0 .3-.1.6-.4.8l-1.9 1.5 1.9 1.5c.3.2.4.5.4.8v3.1c0 .5-.5.8-.9.5l-4.7-3.2c-1.8 2.7-5.4 4.4-9.7 4.4-5.1 0-9.1-3.2-9.1-7.9z" fill="#F46123"/><circle cx="10.3" cy="16.6" r="1.7" fill="#201D1A"/><circle cx="10.9" cy="15.9" r=".6" fill="#FFF0E8"/><circle cx="15.4" cy="6.2" r="2" fill="#F46123" opacity=".3"/><circle cx="19.4" cy="4" r="1.4" fill="#F46123" opacity=".3"/></svg></span>
       <span>DSH Butler</span>
       <span class="brand-sub" id="app-version"></span>
     </div>

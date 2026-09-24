@@ -51,7 +51,8 @@ export const BUTLER_BAR_JS = `(function () {
   var host = document.createElement('div');
   host.id = 'dsh-butler-dock';
   host.setAttribute('data-state', 'expanded');
-  var ICO_HOME = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>';
+  // 管家标志：橙红小鲸鱼（与图标同源，用 currentColor 跟着按钮配色走）
+  var ICO_HOME = '<svg width="15" height="15" viewBox="0 0 32 32" aria-hidden="true"><path d="M2.6 18.8c0-4.7 4-7.9 9.1-7.9 4.3 0 7.9 1.7 9.7 4.4l4.7-3.2c.4-.3.9 0 .9.5v3.1c0 .3-.1.6-.4.8l-1.9 1.5 1.9 1.5c.3.2.4.5.4.8v3.1c0 .5-.5.8-.9.5l-4.7-3.2c-1.8 2.7-5.4 4.4-9.7 4.4-5.1 0-9.1-3.2-9.1-7.9z" fill="currentColor"/></svg>';
   var ICO_DOWN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
   host.innerHTML = [
     '<button class="dbb-mini dbb-hide" id="dbb-mini" title="管家工具箱">',
