@@ -14,7 +14,7 @@ import { STYLE_CSS } from "../web/styles.ts";
 import { CLIENT_JS } from "../web/client.ts";
 import { APP_NAME, APP_VERSION } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
-import { desktopAvailable, navigateMain } from "../host/desktop.ts";
+import { desktopAvailable, evalJs, getMainWindow, navigateMain } from "../host/desktop.ts";
 import { log } from "../util/log.ts";
 
 export interface ServerHandle {
@@ -320,6 +320,29 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     if (req.method === "GET" && path === "/api/shell/state") {
       const state = await collectShellState().catch(() => null);
       return json({ ok: true, desktop: desktopAvailable(), state });
+    }
+    // 诊断用：看看窗口里到底发生了什么（悬浮条在不在、页面到哪一步了）。
+    // 排查"注入没生效"这类问题时，这是唯一能看到页面侧真实状态的通道。
+    if (req.method === "GET" && path === "/api/shell/probe") {
+      const win = getMainWindow();
+      if (!win?.executeJs) return json({ ok: false, error: "当前窗口不支持 executeJs" }, 400);
+      const probes: Record<string, string> = {
+        readyState: "document.readyState",
+        hasBody: "!!document.body",
+        hasBar: "!!document.getElementById('dsh-butler-dock')",
+        hasBinding: "typeof bindings !== 'undefined' && typeof bindings.butlerCmd === 'function'",
+        title: "document.title",
+        href: "location.href",
+      };
+      const out: Record<string, unknown> = {};
+      for (const [k, code] of Object.entries(probes)) {
+        try {
+          out[k] = await evalJs(win, code);
+        } catch (e) {
+          out[k] = `抛出：${(e as Error).message}`;
+        }
+      }
+      return json({ ok: true, probe: out });
     }
     if (req.method === "POST" && path === "/api/dsh/enter") {
       if (!desktopAvailable()) {

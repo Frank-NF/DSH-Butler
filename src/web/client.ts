@@ -159,6 +159,7 @@ export const CLIENT_JS = `(function () {
     'core.verify': '本体校验', 'core.update': '更新 DSH 本体', 'core.finishUpdate': '完成更新',
     'core.rollback': '回滚本体', 'runtime.status': '服务状态', 'runtime.logs': '日志收集',
     'runtime.diagnose': '运行时诊断', 'runtime.repair': '修复僵尸锁',
+    'runtime.start': '启动 DSH 服务', 'runtime.stop': '停止 DSH 服务', 'runtime.restart': '重启 DSH 服务',
     'plugin.scan': '插件扫描', 'plugin.diagnose': '插件诊断', 'plugin.install': '安装插件',
     'plugin.uninstall': '卸载插件', 'plugin.repair': '修复插件', 'plugin.cleanResidue': '清理安装残留',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',
@@ -167,7 +168,8 @@ export const CLIENT_JS = `(function () {
   var ACT_DANGER = {
     'plugin.uninstall': true, 'plugin.cleanResidue': true, 'core.update': true,
     'core.finishUpdate': true, 'core.rollback': true, 'backup.apply': true,
-    'backup.delete': true, 'runtime.repair': true
+    'backup.delete': true, 'runtime.repair': true,
+    'runtime.stop': true, 'runtime.start': true, 'runtime.restart': true
   };
   var KIND_LABEL = {
     'core-build': '本体构建', 'plugin-set': '插件集', 'config': '配置', 'snapshot': '快照', 'env': '环境'
@@ -843,6 +845,8 @@ export const CLIENT_JS = `(function () {
     var tools = '<button class="btn sm" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
       + actBtn('activity', '运行时诊断', 'runtime.diagnose')
       + writeBtn('wrench', '修复僵尸锁', 'runtime.repair')
+      + writeBtn('play', '启动服务', 'runtime.start')
+      + writeBtn('external', '停止服务', 'runtime.stop', {}, 'sm danger')
       + writeBtn('refresh', '重启服务', 'runtime.restart');
     var html = pageHead('运行状态', '服务进程、HTTP 健康检查、僵尸锁与 profile 残留物。', tools);
     if (state.extra.runtimeDiag) html += diagCard('运行时诊断结论', state.extra.runtimeDiag);

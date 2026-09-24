@@ -119,6 +119,10 @@ export interface DesktopWindow {
   isClosed?(): boolean;
   setTitle?(t: string): void;
   addEventListener?(type: string, cb: (e: unknown) => void): void;
+  /** 在页面里执行一段脚本并拿回结果（JSON 可序列化）。 */
+  executeJs?(code: string): Promise<unknown>;
+  /** 暴露一个 Deno 侧函数给页面：页面里用 bindings.<name>(...) 调。 */
+  bind?(name: string, handler: (...args: unknown[]) => unknown): void;
 }
 
 let mainWindow: DesktopWindow | null = null;
@@ -143,7 +147,10 @@ export function mainWindowAvailable(): boolean {
  * 为什么所有切换都走这里：窗口只有一扇，谁都能 navigate 的话，
  * 迟早出现"部署完没换过去""托盘点了没反应"这类各写各的问题。
  */
-export function navigateMain(url: string, opts: { title?: string } = {}): boolean {
+export function navigateMain(
+  url: string,
+  opts: { title?: string; injectOverlay?: boolean } = {},
+): boolean {
   const win = getMainWindow();
   if (!win) {
     log.warn("desktop", `当前不是桌面态，无法在窗口里打开：${url}`);
@@ -160,11 +167,134 @@ export function navigateMain(url: string, opts: { title?: string } = {}): boolea
       win.show();
       win.focus?.();
     } catch { /* 某些平台不支持 */ }
+    // 页面换了，注入过的悬浮条也随之消失 —— 这里跟着重新注入一次。
+    // 默认注入；切回管家自己的界面时调用方会显式关掉（我们自己页面不需要它）。
+    if (opts.injectOverlay !== false) overlayInstaller?.();
     return true;
   } catch (e) {
     log.warn("desktop", `窗口导航失败：${(e as Error).message}`);
     return false;
   }
+}
+
+// ── 页面内悬浮条（把 Deno 侧的能力递到 DS H页面里） ──────────────────
+
+let overlayInstaller: (() => void) | null = null;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * 在窗口里求值，并把运行时那层信封拆掉。
+ *
+ * 【实测坑】deno desktop 的 executeJs 返回的不是裸值，而是 `{ ok, value }` 信封
+ * （2026-09-24 用 /api/shell/probe 抓到：`{"ok":true,"value":"complete"}`）。
+ * 直接拿它跟 true 比会永远不相等 —— 当初悬浮条注入超时就是这么来的。
+ * 这里统一拆封：出错就抛，成功就返回 value。
+ */
+export async function evalJs(win: DesktopWindow, code: string): Promise<unknown> {
+  if (!win.executeJs) throw new Error("当前窗口不支持 executeJs");
+  const raw = await win.executeJs(code);
+  if (raw && typeof raw === "object" && "ok" in (raw as Record<string, unknown>)) {
+    const env = raw as { ok?: unknown; value?: unknown; error?: unknown };
+    if (env.ok === false) {
+      throw new Error(String(env.error ?? "页面脚本执行失败"));
+    }
+    return env.value;
+  }
+  return raw;
+}
+
+export interface InstallOverlayOptions {
+  /** 要注入的脚本（幂等：脚本自己负责防重复注入）。 */
+  script: string;
+  /** 页面里用 bindings.<bindingName>(cmd, arg) 调过来的名字。 */
+  bindingName: string;
+  /** 收到页面调用时的处理函数。 */
+  handle: (cmd: unknown, arg: unknown) => Promise<unknown> | unknown;
+  /** 注入前探针用的 DOM id（已存在就不重复注入）。 */
+  probeId: string;
+  /**
+   * 只在满足条件的页面上注入（拿到的是当前 location.href）。
+   * 典型用法：管家自己的界面不需要悬浮条，只有 DSH 页面才需要。
+   */
+  shouldInject?: (href: string) => boolean;
+}
+
+/**
+ * 在主窗口页面里注入悬浮条，并每 15 秒/每次导航后保证它在。
+ *
+ * 为什么不用 addEventListener("load")：官方事件表里没有 load，而且 SPA 内部跳转
+ * 根本不会触发页面级 load。所以这里用"轮询 readyState + 探针 id"这种最笨也最稳的办法：
+ * 页面就绪了、而且还没注入过，就注入一次。
+ */
+export function installOverlay(opts: InstallOverlayOptions): boolean {
+  const win = getMainWindow();
+  if (!win?.bind || !win?.executeJs) {
+    log.warn("desktop", "当前窗口不支持 bind/executeJs，跳过悬浮条注入");
+    return false;
+  }
+  try {
+    win.bind(opts.bindingName, (cmd: unknown, arg: unknown) => {
+      // 页面那边的调用一律回 Promise；这里把同步异常也转成 {ok:false}
+      try {
+        return Promise.resolve(opts.handle(cmd, arg)).catch((e) => ({
+          ok: false,
+          error: (e as Error)?.message ?? String(e),
+        }));
+      } catch (e) {
+        return { ok: false, error: (e as Error)?.message ?? String(e) };
+      }
+    });
+  } catch (e) {
+    log.warn("desktop", `注册页面绑定失败（悬浮条不可用）：${(e as Error).message}`);
+    return false;
+  }
+
+  const inject = async () => {
+    let lastRaw = "";
+    for (let i = 0; i < 120; i++) {
+      const w = getMainWindow();
+      if (!w?.executeJs) return;
+      try {
+        // 判据取"文档不再是 loading 且 body 已存在"：
+        // 实测（2026-09-24）用 readyState === 'complete' 会一直等不到 —— 对 DSH 这种
+        // 长时间挂着长连接的 SPA，complete 可能迟迟不来，而我们只是要往 body 里塞个东西。
+        const raw = await evalJs(w, "[document.readyState, !!document.body]");
+        lastRaw = JSON.stringify(raw);
+        const okDoc = Array.isArray(raw) && raw[0] !== "loading" && raw[1] === true;
+        if (okDoc) {
+          if (opts.shouldInject) {
+            const href = String(await evalJs(w, "location.href"));
+            if (!opts.shouldInject(href)) return;
+          }
+          const existsRaw = await evalJs(
+            w,
+            `!!document.getElementById(${JSON.stringify(opts.probeId)})`,
+          );
+          // 不同运行时可能把布尔包一层（字符串 / 对象），两种形状都认
+          const exists = existsRaw === true || String(existsRaw) === "true";
+          if (!exists) {
+            await evalJs(w, opts.script);
+            log.info("desktop", `已注入页面悬浮条（${opts.probeId}）`);
+          }
+          return;
+        }
+      } catch (e) {
+        // 页面正在切换时 executeJs 会抛（目标已销毁），等下一轮即可
+        lastRaw = `抛出：${(e as Error).message}`;
+      }
+      await sleep(500);
+    }
+    log.warn("desktop", `悬浮条注入超时（页面一直没就绪）—— 最后一次探测结果：${lastRaw}`);
+  };
+
+  overlayInstaller = () => {
+    void inject();
+  };
+  overlayInstaller();
+  return true;
 }
 
 /** 让主窗口显示出来并抢焦点（托盘「回到管家」用）。 */

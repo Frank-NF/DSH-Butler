@@ -24,11 +24,14 @@ import {
   bindBackHotkey,
   createTray,
   type DesktopWindow,
+  installOverlay,
   navigateMain,
   setMainWindow,
   showMainWindow,
 } from "./host/desktop.ts";
 import { enterDsh } from "./domains/runtime/enter.ts";
+import { collectRuntimeStatus } from "./domains/runtime/status.ts";
+import { BUTLER_BAR_JS } from "./web/bar.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -132,6 +135,8 @@ async function main(): Promise<void> {
     // 判断而该值实际是 null，导致编译态被误判、额外弹出一次系统浏览器 —— 别回去。
     const mainWin = adoptDesktopWindow(appUrl);
     setupDesktopTray(mainWin, appUrl, shutdown);
+    // 悬浮条要在进 DSH 之前装好：进 DSH 之后页面就换了，注入由 navigateMain 触发
+    if (mainWin) setupButlerOverlay(appUrl);
     // 「打开就能用」：装了本体就直接把窗口换成 DSH；没装则留在管家界面（一键部署页）。
     // 异步跑 —— 先让管家界面秒开，再做探测与启动。
     if (mainWin) void autoEnterDsh();
@@ -194,6 +199,92 @@ function adoptDesktopWindow(url: string): DesktopWindow | null {
     log.warn("main", `接管桌面窗口失败（不影响使用，运行时会自行导航）：${(e as Error).message}`);
     return null;
   }
+}
+
+/**
+ * 创建任务并等它结束。
+ *
+ * 悬浮条里的启停/重启都走任务通道（而不是直接调领域函数）：这样它们和界面上点的
+ * 完全一样 —— 有步骤、有审计、能在「任务」页回看。桥接调用要等结果，所以这里轮询。
+ */
+async function runJobAndWait(
+  action: string,
+  params: Record<string, unknown> = {},
+  timeoutMs = 180_000,
+): Promise<{ ok: boolean; jobId?: string; result?: unknown; error?: string }> {
+  const created = await engine.create(action, params);
+  if (!created.ok || !created.jobId) {
+    return { ok: false, error: created.error ?? "无法创建任务" };
+  }
+  const jobId = created.jobId;
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const job = engine.get(jobId);
+    if (!job) return { ok: false, jobId, error: "任务记录丢失" };
+    if (job.status !== "running" && job.status !== "queued") {
+      return job.status === "succeeded"
+        ? { ok: true, jobId, result: job.result }
+        : { ok: false, jobId, error: job.error ?? `任务未成功（${job.status}）` };
+    }
+    if (Date.now() > deadline) {
+      return { ok: false, jobId, error: "等待超时（任务仍在后台跑，可在「任务」页查看）" };
+    }
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
+/**
+ * 在 DSH 页面里装那条「管家悬浮条」。
+ *
+ * 这是单窗口形态下最重要的一条回程路：DSH 界面会把管家界面顶掉，托盘图标又未必
+ * 一眼看得到。悬浮条里的每个按钮都走和界面一致的通道（见 runJobAndWait）。
+ */
+function setupButlerOverlay(butlerUrl: string): void {
+  const back = () => navigateMain(butlerUrl, { title: APP_NAME, injectOverlay: false });
+  const butlerOrigin = butlerUrl.split("?")[0]!;
+  installOverlay({
+    script: BUTLER_BAR_JS,
+    probeId: "dsh-butler-dock",
+    bindingName: "butlerCmd",
+    // 管家自己的界面不需要悬浮条（那上面本来就有这些按钮），只有 DSH 页面才注入
+    shouldInject: (href) => !href.startsWith(butlerOrigin),
+    handle: async (cmd) => {
+      const c = String(cmd ?? "");
+      if (c === "back") {
+        back();
+        return { ok: true };
+      }
+      if (c === "status") {
+        const st = await collectRuntimeStatus().catch(() => null);
+        return {
+          ok: true,
+          running: Boolean(st?.running),
+          healthy: Boolean(st?.health?.reachable),
+          port: st?.port ?? null,
+        };
+      }
+      if (c === "start") return await runJobAndWait("runtime.start");
+      if (c === "stop") {
+        const r = await runJobAndWait("runtime.stop", { confirm: true });
+        // 服务停了，DSH 页面就成了一张死页面 —— 顺手切回管家界面，别让用户对着白屏
+        if (r.ok) back();
+        return r;
+      }
+      if (c === "restart") {
+        const r = await runJobAndWait("runtime.restart");
+        if (!r.ok) return r;
+        // 重启会换一次访问令牌，必须重新取地址再导航，否则又会掉进 401
+        const entered = await enterDsh({ restartIfNeeded: false });
+        if (entered.ok && entered.url) {
+          navigateMain(entered.url);
+          return { ok: true, jobId: r.jobId };
+        }
+        back();
+        return { ok: true, jobId: r.jobId, note: "服务已重启，但没能自动回到 DSH 界面" };
+      }
+      return { ok: false, error: `未知命令：${c}` };
+    },
+  });
 }
 
 /**
