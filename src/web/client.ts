@@ -32,7 +32,9 @@ export const CLIENT_JS = `(function () {
     modalOpen: false,
     lastFocus: null,
     pendingPlan: null,
-    logFilter: ''
+    logFilter: '',
+    /** 插件市场：搜索词、分类、排序、状态筛选与页码（界面上切换时只改这里再重渲染）。 */
+    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false }
   };
 
   // ── 基础工具 ─────────────────────────────────────────────────────
@@ -116,6 +118,8 @@ export const CLIENT_JS = `(function () {
     check: SVG_OPEN + '<path d="M5 13l4 4L19 7"/></svg>',
     chevron: SVG_OPEN + '<path d="M9 6l6 6-6 6"/></svg>',
     deploy: SVG_OPEN + '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
+    store: SVG_OPEN + '<path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M3.2 10 5 5.2A1 1 0 0 1 5.9 4.5h12.2a1 1 0 0 1 .9.7L20.8 10"/><path d="M9.5 14h5"/></svg>',
+    search: SVG_OPEN + '<circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>',
     external: SVG_OPEN + '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>'
   };
   function icon(name) { return ICON[name] || ''; }
@@ -489,7 +493,12 @@ export const CLIENT_JS = `(function () {
   function startWrite(action, el) {
     if (action === 'backup.create') { openBackupForm(); return; }
     if (action === 'bootstrap.apply') { openBootstrapForm(); return; }
-    if (action === 'plugin.install') { openInstallForm(); return; }
+    // 带 data-name 的安装按钮（插件页的行内按钮、插件市场的每个条目）直接拿这个名字去出计划，
+    // 不再弹空表单让人重填一遍 —— 那既多一步，也容易填错。
+    if (action === 'plugin.install') {
+      var presetName = paramsFor(action, el).name;
+      if (!presetName) { openInstallForm(); return; }
+    }
     var params = paramsFor(action, el);
     var label = ACT_TITLE[action] || action;
     return api('/api/plan', { method: 'POST', body: { action: action, params: params } })
@@ -1034,6 +1043,117 @@ export const CLIENT_JS = `(function () {
 
   // ── 页面：任务 ───────────────────────────────────────────────────
 
+  // ── 插件市场 ─────────────────────────────────────────────────────
+  //
+  // 目录来自线上（/api/market/catalog，服务端带缓存），本机已装状态由服务端
+  // 用插件扫描的事实标好（installedVersion）。装/卸仍然走既有写流程
+  // （data-write="plugin.install" / "plugin.uninstall"），也就是"先摊计划再动手"。
+
+  function loadMarket() {
+    var m = state.market;
+    var qs = '/api/market/catalog?q=' + encodeURIComponent(m.q)
+      + '&cat=' + encodeURIComponent(m.cat)
+      + '&sort=' + encodeURIComponent(m.sort)
+      + '&state=' + encodeURIComponent(m.state)
+      + '&page=' + m.page + '&size=48'
+      + (m.force ? '&refresh=1' : '');
+    m.force = false;
+    return api(qs);
+  }
+
+  function marketChips(p) {
+    var m = state.market;
+    var html = '<button class="chip' + (m.cat ? '' : ' on') + '" data-market-cat="">全部<span class="chip-n">' + p.total + '</span></button>';
+    for (var i = 0; i < p.categories.length; i++) {
+      var c = p.categories[i];
+      html += '<button class="chip' + (m.cat === c.key ? ' on' : '') + '" data-market-cat="' + esc(c.key) + '">'
+        + esc(c.label) + '<span class="chip-n">' + c.count + '</span></button>';
+    }
+    return '<div class="chips">' + html + '</div>';
+  }
+
+  function marketRow(it) {
+    var zh = it.description.zh || it.description.en || '';
+    var marks = it.installed
+      ? badge('ok', '已装 ' + (it.installedVersion || ''), '本机 profile 依赖清单里的版本')
+      : badge('plain', '未安装');
+    var meta = [];
+    if (it.stars) meta.push('★ ' + it.stars);
+    if (it.downloads) meta.push('↓ ' + it.downloads);
+    if (it.added) meta.push(it.added);
+    var actions = '';
+    if (it.installed) {
+      actions += writeBtn('trash', '卸载', 'plugin.uninstall', { name: it.npm }, 'sm danger');
+    } else {
+      actions += writeBtn('plus', '安装', 'plugin.install', { name: it.npm });
+    }
+    var link = it.page || it.url;
+    var linkBtn = link
+      ? '<a class="btn sm" href="' + esc(link) + '" target="_blank" rel="noreferrer noopener">' + icon('external') + '<span>主页</span></a>'
+      : '';
+    return '<div class="row"><div class="row-main">'
+      + '<div class="row-name">' + esc(it.name)
+      + '<span class="mkt-owner">' + esc(it.owner ? '@' + it.owner : '') + '</span></div>'
+      + '<div class="row-meta">' + marks + (meta.length ? badge('plain', meta.join(' · ')) : '') + '</div>'
+      + '<div class="mkt-desc">' + esc(zh) + '</div>'
+      + (it.install ? '<div class="mkt-cmd" title="上游给的安装命令">' + esc(it.install) + '</div>' : '')
+      + '</div><div class="row-actions">' + actions + linkBtn + '</div></div>';
+  }
+
+  function renderMarket(res) {
+    var m = state.market;
+    var head = pageHead('插件市场', '线上目录挑插件，装与卸都先摊开计划、你确认了才动手。', '');
+    if (!res || (res.ok === false)) {
+      var why = (res && res.error) || '市场没有返回内容';
+      return head
+        + '<div class="card">' + emptyBox('没能连上市场', why, '<div class="muted">检查网络或稍后再试；目录一旦拉到本地会缓存 6 小时。</div>') + '</div>';
+    }
+    var p = res.page;
+    var tools = '<button class="btn sm" id="btn-market-refresh">' + icon('refresh') + '<span>刷新目录</span></button>';
+    var html = pageHead('插件市场', '线上目录共 ' + res.total + ' 个插件，数据更新于 ' + esc(res.updated || '未知') + '。', tools);
+    html += '<div class="card"><div class="stats">'
+      + stat('目录插件', p.total)
+      + stat('当前筛出', p.matched)
+      + stat('本机已装', res.installedCount, '来自本机 profile 的依赖清单')
+      + stat('数据时间', res.cached ? '本地缓存' : '刚刚更新', res.cachedAt ? '缓存于 ' + res.cachedAt.slice(0, 16).replace('T', ' ') : '')
+      + '</div>';
+    if (res.note) html += '<div class="note-line">' + esc(res.note) + '</div>';
+    html += '</div>';
+
+    html += '<div class="card"><div class="market-bar">'
+      + '<input class="input mkt-q" id="market-q" type="search" placeholder="搜插件名、作者或描述关键词" value="' + esc(m.q) + '">'
+      + '<button class="btn sm" id="market-search">' + icon('search') + '<span>搜索</span></button>'
+      + '<select class="select mkt-sort" id="market-sort">'
+      + '<option value="downloads"' + (m.sort === 'downloads' ? ' selected' : '') + '>按下载量</option>'
+      + '<option value="stars"' + (m.sort === 'stars' ? ' selected' : '') + '>按 star</option>'
+      + '<option value="new"' + (m.sort === 'new' ? ' selected' : '') + '>最新上架</option>'
+      + '<option value="name"' + (m.sort === 'name' ? ' selected' : '') + '>按名字</option>'
+      + '</select>'
+      + '<span class="seg">'
+      + '<button class="btn sm' + (m.state === 'all' ? ' on' : '') + '" data-market-state="all">全部</button>'
+      + '<button class="btn sm' + (m.state === 'missing' ? ' on' : '') + '" data-market-state="missing">未安装</button>'
+      + '<button class="btn sm' + (m.state === 'installed' ? ' on' : '') + '" data-market-state="installed">已安装</button>'
+      + '</span>'
+      + '</div>' + marketChips(p) + '</div>';
+
+    html += '<div class="card"><div class="card-title">插件列表<span class="sub">'
+      + p.matched + ' 个结果 · 第 ' + p.page + '/' + p.pages + ' 页</span></div>';
+    if (!p.items.length) {
+      html += emptyBox('没有匹配的插件', '换个关键词，或点上面的「全部」清掉筛选。');
+    } else {
+      html += '<div class="rows">';
+      for (var i = 0; i < p.items.length; i++) html += marketRow(p.items[i]);
+      html += '</div>';
+      html += '<div class="mkt-pager">'
+        + '<button class="btn sm" data-market-page="' + (p.page - 1) + '"' + (p.page <= 1 ? ' disabled' : '') + '>上一页</button>'
+        + '<span class="muted">第 ' + p.page + ' / ' + p.pages + ' 页</span>'
+        + '<button class="btn sm" data-market-page="' + (p.page + 1) + '"' + (p.page >= p.pages ? ' disabled' : '') + '>下一页</button>'
+        + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function loadJobs() { return api('/api/jobs?limit=50'); }
 
   function renderJobs(list) {
@@ -1272,6 +1392,7 @@ export const CLIENT_JS = `(function () {
   var PAGES = [
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
     { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
+    { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场' },
     { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
     { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
     { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
@@ -1359,6 +1480,14 @@ export const CLIENT_JS = `(function () {
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
     if (hit('#btn-refresh') || hit('#btn-refresh-page')) { state.cache = {}; state.extra = {}; go(state.page, true); return; }
     if (hit('#btn-theme')) { toggleTheme(); return; }
+    if (hit('#btn-market-refresh')) { state.market.force = true; state.market.page = 1; go('market', true); return; }
+    if (hit('#market-search')) { state.market.q = ($('market-q') ? $('market-q').value : ''); state.market.page = 1; go('market', true); return; }
+    var mcat = hit('[data-market-cat]');
+    if (mcat) { state.market.cat = mcat.getAttribute('data-market-cat') || ''; state.market.page = 1; go('market', true); return; }
+    var mst = hit('[data-market-state]');
+    if (mst) { state.market.state = mst.getAttribute('data-market-state') || 'all'; state.market.page = 1; go('market', true); return; }
+    var mpg = hit('[data-market-page]');
+    if (mpg) { state.market.page = parseInt(mpg.getAttribute('data-market-page'), 10) || 1; go('market', true); return; }
     if (hit('#btn-cancel')) { cancelJob(); return; }
     if (hit('#btn-copy-report')) { copyReport(); return; }
     if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
@@ -1368,6 +1497,7 @@ export const CLIENT_JS = `(function () {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && state.modalOpen) { closeModal(); return; }
+    if (e.key === 'Enter' && e.target && e.target.id === 'market-q') { state.market.q = e.target.value; state.market.page = 1; go('market', true); return; }
     // 任务行是 role="button"：键盘上的 Enter / 空格也要能打开详情 —— 只用鼠标才算"能用"是不合格的。
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.closest) {
       var row = e.target.closest('.row[data-job]');
@@ -1376,6 +1506,10 @@ export const CLIENT_JS = `(function () {
         openJob(row.getAttribute('data-job'));
       }
     }
+  });
+
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.id === 'market-sort') { state.market.sort = e.target.value; state.market.page = 1; go('market', true); }
   });
 
   document.addEventListener('input', function (e) {

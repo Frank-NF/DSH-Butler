@@ -21,6 +21,14 @@ import {
   navigateMain,
   requestShowWindow,
 } from "../host/desktop.ts";
+import { collectPluginFacts } from "../domains/plugin/facts.ts";
+import {
+  loadCatalog,
+  type MarketSort,
+  type MarketStateFilter,
+  queryCatalog,
+} from "../net/market.ts";
+import { log } from "../util/log.ts";
 
 const nextTick = (fn: () => void) => {
   queueMicrotask(() => {
@@ -31,7 +39,6 @@ const nextTick = (fn: () => void) => {
     }
   });
 };
-import { log } from "../util/log.ts";
 
 export interface ServerHandle {
   port: number;
@@ -248,6 +255,55 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     // ── 只读快照 ──────────────────────────────────────────────
     if (req.method === "GET" && path === "/api/state/overview") {
       return json(await collectOverview(url.searchParams.get("force") === "1"));
+    }
+    // 插件市场目录：目录拉取与缓存、搜索/筛选/分页、"本机已装"标注全在服务端做，
+    // 界面只负责画 —— 目录有 2000+ 条，不能让浏览器端着。
+    if (req.method === "GET" && path === "/api/market/catalog") {
+      const sp = url.searchParams;
+      const loaded = await loadCatalog({ force: sp.get("refresh") === "1" });
+      if (!loaded.ok) return json({ ok: false, error: loaded.error }, 502);
+
+      let installed: Record<string, string> = {};
+      try {
+        // skipLocks：市场只需要"装了什么、什么版本"，锁判活要起 tasklist，没必要
+        const facts = await collectPluginFacts({ skipLocks: true });
+        installed = { ...facts.depEntries };
+      } catch (e) {
+        log.warn("api", `市场：读本机插件清单失败（不影响目录浏览）：${(e as Error).message}`);
+      }
+
+      const sortRaw = sp.get("sort") ?? "downloads";
+      const stateRaw = sp.get("state") ?? "all";
+      const sort: MarketSort = (["stars", "downloads", "new", "name"] as const).includes(
+          sortRaw as MarketSort,
+        )
+        ? (sortRaw as MarketSort)
+        : "downloads";
+      const state: MarketStateFilter = (["all", "installed", "missing"] as const).includes(
+          stateRaw as MarketStateFilter,
+        )
+        ? (stateRaw as MarketStateFilter)
+        : "all";
+      const page = queryCatalog(loaded.catalog, {
+        q: sp.get("q") ?? "",
+        category: sp.get("cat") ?? "",
+        sort,
+        state,
+        page: Number(sp.get("page") ?? "1") || 1,
+        pageSize: Number(sp.get("size") ?? "48") || 48,
+      });
+
+      return json({
+        ok: true,
+        cached: loaded.cached,
+        cachedAt: loaded.cachedAt ?? loaded.catalog.fetchedAt,
+        note: loaded.note ?? "",
+        updated: loaded.catalog.updated,
+        source: loaded.catalog.source,
+        total: loaded.catalog.plugins.length,
+        installedCount: Object.keys(installed).length,
+        page,
+      });
     }
     if (req.method === "GET" && path === "/api/actions") {
       return json(

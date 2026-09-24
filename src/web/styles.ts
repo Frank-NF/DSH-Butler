@@ -412,4 +412,27 @@ button { cursor: pointer; }
   .nav-item { justify-content: center; padding: 9px 0; }
   .brand-sub { display: none; }
 }
+
+/* ── 插件市场 ───────────────────────────────────────────────────── */
+
+.market-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mkt-q { flex: 1 1 260px; max-width: 440px; }
+.mkt-sort { width: auto; flex: none; }
+.seg { display: inline-flex; gap: 4px; }
+.btn.on { border-color: var(--brand-fill); background: var(--brand-weak); color: var(--brand-text); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); font-size: 12.5px; cursor: pointer;
+}
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+.chip.on { border-color: var(--brand-fill); background: var(--brand-weak); color: var(--brand-text); }
+.chip-n { color: var(--text-3); font-size: 11.5px; }
+.mkt-owner { margin-left: 8px; color: var(--text-3); font-size: 12px; font-weight: 400; }
+.mkt-desc { margin-top: 6px; color: var(--text-2); font-size: 13px; line-height: 1.6; }
+.mkt-cmd { margin-top: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
+.mkt-pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; padding-top: 12px; }
+.note-line { margin-top: 10px; color: var(--warn); font-size: 12.5px; }
 `.trim();
