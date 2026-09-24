@@ -16,11 +16,19 @@ import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
 import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
 import { log } from "./util/log.ts";
-import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS, STAGE_LABEL } from "./version.ts";
+import {
+  APP_NAME,
+  APP_TAGLINE,
+  APP_VERSION,
+  BUTLER_PORT_HEADLESS,
+  STAGE_LABEL,
+  WINDOW_TITLE,
+} from "./version.ts";
 import { isDir } from "./host/fs.ts";
 import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.ts";
 import { hideOwnConsole } from "./host/console-hide.ts";
 import {
+  applyWindowIcon,
   bindBackHotkey,
   createAnchorWindow,
   createTray,
@@ -194,7 +202,7 @@ function adoptDesktopWindow(url: string): DesktopWindow | null {
       o: Record<string, unknown>,
     ) => DesktopWindow;
     // 默认 800×600 对 1080p 屏太袖珍，按 1.8 倍放到 1440×1080（不超屏）。
-    const win = new BW({ title: APP_NAME, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
+    const win = new BW({ title: WINDOW_TITLE, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
     win.navigate(url);
     try {
       win.show();
@@ -248,7 +256,7 @@ async function runJobAndWait(
  * 一眼看得到。悬浮条里的每个按钮都走和界面一致的通道（见 runJobAndWait）。
  */
 function setupButlerOverlay(butlerUrl: string): void {
-  const back = () => navigateMain(butlerUrl, { title: APP_NAME, injectOverlay: false });
+  const back = () => navigateMain(butlerUrl, { title: WINDOW_TITLE, injectOverlay: false });
   const butlerOrigin = butlerUrl.split("?")[0]!;
   installOverlay({
     script: BUTLER_BAR_JS,
@@ -364,9 +372,12 @@ function ensureMainWindow(url: string, view: "butler" | "dsh"): boolean {
   shellView = view;
   hiddenToTray = false;
   if (cur && !cur.isClosed?.()) {
-    return navigateMain(url, view === "butler" ? { title: APP_NAME, injectOverlay: false } : {});
+    return navigateMain(
+      url,
+      view === "butler" ? { title: WINDOW_TITLE, injectOverlay: false } : { title: WINDOW_TITLE },
+    );
   }
-  const win = createWindow({ title: APP_NAME, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
+  const win = createWindow({ title: WINDOW_TITLE, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
   if (!win) {
     log.warn("main", "主窗口重建失败（运行时没给出窗口）");
     return false;
@@ -433,6 +444,9 @@ function attachMainWindowHandlers(win: DesktopWindow): void {
 
   // ④ 回程快捷键（DSH 界面里没有我们的按钮，托盘图标也可能被折叠进隐藏区）
   bindBackHotkey(backToButler);
+
+  // ⑤ 窗口图标：打包器不往 exe 里嵌图标，只能开窗后自己设一遍
+  applyWindowIcon();
 
   // ⑤ 悬浮条的绑定是"每扇窗口一份"的：窗口重建之后必须重新绑定并重新注入，
   //    否则新窗口进了 DSH 界面就没有右下角那条工具条了。

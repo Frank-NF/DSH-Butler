@@ -22,6 +22,7 @@ import { hasDesktopRuntime } from "../util/runtime-kind.ts";
 import { log } from "../util/log.ts";
 import { butlerRoot, dirname, p } from "../util/paths.ts";
 import { createWin32Tray } from "./win32-tray.ts";
+import { setWindowIcon } from "./win32-window.ts";
 
 // ── 最小接口（只声明我们真正用到的部分） ──────────────────────────────
 
@@ -154,6 +155,48 @@ export interface CreateWindowOptions {
  * 注意第一条构造会"接管"运行时启动时开的那扇隐式窗口，之后的每次构造才是新开一扇 ——
  * main.ts 首次接管用它，主窗口被用户关掉之后重建也用它。
  */
+/** 应用图标文件候选（产物目录的 AppIcon.ico / 源码目录的 icons/icon.ico）。 */
+export function resolveAppIconPath(): string | undefined {
+  const candidates: string[] = [];
+  try {
+    candidates.push(p(dirname(Deno.execPath()), "AppIcon.ico"));
+  } catch { /* 取不到 exe 路径就算了 */ }
+  candidates.push(p(Deno.cwd(), "icons", "icon.ico"));
+  for (const c of candidates) {
+    try {
+      if (Deno.statSync(c).isFile) return c;
+    } catch { /* 试下一个 */ }
+  }
+  return undefined;
+}
+
+/**
+ * 把应用图标设到窗口上（标题栏 + 任务栏）。
+ *
+ * 打包器只生成 AppIcon.ico、不往 exe 里嵌（见 host/win32-window.ts 的说明），
+ * 所以每次开窗/重建窗口后都要自己设一遍 —— 这个函数就是要挂在那两个时机上。
+ */
+export function applyWindowIcon(): boolean {
+  const path = resolveAppIconPath();
+  if (!path) return false;
+  // 开窗那一刻窗口常常还没"可见"，直接找会找不到 —— 先试一次，不成就在 5 秒内退避重试。
+  let done = setWindowIcon(path);
+  if (done) return true;
+  let tries = 0;
+  const timer = setInterval(() => {
+    tries++;
+    if (done || tries >= 10) {
+      clearInterval(timer);
+      return;
+    }
+    done = setWindowIcon(path);
+    if (done) clearInterval(timer);
+  }, 500);
+  // 别让定时器把进程吊着（它是 unref'able 的：真正的保活另有其人）
+  (timer as unknown as { unref?: () => void }).unref?.();
+  return false;
+}
+
 export function createWindow(opts: CreateWindowOptions = {}): DesktopWindow | null {
   const Ctor = browserWindowCtor();
   if (!Ctor) return null;

@@ -16,6 +16,13 @@
  * 项目对外的中文称呼是「DSH管家」，只用于沟通与文档，不进产物。
  */
 export const APP_NAME = "DSH Butler";
+
+/** 品牌标语（官网、窗口标题、界面品牌位统一用它）。 */
+export const APP_TAGLINE = "让 DSH 始终好用";
+
+/** 窗口标题：产品名（纯 ASCII，进产物）+ 标语（只在界面显示）。 */
+export const WINDOW_TITLE = `${APP_NAME} · ${APP_TAGLINE}`;
+
 /** 旧产品名，仅用于识别历史数据目录。 */
 export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";

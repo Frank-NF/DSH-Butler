@@ -129,6 +129,8 @@ button { cursor: pointer; }
 .brand-mark img { width: 26px; height: 26px; display: block; }
 /* 深色下浅橙底会发灰，换更淡的暖底，让橙红鲸鱼保持对比 */
 :root[data-theme="dark"] .brand-mark { background: rgba(240, 106, 61, .16); }
+.brand-tagline { color: var(--text-3); font-size: 12.5px; font-weight: 400; }
+.brand-tagline::before { content: "·"; margin: 0 6px; color: var(--border-strong); }
 .brand-sub { color: var(--text-3); font-size: 12.5px; font-weight: 400; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
