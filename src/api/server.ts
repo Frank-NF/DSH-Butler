@@ -244,6 +244,38 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       );
     }
 
+    // ── 计划（写操作的 plan 段：零副作用） ────────────────────
+    //
+    // 界面的写操作一律走 plan → confirm → apply 三段式（方案 §9.6）。
+    // 这里就是 plan：只跑动作自己的 preflight（只读检查）并把步骤表摊出来，
+    // 一行都不改。真正动手要等用户确认后再走下面的 /api/jobs。
+    if (req.method === "POST" && path === "/api/plan") {
+      let body: { action?: string; params?: Record<string, unknown> };
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const def = body.action ? engine.definition(body.action) : undefined;
+      if (!def) return json({ ok: false, error: `未知动作：${body.action ?? "(空)"}` }, 404);
+      let findings;
+      try {
+        findings = def.preflight ? await def.preflight((body.params ?? {}) as never) : [];
+      } catch (e) {
+        return json({ ok: false, error: `写前检查没能完成：${(e as Error).message}` }, 500);
+      }
+      return json({
+        ok: true,
+        plan: true,
+        action: def.name,
+        title: def.title,
+        description: def.description ?? "",
+        readonly: def.readonly,
+        steps: def.steps ?? [],
+        findings,
+      });
+    }
+
     // ── 任务 ─────────────────────────────────────────────────
     if (req.method === "POST" && path === "/api/jobs") {
       let body: { action?: string; params?: Record<string, unknown> };
