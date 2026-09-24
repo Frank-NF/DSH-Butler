@@ -98,96 +98,105 @@ export function trayAvailable(): boolean {
   return hasDesktopRuntime() && trayCtor() !== null;
 }
 
-// ── 子窗口（DSH 独立窗口） ────────────────────────────────────────────
+// ── 主窗口（单一窗口外壳） ────────────────────────────────────────────
+//
+// 【产品形态】这个程序就**是**桌面版 DSH：一个窗口。
+//   本机没装 → 窗口里是部署向导；装好了 → 同一个窗口直接换成 DSH 界面。
+// 早先的"另开一扇 DSH 窗口"已被这个设计取代 —— 用户明确要的是"打开就能用"，
+// 而不是"管家窗口 + DSH 窗口"两个窗口来回切。
+//
+// 于是窗口只有两种模式，切换就是一次 navigate：
+//   setup 模式：管家自己的界面（部署 / 诊断 / 插件 / 日志）
+//   dsh   模式：DSH 的 web 界面
+// 回程入口：托盘菜单「回到管家」+ 窗口快捷键 Ctrl+Shift+B（因为 DSH 界面里没有我们的按钮）。
 
-export interface OpenWindowResult {
-  ok: boolean;
-  windowId: number | null;
-  /** true = 复用已经开着的那扇窗（只把焦点抢过来）。 */
-  reused: boolean;
-  error?: string;
+export interface DesktopWindow {
+  windowId: number;
+  navigate(url: string): void;
+  show(): void;
+  hide?(): void;
+  focus?(): void;
+  isClosed?(): boolean;
+  setTitle?(t: string): void;
+  addEventListener?(type: string, cb: (e: unknown) => void): void;
+}
+
+let mainWindow: DesktopWindow | null = null;
+
+/** 登记主窗口（由 main.ts 在接管隐式窗口后调用）。 */
+export function setMainWindow(win: DesktopWindow | null): void {
+  mainWindow = win;
+}
+
+export function getMainWindow(): DesktopWindow | null {
+  if (mainWindow && safe(() => mainWindow!.isClosed?.() ?? false, false)) mainWindow = null;
+  return mainWindow;
+}
+
+export function mainWindowAvailable(): boolean {
+  return getMainWindow() !== null;
 }
 
 /**
- * DSH 界面的独立窗口。
+ * 把主窗口导航到某个地址（外壳切换的唯一入口）。
  *
- * 【为什么用独立窗口而不是 iframe】DSH 自己带 X-Frame-Options / CSP，
- * iframe 会被直接拦掉；独立窗口没有这个限制。
- *
- * 同一时刻只允许一扇：已经开着就导航过去并抢焦点，绝不越开越多。
+ * 为什么所有切换都走这里：窗口只有一扇，谁都能 navigate 的话，
+ * 迟早出现"部署完没换过去""托盘点了没反应"这类各写各的问题。
  */
-let dshWindow: BrowserWindowLike | null = null;
-
-export function openDshWindow(
-  url: string,
-  opts: { title?: string; width?: number; height?: number; x?: number; y?: number } = {},
-): OpenWindowResult {
-  const Ctor = browserWindowCtor();
-  if (!Ctor) {
-    return { ok: false, windowId: null, reused: false, error: "当前不是桌面态，打不开独立窗口" };
+export function navigateMain(url: string, opts: { title?: string } = {}): boolean {
+  const win = getMainWindow();
+  if (!win) {
+    log.warn("desktop", `当前不是桌面态，无法在窗口里打开：${url}`);
+    return false;
   }
-
-  if (dshWindow && !safe(() => dshWindow!.isClosed(), false)) {
-    const w = dshWindow;
-    try {
-      w.navigate(url);
-      w.show();
-      w.focus();
-      return { ok: true, windowId: w.windowId, reused: true };
-    } catch (e) {
-      log.warn("desktop", `复用 DSH 窗口失败，改为新开一扇：${(e as Error).message}`);
-      dshWindow = null;
-    }
-  }
-
   try {
-    const win = new Ctor({
-      title: "DSH",
-      width: opts.width ?? 1440,
-      height: opts.height ?? 1000,
-      ...(opts.x !== undefined ? { x: opts.x } : {}),
-      ...(opts.y !== undefined ? { y: opts.y } : {}),
-    });
     win.navigate(url);
-    // 【必须显式 setTitle】实测：给第二个窗口传 title 选项不生效，标题栏是空的；
-    // 只有构造完再调一次 setTitle 才显示出来（第一个窗口因为"接管隐式窗口"没这问题）。
-    try {
-      win.setTitle(opts.title ?? "DSH");
-    } catch { /* 标题失败不影响使用 */ }
+    if (opts.title && win.setTitle) {
+      try {
+        win.setTitle(opts.title);
+      } catch { /* 标题失败不影响使用 */ }
+    }
     try {
       win.show();
-    } catch { /* 某些平台构造即显示 */ }
-    win.addEventListener("close", () => {
-      if (dshWindow === win) dshWindow = null;
-      log.info("desktop", "DSH 独立窗口已关闭");
-    });
-    dshWindow = win;
-    log.info("desktop", `已打开 DSH 独立窗口（windowId=${win.windowId}）：${url}`);
-    return { ok: true, windowId: win.windowId, reused: false };
+      win.focus?.();
+    } catch { /* 某些平台不支持 */ }
+    return true;
   } catch (e) {
-    const msg = (e as Error).message;
-    log.warn("desktop", `打开 DSH 独立窗口失败：${msg}`);
-    return { ok: false, windowId: null, reused: false, error: msg };
+    log.warn("desktop", `窗口导航失败：${(e as Error).message}`);
+    return false;
   }
 }
 
-export function dshWindowState(): { open: boolean; windowId: number | null } {
-  if (!dshWindow) return { open: false, windowId: null };
-  const closed = safe(() => dshWindow!.isClosed(), true);
-  if (closed) {
-    dshWindow = null;
-    return { open: false, windowId: null };
-  }
-  return { open: true, windowId: dshWindow.windowId };
-}
-
-export function closeDshWindow(): boolean {
-  if (!dshWindow) return false;
+/** 让主窗口显示出来并抢焦点（托盘「回到管家」用）。 */
+export function showMainWindow(): void {
+  const win = getMainWindow();
+  if (!win) return;
   try {
-    dshWindow.close();
+    win.show();
+    win.focus?.();
   } catch { /* 忽略 */ }
-  dshWindow = null;
-  return true;
+}
+
+/**
+ * 给主窗口挂一个"回管家"的快捷键。
+ *
+ * DSH 界面里没有我们的按钮，所以需要一条不依赖托盘的回程路（托盘图标会被折叠进
+ * Windows 的隐藏区，不一定一眼看得到）。用 Ctrl+Shift+B，不占用 DSH 自己的快捷键。
+ */
+export function bindBackHotkey(goBack: () => void): void {
+  const win = getMainWindow();
+  if (!win?.addEventListener) return;
+  try {
+    win.addEventListener("keydown", (e) => {
+      const k = e as { key?: string; ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean };
+      if (!k.ctrlKey || !k.shiftKey || k.altKey) return;
+      if ((k.key ?? "").toLowerCase() !== "b") return;
+      log.info("desktop", "快捷键 Ctrl+Shift+B：回到管家界面");
+      goBack();
+    });
+  } catch (e) {
+    log.warn("desktop", `绑定回程快捷键失败（不影响托盘回程）：${(e as Error).message}`);
+  }
 }
 
 /** 执行一小段表达式并吞掉异常（桌面 API 的探测都要走它，绝不因为探测本身炸掉主流程）。 */

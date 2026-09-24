@@ -25,6 +25,8 @@ export const CLIENT_JS = `(function () {
     page: 'overview',
     cache: {},
     extra: {},
+    /** 外壳状态（能不能直接进 DSH）—— 由总览页填充。 */
+    shell: null,
     job: null,
     es: null,
     modalOpen: false,
@@ -218,16 +220,62 @@ export const CLIENT_JS = `(function () {
   function navBtn(iconName, label, page, cls) {
     return '<button class="btn ' + (cls || 'sm') + '" data-page="' + esc(page) + '">' + icon(iconName) + '<span>' + esc(label) + '</span></button>';
   }
-  function openDshBtn(cls) {
-    return '<button class="btn ' + (cls || 'sm') + '" data-open-dsh title="用独立窗口打开 DSH 界面">' + icon('external') + '<span>打开 DSH 界面</span></button>';
+  /**
+   * 「进入 DSH」——同一个窗口从管家界面换成 DSH 界面（不是另开一扇窗）。
+   *
+   * 成功的标志是页面被整个换掉，所以别指望成功提示能被看到：
+   * 只有失败时才留在原地报错，并把可能的原因刷新出来。
+   */
+  function enterDsh(el) {
+    var label = el && el.getAttribute ? (el.getAttribute('data-enter-label') || '进入 DSH') : '进入 DSH';
+    if (el) {
+      el.disabled = true;
+      el.innerHTML = '<span class="spinner"></span><span>正在进入 DSH…</span>';
+    }
+    toast('正在进入 DSH（首次要把服务起起来，可能要十几秒）');
+    return api('/api/dsh/enter', { method: 'POST' }).then(function () {
+      if (el) { el.disabled = false; el.innerHTML = icon('external') + '<span>' + esc(label) + '</span>'; }
+      toast('已进入 DSH');
+    }).catch(function (e) {
+      if (el) { el.disabled = false; el.innerHTML = icon('external') + '<span>' + esc(label) + '</span>'; }
+      toast('进不去：' + (e && e.message ? e.message : e), 'err');
+      state.cache = {};
+      go(state.page, true);
+    });
   }
 
-  function openDsh() {
-    return api('/api/dsh/open', { method: 'POST' }).then(function (r) {
-      toast(r.reused ? ('DSH 窗口已在前面（端口 ' + (r.port || '-') + '）') : ('已打开 DSH 界面 · 端口 ' + (r.port || '-')));
-    }).catch(function (e) {
-      toast('打不开 DSH 窗口：' + (e && e.message ? e.message : e), 'warn');
-    });
+  /**
+   * 外壳状态卡 —— 打开程序第一眼看到的东西。
+   *
+   * 这一屏只允许有一个主行动：能进就直接进 DSH；没装就去部署；服务没起就起了再进。
+   * 四种状态各对应一句人话 + 一个按钮，别让用户自己想"我该点哪"。
+   */
+  function shellCard() {
+    var s = state.shell;
+    var kind = s && s.next === 'enter' ? 'ok' : 'warn';
+    var html = '<div class="card hero ' + kind + '">';
+    if (!s || s.next === 'deploy') {
+      html += '<div class="hero-title">这台机器还没装 DSH</div>'
+        + '<div class="hero-desc">' + esc(s ? s.note : '先做一次一键部署；装完之后这个窗口就是 DSH 本体。') + '</div>'
+        + '<div class="btn-row" style="margin-top:12px">' + navBtn('deploy', '去一键部署', 'bootstrap', 'primary') + '</div>';
+    } else if (s.next === 'enter') {
+      html += '<div class="hero-title">DSH 已就绪</div><div class="hero-desc">' + esc(s.note) + '</div>'
+        + '<div class="btn-row" style="margin-top:12px">'
+        + '<button class="btn primary" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
+        + '</div>';
+    } else if (s.next === 'start') {
+      html += '<div class="hero-title">DSH 已装好，服务没在跑</div><div class="hero-desc">' + esc(s.note) + '</div>'
+        + '<div class="btn-row" style="margin-top:12px">'
+        + '<button class="btn primary" data-enter-dsh data-enter-label="启动并进入">' + icon('play') + '<span>启动并进入</span></button>'
+        + '</div>';
+    } else {
+      html += '<div class="hero-title">DSH 已经在外面运行</div><div class="hero-desc">' + esc(s.note) + '</div>'
+        + '<div class="btn-row" style="margin-top:12px">'
+        + '<button class="btn primary" data-enter-dsh data-enter-label="接管并进入">' + icon('refresh') + '<span>接管并进入</span></button>'
+        + '</div>';
+    }
+    html += '</div>';
+    return html;
   }
 
   function renderFindings(findings) {
@@ -457,6 +505,11 @@ export const CLIENT_JS = `(function () {
       .then(function (result) {
         if (!result) return;
         toast(label + '：已完成');
+        if (action === 'bootstrap.apply') {
+          toast('部署完成，正在进入 DSH…');
+          enterDsh(null);
+          return;
+        }
         showResult(action, result);
         go(state.page, true);
       })
@@ -595,11 +648,19 @@ export const CLIENT_JS = `(function () {
       .then(function (result) {
         if (!result) return;
         toast(label + '：已完成');
+        if (action === 'bootstrap.apply') {
+          // 「装完即用」的最后一跳：部署成功后同一个窗口直接换成 DSH。
+          // 不弹结果弹窗 —— 15 分钟的过程细节在「任务」页里都有，此刻用户只想开始用。
+          toast('部署完成，正在进入 DSH…');
+          enterDsh(null);
+          return;
+        }
         showResult(action, result);
         go(state.page, true);
       })
       .catch(function (e) { errorModal(label + ' 失败', e && e.message ? e.message : String(e), label); });
   }
+
   // ── 顶栏与导航 ───────────────────────────────────────────────────
 
   var NL = String.fromCharCode(10);
@@ -638,8 +699,16 @@ export const CLIENT_JS = `(function () {
   // ── 页面：总览 ───────────────────────────────────────────────────
 
   function pageOverview() {
-    return api('/api/state/overview').then(function (ov) {
+    // 两张卡并行取：管家自己的总览 + 外壳状态（该不该直接进 DSH）
+    return Promise.all([
+      api('/api/state/overview'),
+      api('/api/shell/state').catch(function () { return null; }),
+    ]).then(function (res) {
+      var ov = res[0];
+      state.shell = res[1] && res[1].state ? res[1].state : null;
       var html = pageHead('总览', 'DSH 本体、服务与插件的当前状况。', '<button class="btn sm" id="btn-refresh-page">' + icon('refresh') + '<span>刷新</span></button>');
+      // 第一眼就该看到"现在能不能直接用"——这一屏的主行动只有一件事
+      html += shellCard();
       html += '<div class="card"><div class="stats">'
         + stat('本体', ov.dsh.installed ? (ov.dsh.version || '已安装') : '未安装', ov.dsh.headShort ? '提交 ' + ov.dsh.headShort : '', true)
         + stat('待完成更新', ov.dsh.needsFinishUpdate ? '是' : '否')
@@ -652,7 +721,6 @@ export const CLIENT_JS = `(function () {
         + navBtn('box', 'DSH 本体', 'core')
         + navBtn('activity', '运行状态', 'runtime')
         + navBtn('puzzle', '插件', 'plugins')
-        + openDshBtn()
         + '</div></div>';
       html += '<div class="card"><div class="card-title">问题概览<span class="sub">来自最近一次体检</span></div><div id="overview-findings">'
         + (state.cache.report && state.cache.report.findings ? renderFindings(state.cache.report.findings) : emptyBox('还没有体检结果', '点上面的「运行全面体检」开始检查。'))
@@ -772,7 +840,7 @@ export const CLIENT_JS = `(function () {
   // ── 页面：运行状态 ───────────────────────────────────────────────
 
   function renderRuntime(r) {
-    var tools = openDshBtn()
+    var tools = '<button class="btn sm" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
       + actBtn('activity', '运行时诊断', 'runtime.diagnose')
       + writeBtn('wrench', '修复僵尸锁', 'runtime.repair')
       + writeBtn('refresh', '重启服务', 'runtime.restart');
@@ -1290,7 +1358,7 @@ export const CLIENT_JS = `(function () {
     if (hit('#btn-cancel')) { cancelJob(); return; }
     if (hit('#btn-copy-report')) { copyReport(); return; }
     if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
-    if (hit('[data-open-dsh]')) { openDsh(); return; }
+    if (hit('[data-enter-dsh]')) { enterDsh(hit('[data-enter-dsh]')); return; }
     if (hit('#modal-cancel') || hit('#modal-close')) { closeModal(); return; }
   });
 
