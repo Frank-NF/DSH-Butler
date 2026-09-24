@@ -14,7 +14,23 @@ import { STYLE_CSS } from "../web/styles.ts";
 import { CLIENT_JS } from "../web/client.ts";
 import { APP_NAME, APP_VERSION } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
-import { desktopAvailable, evalJs, getMainWindow, navigateMain } from "../host/desktop.ts";
+import {
+  desktopAvailable,
+  evalJs,
+  getMainWindow,
+  navigateMain,
+  requestShowWindow,
+} from "../host/desktop.ts";
+
+const nextTick = (fn: () => void) => {
+  queueMicrotask(() => {
+    try {
+      fn();
+    } catch {
+      // 接口层不因为窗口操作失败而报错：窗口的事由 main 侧记日志
+    }
+  });
+};
 import { log } from "../util/log.ts";
 
 export interface ServerHandle {
@@ -343,6 +359,15 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         }
       }
       return json({ ok: true, probe: out });
+    }
+    // 把窗口从托盘里叫回来（托盘左键就是干这个；也留一条接口给脚本/未来用）
+    if (req.method === "POST" && path === "/api/shell/show") {
+      if (!desktopAvailable()) {
+        return json({ ok: false, error: "当前不是桌面态" }, 400);
+      }
+      // 窗口可能已被关掉（这个运行时拦不住 close）—— 交给处理器决定是显示还是重建
+      nextTick(() => requestShowWindow());
+      return json({ ok: true });
     }
     if (req.method === "POST" && path === "/api/dsh/enter") {
       if (!desktopAvailable()) {

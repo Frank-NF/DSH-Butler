@@ -117,7 +117,10 @@ export interface DesktopWindow {
   hide?(): void;
   focus?(): void;
   isClosed?(): boolean;
+  isVisible?(): boolean;
   setTitle?(t: string): void;
+  getSize?(): [number, number];
+  getPosition?(): [number, number];
   addEventListener?(type: string, cb: (e: unknown) => void): void;
   /** 在页面里执行一段脚本并拿回结果（JSON 可序列化）。 */
   executeJs?(code: string): Promise<unknown>;
@@ -130,6 +133,61 @@ let mainWindow: DesktopWindow | null = null;
 /** 登记主窗口（由 main.ts 在接管隐式窗口后调用）。 */
 export function setMainWindow(win: DesktopWindow | null): void {
   mainWindow = win;
+}
+
+export interface CreateWindowOptions {
+  title?: string;
+  width?: number;
+  height?: number;
+  x?: number;
+  y?: number;
+  frameless?: boolean;
+  noActivate?: boolean;
+}
+
+/**
+ * 创建一扇窗口。
+ *
+ * 注意第一条构造会"接管"运行时启动时开的那扇隐式窗口，之后的每次构造才是新开一扇 ——
+ * main.ts 首次接管用它，主窗口被用户关掉之后重建也用它。
+ */
+export function createWindow(opts: CreateWindowOptions = {}): DesktopWindow | null {
+  const Ctor = browserWindowCtor();
+  if (!Ctor) return null;
+  try {
+    return new Ctor(opts) as DesktopWindow;
+  } catch (e) {
+    log.warn("desktop", `创建窗口失败：${(e as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * 建一个"锚窗口"：1×1、屏幕外、不激活，创建后立刻隐藏。
+ *
+ * 【为什么需要它】实测（2026-09-24，deno 2.9.7 + WebView2）：
+ *   - 窗口的 close 事件 cancelable=false —— preventDefault() 拦不住，窗口真会被销毁；
+ *   - 只要"最后一个窗口"被销毁，运行时立刻退出，托盘图标随之消失（用户看到的就是"托盘坏了"）；
+ *   - 但在 close 里临时补一个新窗口来不及；**启动时就留一个隐藏窗口**则有效：
+ *     主窗口关掉后它还在，运行时就不退出（同款探针实测存活 24 秒以上仍在跑）。
+ * 有了它，"点 X 不退出"才成立；托盘或「回到管家」再把真正的窗口建回来。
+ */
+export function createAnchorWindow(): DesktopWindow | null {
+  const win = createWindow({
+    title: `${"DSH Butler"}-anchor`,
+    width: 1,
+    height: 1,
+    x: -32000,
+    y: -32000,
+    frameless: true,
+    noActivate: true,
+  });
+  if (!win) return null;
+  try {
+    win.navigate("about:blank");
+    win.hide?.();
+  } catch { /* 忽略 */ }
+  return win;
 }
 
 export function getMainWindow(): DesktopWindow | null {
@@ -294,6 +352,26 @@ export function installOverlay(opts: InstallOverlayOptions): boolean {
     void inject();
   };
   overlayInstaller();
+  return true;
+}
+
+/**
+ * 「把窗口叫回来」的处理器（由 main.ts 注册）。
+ *
+ * 为什么要有这一层：主窗口可能已经**被销毁**（这个运行时拦不住 close），这时
+ * 光 show() 是没用的，得重建一扇。重建逻辑在 main.ts（它才管着托盘、悬浮条、处理器），
+ * 所以这里留一个钩子，接口层与托盘都通过它来"叫窗口"，不各自实现一遍。
+ */
+let showHandler: (() => boolean) | null = null;
+
+export function setShowHandler(fn: () => boolean): void {
+  showHandler = fn;
+}
+
+/** 请求把窗口叫回来（存在就显示、被关掉过就重建）。 */
+export function requestShowWindow(): boolean {
+  if (showHandler) return showHandler();
+  showMainWindow();
   return true;
 }
 

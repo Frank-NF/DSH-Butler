@@ -22,12 +22,17 @@ import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.
 import { hideOwnConsole } from "./host/console-hide.ts";
 import {
   bindBackHotkey,
+  createAnchorWindow,
   createTray,
+  createWindow,
   type DesktopWindow,
+  getMainWindow,
   installOverlay,
   navigateMain,
   setMainWindow,
+  setShowHandler,
   showMainWindow,
+  type TrayHandle,
 } from "./host/desktop.ts";
 import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
@@ -116,6 +121,7 @@ async function main(): Promise<void> {
   // 优雅退出（托盘菜单也要用它，所以先于窗口/托盘定义）
   const shutdown = () => {
     log.info("main", "收到退出信号，正在关闭…");
+    stopHousekeeping();
     server.shutdown();
     try {
       Deno.exit(0);
@@ -134,7 +140,9 @@ async function main(): Promise<void> {
     // 接管隐式窗口，不会多开一个。曾经用 `typeof Deno.desktopVersion === "string"`
     // 判断而该值实际是 null，导致编译态被误判、额外弹出一次系统浏览器 —— 别回去。
     const mainWin = adoptDesktopWindow(appUrl);
-    setupDesktopTray(mainWin, appUrl, shutdown);
+    const tray = setupDesktopTray(mainWin, appUrl, shutdown);
+    // 保活 + 托盘提示刷新（没有它，收进托盘后进程会自己退出，见 startHousekeeping 注释）
+    startHousekeeping(tray);
     // 悬浮条要在进 DSH 之前装好：进 DSH 之后页面就换了，注入由 navigateMain 触发
     if (mainWin) setupButlerOverlay(appUrl);
     // 「打开就能用」：装了本体就直接把窗口换成 DSH；没装则留在管家界面（一键部署页）。
@@ -313,40 +321,131 @@ async function autoEnterDsh(): Promise<void> {
 }
 
 /**
- * 托盘常驻（方案 §6.5）。
+ * 托盘常驻 + 窗口生命周期（方案 §6.5）。
  *
- * 为什么要有它：DSH 是个"挂着跑"的服务型程序 —— 用户最小化/关掉管家之后，
- * 还得能一键把 DSH 界面叫回来、或者把服务重启一下，而不是满桌面找图标。
- *
- * 【降级纪律】拿不到托盘不算错（有的精简桌面没有状态区）：创建失败就什么都不做，
- * 退出路径照旧只有"关窗口"，不给用户留下"关了窗口还赖着不走"的进程。
+ * 用户要的行为：点 X 不退出、最小化收进托盘。这个运行时给了一部分、拦了一部分，
+ * 实测结论（2026-09-24，deno 2.9.7 + WebView2，四个探针逐个验证过）：
+ *   - **最小化能拦**：最小化时 getPosition() 变 [-32000,-32000]，我们据此 hide() 收进托盘；
+ *   - **关闭拦不住**：close 事件的 cancelable=false，preventDefault() 无效，窗口真被销毁；
+ *   - **只要最后一个窗口被销毁，运行时立刻退出** —— 在 close 里临时补窗口也来不及；
+ *   - **但启动时留一个隐藏的"锚窗口"就有效**：主窗口关掉后进程照旧活着（探针实测 >24 秒）。
+ * 所以最终形态是：
+ *   点 X → 窗口消失、进程与托盘还在（锚窗口撑着）→ 点托盘图标把窗口**重新建出来**；
+ *   点最小化 → 窗口只是隐藏 → 点托盘图标直接显示回来。
  */
+
+let shellTray: TrayHandle | null = null;
+let shellButlerUrl = "";
+/** 窗口当前显示的是哪个界面（重建窗口时要开回原来那个）。 */
+let shellView: "butler" | "dsh" = "butler";
+/** 锚窗口：唯一作用是别让运行时因为主窗口被关掉而退出。 */
+let anchorWindow: DesktopWindow | null = null;
+
+/** 收进托盘（最小化走这条路）。没托盘就不许拦 —— 否则用户关不掉也找不回。 */
+function hideToTray(why: string): void {
+  const win = getMainWindow();
+  if (!shellTray) return;
+  hiddenToTray = true;
+  try {
+    win?.hide?.();
+  } catch { /* 忽略 */ }
+  shellTray.setTooltip(`${APP_NAME}：已收进托盘（点托盘图标即可回来）`);
+  log.info("main", `已收进托盘（${why}）—— 点托盘图标或菜单「回到管家」可再打开`);
+}
+
+/**
+ * 建立（或重建）主窗口。
+ *
+ * 被关掉之后还能再开回来，是"点 X 不退出"能成立的前提：窗口没了，锚窗口把进程撑住，
+ * 这里负责把真正的窗口重建出来并挂好所有处理器。
+ */
+function ensureMainWindow(url: string, view: "butler" | "dsh"): boolean {
+  const cur = getMainWindow();
+  shellView = view;
+  hiddenToTray = false;
+  if (cur && !cur.isClosed?.()) {
+    return navigateMain(url, view === "butler" ? { title: APP_NAME, injectOverlay: false } : {});
+  }
+  const win = createWindow({ title: APP_NAME, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
+  if (!win) {
+    log.warn("main", "主窗口重建失败（运行时没给出窗口）");
+    return false;
+  }
+  setMainWindow(win);
+  try {
+    win.navigate(url);
+    win.show();
+  } catch (e) {
+    log.warn("main", `主窗口重建后导航失败：${(e as Error).message}`);
+  }
+  attachMainWindowHandlers(win);
+  log.info("main", `主窗口已重建（${view === "dsh" ? "DSH 界面" : "管家界面"}）`);
+  return true;
+}
+
+/** 回到管家界面（窗口被关掉过就重建）。 */
+function backToButler(): void {
+  if (!ensureMainWindow(shellButlerUrl, "butler")) return;
+  log.info("main", "已切回管家界面");
+}
+
+/** 切到 DSH 界面（窗口被关掉过就重建）。 */
+function goToDsh(): void {
+  enterDsh({ restartIfNeeded: true }).then((r) => {
+    if (r.ok && r.url) {
+      ensureMainWindow(r.url, "dsh");
+      log.info("main", "已切到 DSH 界面");
+    } else {
+      log.warn("main", `切到 DSH 失败：${r.error ?? "未知原因"}`);
+      backToButler();
+    }
+  }).catch((e) => log.warn("main", `切到 DSH 异常：${(e as Error).message}`));
+}
+
+/** 给主窗口挂上：关窗留进程、最小化收托盘、回前台复位提示、回程快捷键。 */
+function attachMainWindowHandlers(win: DesktopWindow): void {
+  if (!win.addEventListener) return;
+
+  // ① 点 X：窗口会被销毁（这个运行时拦不住），但锚窗口让进程与托盘活着
+  win.addEventListener("close", () => {
+    hiddenToTray = true;
+    shellTray?.setTooltip(`${APP_NAME}：窗口已关闭，DSH 仍在后台（点图标可重新打开）`);
+    log.info(
+      "main",
+      "主窗口被关闭 —— 进程仍在后台（锚窗口撑着，DSH 也照旧跑），点托盘图标可重新打开",
+    );
+  });
+
+  // ② 点最小化（−）：收进托盘
+  //    实测：最小化时 move/resize 依次触发，getPosition() 变 [-32000,-32000]，拿它当判据最稳
+  win.addEventListener("resize", () => {
+    try {
+      const pos = win.getPosition?.();
+      if (pos && pos[0] <= -30000 && pos[1] <= -30000) hideToTray("点最小化按钮");
+    } catch { /* 取不到位置就什么都不做 */ }
+  });
+
+  // ③ 回到前台：复位提示
+  win.addEventListener("focus", () => {
+    hiddenToTray = false;
+    shellTray?.setTooltip(`${APP_NAME} ${APP_VERSION}`);
+  });
+
+  // ④ 回程快捷键（DSH 界面里没有我们的按钮，托盘图标也可能被折叠进隐藏区）
+  bindBackHotkey(backToButler);
+
+  // ⑤ 悬浮条的绑定是"每扇窗口一份"的：窗口重建之后必须重新绑定并重新注入，
+  //    否则新窗口进了 DSH 界面就没有右下角那条工具条了。
+  if (shellButlerUrl) setupButlerOverlay(shellButlerUrl);
+}
+
 function setupDesktopTray(
   win: DesktopWindow | null,
   butlerUrl: string,
   shutdown: () => void,
-): void {
+): TrayHandle | null {
   let trayOk = false;
-
-  /** 回到管家界面（同一个窗口换回来）。 */
-  const backToButler = () => {
-    if (!navigateMain(butlerUrl, { title: APP_NAME })) return;
-    log.info("main", "已切回管家界面");
-  };
-
-  /** 切到 DSH 界面（同一个窗口）。 */
-  const goToDsh = () => {
-    enterDsh({ restartIfNeeded: true }).then((r) => {
-      if (r.ok && r.url) {
-        navigateMain(r.url);
-        log.info("main", "已切到 DSH 界面");
-      } else {
-        log.warn("main", `切到 DSH 失败：${r.error ?? "未知原因"}`);
-        // 失败时把管家界面叫回来，用户才知道发生了什么
-        backToButler();
-      }
-    }).catch((e) => log.warn("main", `切到 DSH 异常：${(e as Error).message}`));
-  };
+  shellButlerUrl = butlerUrl;
 
   const tray = createTray({
     tooltip: `${APP_NAME} ${APP_VERSION}`,
@@ -358,8 +457,17 @@ function setupDesktopTray(
       "separator",
       { item: { label: "退出管家", id: "quit", enabled: true } },
     ],
-    // 左键单击 = 把窗口叫到前面（不改变当前是管家还是 DSH）
-    onClick: () => showMainWindow(),
+    // 左键单击 = 把窗口叫回来：还在（收在托盘里）就直接显示；已被关掉就重建
+    onClick: () => {
+      const cur = getMainWindow();
+      if (cur && !cur.isClosed?.()) {
+        hiddenToTray = false;
+        showMainWindow();
+        return;
+      }
+      if (shellView === "dsh") goToDsh();
+      else backToButler();
+    },
     onMenuClick: (id) => {
       if (id === "butler") {
         backToButler();
@@ -384,23 +492,71 @@ function setupDesktopTray(
   });
   trayOk = tray.ok;
 
-  // 回程第二条路：DSH 界面里没有我们的按钮，托盘图标又可能被折叠进隐藏区，
-  // 所以再给一个窗口内快捷键 Ctrl+Shift+B（不占用 DSH 自己的组合键）。
-  bindBackHotkey(backToButler);
+  // 【只有托盘真的建出来才拦】没托盘就照常关/照常最小化 —— 否则用户会得到一个
+  // "关不掉、也找不回来"的进程。
+  if (trayOk && win) {
+    attachMainWindowHandlers(win);
+    // 锚窗口：让"主窗口被关掉"不至于带走整个进程（详见文件头那段实测结论）
+    if (!anchorWindow) {
+      anchorWindow = createAnchorWindow();
+      log.info("main", anchorWindow ? "锚窗口已就位（关掉主窗口后进程仍活着）" : "锚窗口创建失败");
+    }
+  }
 
-  // 有托盘才拦「关窗」：关掉主窗口改成收进托盘，DSH 与管家继续在后台跑。
-  // 没托盘时绝不能拦 —— 否则用户关不掉这个程序。
-  if (trayOk && win?.addEventListener) {
-    win.addEventListener("close", (e) => {
-      try {
-        (e as { preventDefault?: () => void }).preventDefault?.();
-        win.hide?.();
-        tray.setTooltip(`${APP_NAME}：已收到托盘（右键图标可再打开）`);
-        log.info("main", "主窗口已收进托盘（托盘菜单「退出管家」才会真正退出）");
-      } catch (err) {
-        log.warn("main", `收进托盘失败，按正常关闭处理：${(err as Error).message}`);
-      }
-    });
+  // 把"叫窗口"的能力交给接口层（/api/shell/show）与托盘共用：存在就显示，被关掉过就重建
+  setShowHandler(() => {
+    const cur = getMainWindow();
+    if (cur && !cur.isClosed?.()) {
+      hiddenToTray = false;
+      showMainWindow();
+      return true;
+    }
+    if (shellView === "dsh") {
+      goToDsh();
+      return true;
+    }
+    return ensureMainWindow(shellButlerUrl, "butler");
+  });
+
+  shellTray = tray.ok ? tray : null;
+  return shellTray;
+}
+
+// ── 后台保活 ─────────────────────────────────────────────────────────
+
+/** 窗口是否正收在托盘里（隐藏时不要拿服务状态覆盖"已收进托盘"的提示）。 */
+let hiddenToTray = false;
+let housekeepingTimer: ReturnType<typeof setInterval> | null = null;
+
+/**
+ * 每 30 秒做一次后台整理，同时充当「保活」。
+ *
+ * 【为什么必须有这个定时器】deno desktop 的退出判据是「没有可见窗口 + 没有活的异步任务」。
+ * 实测（2026-09-24，同款探针）：只 await 一个永不 resolve 的 Promise **不算**活任务 ——
+ * 关窗收进托盘后进程会在几秒内自己退出，托盘图标随之消失，用户看到的就是"托盘坏了"。
+ * 有了这个定时器，进程稳稳留在后台（探针实测隐藏后存活 > 45 秒仍在跑）。
+ */
+function startHousekeeping(tray: TrayHandle | null): void {
+  if (housekeepingTimer !== null) return;
+  const tick = async () => {
+    if (!tray) return;
+    try {
+      const st = await collectRuntimeStatus();
+      if (hiddenToTray) return; // 收在托盘里时保留"点图标回来"的提示
+      const state = st.running ? (st.health?.reachable ? "运行中" : "已启动·未就绪") : "已停止";
+      tray.setTooltip(`${APP_NAME}：DSH ${state}${st.port ? ` · ${st.port}` : ""}`);
+    } catch { /* 探测失败不影响保活 */ }
+  };
+  void tick();
+  housekeepingTimer = setInterval(() => {
+    void tick();
+  }, 30_000);
+}
+
+function stopHousekeeping(): void {
+  if (housekeepingTimer !== null) {
+    clearInterval(housekeepingTimer);
+    housekeepingTimer = null;
   }
 }
 
