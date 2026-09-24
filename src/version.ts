@@ -19,7 +19,7 @@ export const APP_NAME = "DSH Butler";
 /** 旧产品名，仅用于识别历史数据目录。 */
 export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";
-export const APP_VERSION = "2.0.0-beta.1";
+export const APP_VERSION = "2.0.0-rc.1";
 
 /** 配置 schema 版本。每次结构变更必须 +1 并补迁移函数。 */
 export const CONFIG_SCHEMA_VERSION = 1;
