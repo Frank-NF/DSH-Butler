@@ -1,11 +1,14 @@
 /**
  * 动作注册表。
  *
- * S1（只读阶段）注册的动作全部 readonly: true —— 它们绝不会修改用户任何文件。
- * 后续阶段的写操作动作在此追加，并必须实现 onUndo 补偿。
+ * S1/S2 注册的动作全部 readonly: true；S3 起写操作动作在此追加，必须满足：
+ *   readonly: false + preflight（写前检查）+ 声明 steps，
+ *   并在 run 里通过 ctx.onUndo 注册补偿（失败/取消时引擎逆序执行）。
+ * 注册完成后由 assertStageSafety() 统一把关。
  */
 
 import { engine } from "./engine.ts";
+import type { AnyActionDef } from "./types.ts";
 import { envProbeAction } from "../domains/env/probe.ts";
 import { coreStatusAction } from "../domains/core/status.ts";
 import { coreVerifyAction } from "../domains/core/verify.ts";
@@ -28,16 +31,33 @@ const defs = [
     pluginDiagnoseAction,
   ];
   for (const def of defs) engine.register(def);
-  log.info("registry", `已注册 ${defs.length} 个只读动作`);
+  log.info("registry", `已注册 ${defs.length} 个动作`);
 }
 
 /**
- * 断言：S1 阶段不允许注册任何写操作。
- * 这是一道防呆——避免在只读版本里误引入副作用。
+ * 阶段安全防呆（S3 起的新断言）。
+ *
+ * S1 时代的旧断言是「一个写动作都不许注册」—— S3 接管写操作后它反而会拦住正事，
+ * 但直接删掉等于裸奔。新断言把「写动作必须带的安全装备」钉死：
+ *   1) 必须有 preflight（写前检查）—— plan → confirm → apply 三段式里 plan 的来源，
+ *      也是引擎第 0 步拦截 error 级前置问题的钩子（没有它，坏前置直接动手）；
+ *   2) 必须声明 steps —— 用户点下去之前，界面与 CLI 就能展示"它打算分几步做什么"。
+ *
+ * 纯函数 stageSafetyProblems() 便于单测；assert 版供入口调用。
  */
-export function assertReadOnlyStage(): void {
-  const writers = engine.definitions().filter((d) => !d.readonly);
-  if (writers.length > 0) {
-    throw new Error(`S1 只读阶段不允许注册写操作，发现：${writers.map((w) => w.name).join(", ")}`);
+export function stageSafetyProblems(defs: AnyActionDef[]): string[] {
+  const out: string[] = [];
+  for (const d of defs) {
+    if (d.readonly) continue;
+    if (!d.preflight) out.push(`写动作 ${d.name} 缺少 preflight（写前检查是强制的）`);
+    if ((d.steps?.length ?? 0) === 0) out.push(`写动作 ${d.name} 未声明执行步骤`);
+  }
+  return out;
+}
+
+export function assertStageSafety(): void {
+  const problems = stageSafetyProblems(engine.definitions());
+  if (problems.length > 0) {
+    throw new Error(`写操作安全防呆未通过：${problems.join("；")}`);
   }
 }

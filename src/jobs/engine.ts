@@ -17,7 +17,8 @@ import { butlerJobsDir, p } from "../util/paths.ts";
 import { listDir, readJson, removeRecursive, writeJsonAtomic } from "../host/fs.ts";
 import { healthOf, type Finding } from "../util/result.ts";
 import { log } from "../util/log.ts";
-import { TIMEOUTS } from "../version.ts";
+import { APP_VERSION, TIMEOUTS } from "../version.ts";
+import { releaseWriteLock, tryAcquireWriteLock } from "./write-lock.ts";
 
 export interface CreateResult {
   ok: boolean;
@@ -104,6 +105,18 @@ export class JobEngine {
       progress: 0,
       cancellable: !def.readonly || (def.steps?.length ?? 0) > 0,
     };
+
+    // 跨进程/跨版本写互斥（S3）：新旧两版共享 ~/.dsh/write.lock。
+    // 拿不到就不建任务 —— 快速把「谁在占着」告诉用户；job 此时尚未入表，零副作用。
+    if (!def.readonly) {
+      const acq = await tryAcquireWriteLock(def.domain, job.id, { version: APP_VERSION });
+      if (!acq.ok) {
+        const who = acq.heldBy
+          ? `另一写操作正在进行（${acq.heldBy.holder} ${acq.heldBy.holder === acq.heldBy.version ? "" : acq.heldBy.version}，任务 ${acq.heldBy.jobId}，域 ${acq.heldBy.domain}）`
+          : acq.reason;
+        return { ok: false, error: `${def.title}无法执行：${who}` };
+      }
+    }
 
     this.#jobs.set(job.id, job);
     // write-ahead：任务一诞生就落盘，进程被杀也能知道"当时在干什么"
@@ -256,6 +269,7 @@ export class JobEngine {
     } finally {
       this.#aborts.delete(job.id);
       this.#locks.delete(def.domain);
+      if (!def.readonly) releaseWriteLock(job.id);
     }
   }
 

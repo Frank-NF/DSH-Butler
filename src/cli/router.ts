@@ -171,6 +171,56 @@ async function jobCommand(args: string[], json: boolean): Promise<number> {
   return usage("job 的可用子命令：ls / show");
 }
 
+/**
+ * 写操作入口：plan → confirm → apply 三段式的 CLI 落地（方案 §4 约定）。
+ *
+ * - 无 --yes：执行【plan】—— 步骤表 + preflight（只读检查）全打印，零副作用，退出 0；
+ * - 有 --yes：才真正创建任务执行（apply）。
+ * 后续写子命令（core finishUpdate / update / rollback / plugin repair…）统一走这里，
+ * 保证没有任何写操作能绕过计划预览直接动手。
+ */
+export async function runWrite(
+  action: string,
+  params: Record<string, unknown>,
+  args: string[],
+  json: boolean,
+): Promise<number> {
+  const yes = args.includes("--yes");
+  const def = engine.definition(action);
+  if (!def) return usage(`未知动作：${action}`);
+
+  if (!yes) {
+    const findings = def.preflight ? await def.preflight(params as never) : [];
+    if (json) {
+      console.log(JSON.stringify({
+        plan: true,
+        action,
+        title: def.title,
+        description: def.description ?? "",
+        steps: def.steps ?? [],
+        findings,
+      }, null, 2));
+    } else {
+      console.log(`计划执行：${def.title}`);
+      if (def.description) console.log(`  ${def.description}`);
+      console.log("步骤：");
+      (def.steps ?? []).forEach((s, i) => console.log(`  ${i + 1}. ${s}`));
+      if (findings.length > 0) {
+        console.log("");
+        console.log("写前检查：");
+        for (const f of findings) {
+          console.log(`  [${f.severity === "error" ? "错误" : f.severity === "warn" ? "警告" : "提示"}] ${f.title}`);
+        }
+      }
+      console.log("");
+      console.log("这是计划预览，尚未执行任何更改。确认无误后加 --yes 执行。");
+    }
+    return EXIT.OK;
+  }
+
+  return await runOne(action, params, json);
+}
+
 /** 创建任务、等待完成、输出结果。 */
 async function runOne(action: string, params: Record<string, unknown>, json: boolean): Promise<number> {
   const created = await engine.create(action, params);

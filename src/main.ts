@@ -9,7 +9,7 @@
  */
 
 import { engine } from "./jobs/engine.ts";
-import { registerAllActions, assertReadOnlyStage } from "./jobs/registry.ts";
+import { registerAllActions, assertStageSafety } from "./jobs/registry.ts";
 import { loadConfig } from "./domains/state/config.ts";
 import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
@@ -37,12 +37,12 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   log.setMinLevel(config.logLevel);
-  log.info("main", `${APP_NAME} ${APP_VERSION} 启动（stage=S1 只读）`);
+  log.info("main", `${APP_NAME} ${APP_VERSION} 启动（stage=S3 写操作接管）`);
   log.info("main", `桌面适配：${workaround}`);
   log.info("main", `静默执行：${consoleHidden}`);
 
   registerAllActions();
-  assertReadOnlyStage();
+  assertStageSafety();
 
   // 崩溃恢复：识别上次没结束的任务
   const interrupted = engine.loadHistory();
