@@ -21,6 +21,27 @@ export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";
 export const APP_VERSION = "2.0.0-rc.1";
 
+/**
+ * 阶段标识（方案 §10.2：S1 只读 / S2 诊断 / S3 写操作接管 / S4 一键部署 / S5 跨平台）。
+ *
+ * 【为什么必须只写一处】这三个字曾经被三处各写一份 —— 启动日志说 S3、总览接口说 S1、
+ * 界面导航说「只读版本（S1）」，同一个程序自相矛盾。阶段只允许有这一个来源。
+ */
+export const STAGE = "S3";
+export const STAGE_TITLE = "S3 写操作接管";
+
+/**
+ * 界面是否已经接管写操作。
+ *
+ * 后端从 S3 起就有 11 个写动作可用（命令行与 HTTP 都通），但界面至今只暴露只读动作 ——
+ * 这个开关就是「界面该说自己是什么」的唯一判据：翻成 true 时，导航提示与总览接口的文案
+ * 自动跟着改，不会再出现「界面写着只读、日志写着 S3」这种分裂。
+ */
+export const UI_WRITE_ENABLED = false;
+
+/** 给人看的阶段标签（含界面视图状态）。 */
+export const STAGE_LABEL = `${STAGE_TITLE}${UI_WRITE_ENABLED ? "" : " · 界面只读视图"}`;
+
 /** 配置 schema 版本。每次结构变更必须 +1 并补迁移函数。 */
 export const CONFIG_SCHEMA_VERSION = 1;
 

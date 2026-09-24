@@ -8,7 +8,7 @@
 import { collectCoreStatus } from "../domains/core/status.ts";
 import { collectRuntimeStatus } from "../domains/runtime/status.ts";
 import { loadConfig } from "../domains/state/config.ts";
-import { APP_NAME, APP_VERSION } from "../version.ts";
+import { APP_NAME, APP_VERSION, STAGE_LABEL } from "../version.ts";
 
 export interface Overview {
   app: { name: string; version: string; stage: string };
@@ -38,7 +38,7 @@ export async function collectOverview(force = false): Promise<Overview> {
   ]);
 
   const value: Overview = {
-    app: { name: APP_NAME, version: APP_VERSION, stage: "S1 只读阶段" },
+    app: { name: APP_NAME, version: APP_VERSION, stage: STAGE_LABEL },
     dsh: {
       installed: Boolean(core?.sourceRoot),
       sourceRoot: core?.sourceRoot ?? null,

@@ -8,7 +8,8 @@
  */
 
 import { assert, assertEquals } from "@std/assert";
-import { APP_ID, APP_NAME } from "./version.ts";
+import { APP_ID, APP_NAME, STAGE_LABEL, UI_WRITE_ENABLED } from "./version.ts";
+import { INDEX_HTML } from "./web/markup.ts";
 
 /** 是否全部落在可打印 ASCII 范围内（0x20–0x7E）。 */
 function isPrintableAscii(s: string): boolean {
@@ -38,4 +39,27 @@ Deno.test("产品名不含路径/文件名非法字符", () => {
 Deno.test("APP_ID 保持反向域名格式且不可变", () => {
   // 这个值一旦改，会挪数据目录、丢用户配置、断掉自更新链 —— 见 version.ts 顶部铁律。
   assertEquals(APP_ID, "com.dsh.plugin-updater");
+});
+
+/*
+ * 阶段标识的防腐测试。
+ *
+ * 存在的理由：阶段曾同时写死在三个地方（启动日志 S3 / 总览接口 S1 / 界面导航「只读版本 S1」），
+ * 同一个程序自相矛盾。现在阶段只在 version.ts 里定义一次，这里钉住"界面必须引用它"，
+ * 免得下次改阶段又漏掉界面那一份。
+ */
+Deno.test("阶段标识只有一个来源：界面骨架必须引用 STAGE_LABEL", () => {
+  assert(
+    INDEX_HTML.includes(STAGE_LABEL),
+    `界面导航提示里找不到 STAGE_LABEL（${STAGE_LABEL}）—— 阶段文案又跑偏了`,
+  );
+  assert(
+    !/只读版本（S1）|S1 只读阶段/.test(INDEX_HTML),
+    "界面骨架里还留着写死的旧阶段文案 —— 阶段只能来自 version.ts",
+  );
+});
+
+Deno.test("界面文案与写操作开关状态一致", () => {
+  // 开关关着时界面不许宣称能写；开关打开后也不许再自称只读。
+  assertEquals(INDEX_HTML.includes("只检测、不修改"), !UI_WRITE_ENABLED);
 });

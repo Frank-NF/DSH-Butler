@@ -92,6 +92,7 @@ export const CLIENT_JS = `(function () {
         done = true;
         try { es.close(); } catch (e) {}
         state.es = null;
+        state.job = null;
         hideProgress();
         api('/api/jobs/' + jobId).then(function (job) {
           if (job.status === 'succeeded') resolve(job.result);
@@ -126,6 +127,9 @@ export const CLIENT_JS = `(function () {
     return api('/api/jobs', { method: 'POST', body: { action: action, params: params || {} } })
       .then(function (res) {
         if (!res.ok) throw new Error(res.error || '无法创建任务');
+        // 记下正在跑的任务：进度条上的「取消」按钮靠它才能找到要取消谁。
+        // 曾漏了这一步，导致按钮点了完全没反应（state.job 永远是 null）。
+        state.job = res.jobId;
         return waitJob(res.jobId, title);
       });
   }

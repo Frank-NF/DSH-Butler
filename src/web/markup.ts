@@ -5,6 +5,19 @@
  * token 由客户端脚本从 URL query 读取。
  */
 
+import { STAGE_LABEL, UI_WRITE_ENABLED } from "../version.ts";
+
+/**
+ * 导航区那行提示语。
+ *
+ * 单独抽出来，是因为它必须跟着版本阶段常量走：写死「只读版本（S1）」会与启动日志、
+ * 总览接口对不上。用拼接而不是把变量塞进 INDEX_HTML —— 后者是原样注入的模板串，
+ * 里面不能出现 ${（会连同表达式一起注进 HTML）。
+ */
+const NAV_HINT = UI_WRITE_ENABLED
+  ? `${STAGE_LABEL}：写操作已开放，危险动作会先给你看计划再确认。`
+  : `${STAGE_LABEL}：界面上只检测、不修改；写操作目前只在命令行可用。`;
+
 export const INDEX_HTML = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -38,7 +51,7 @@ export const INDEX_HTML = `<!doctype html>
       <div class="nav-sep"></div>
       <button class="nav-item" data-page="report">体检报告</button>
       <div class="nav-sep"></div>
-      <div class="nav-hint">当前为只读版本（S1）：只检测、不修改。所有写操作将在后续阶段开放。</div>
+      <div class="nav-hint">` + NAV_HINT + `</div>
     </nav>
 
     <main class="main" id="main">

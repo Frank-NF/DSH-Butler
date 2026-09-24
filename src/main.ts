@@ -16,7 +16,7 @@ import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
 import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
 import { log } from "./util/log.ts";
-import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "./version.ts";
+import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS, STAGE_LABEL } from "./version.ts";
 import { isDir } from "./host/fs.ts";
 import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.ts";
 import { hideOwnConsole } from "./host/console-hide.ts";
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
 
   const config = loadConfig();
   log.setMinLevel(config.logLevel);
-  log.info("main", `${APP_NAME} ${APP_VERSION} 启动（stage=S3 写操作接管）`);
+  log.info("main", `${APP_NAME} ${APP_VERSION} 启动（stage=${STAGE_LABEL}）`);
   log.info("main", `桌面适配：${workaround}`);
   log.info("main", `静默执行：${consoleHidden}`);
 
