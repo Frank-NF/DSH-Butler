@@ -113,6 +113,11 @@ export function dshLogsDir(): string {
   return p(dshRoot(), "logs");
 }
 export function dshProfileDir(profile = DSH_PROFILE_DEFAULT): string {
+  // 测试隔离的第 5 件套（与 DSH_WEB_DIR / BUTLER_ROLLBACK_DIR / BUTLER_SKIP_SERVICE_OPS /
+  // BUTLER_TXN_DIR 并列）：插件写操作直接改真实 ~/.dsh/profiles/<profile> 的双名单，
+  // 测试必须有整体覆盖的逃生口 —— 生产环境绝不设它。
+  const override = Deno.env.get("BUTLER_PROFILE_DIR");
+  if (override) return override;
   return p(dshRoot(), "profiles", profile);
 }
 export function dshSessionsDir(): string {

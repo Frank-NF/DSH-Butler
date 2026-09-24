@@ -17,6 +17,7 @@ import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
+import { pluginInstallAction, pluginScanAction, pluginUninstallAction } from "../domains/plugin/mutate.ts";
 import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";
 import { coreRollbackAction } from "../domains/core/rollback.ts";
 import {
@@ -38,6 +39,9 @@ export function registerAllActions(): void {
     runtimeDiagnoseAction,
     diagHealthAction,
     pluginDiagnoseAction,
+    pluginScanAction,
+    pluginInstallAction,
+    pluginUninstallAction,
     backupListAction,
     backupVerifyAction,
     backupCreateAction,

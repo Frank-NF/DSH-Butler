@@ -10,6 +10,7 @@
 
 import { engine } from "./jobs/engine.ts";
 import { registerAllActions, assertStageSafety } from "./jobs/registry.ts";
+import { recoverPluginTxn } from "./domains/plugin/mutate.ts";
 import { loadConfig } from "./domains/state/config.ts";
 import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
@@ -50,6 +51,19 @@ async function main(): Promise<void> {
     for (const j of interrupted) {
       log.warn("main", `发现上次未完成的任务：${j.actionTitle}（${j.id}）`);
     }
+  }
+
+  // 插件事务恢复（AC-P3）：上次安装/卸载中途被杀 → active.json 还在盘上 →
+  // 在此还原到操作前状态再放行任何新任务。恢复失败只记日志（日志保留，
+  // 下次启动再试），绝不阻塞启动 —— 但该状态下新的插件写操作会被 preflight 拦住。
+  try {
+    const rec = await recoverPluginTxn();
+    if (rec.recovered) {
+      log.warn("main", `已恢复上次未完成的插件事务：${rec.op} ${rec.name}（已回到操作前状态）`);
+      for (const w of rec.warnings) log.warn("main", `插件事务恢复警告：${w}`);
+    }
+  } catch (e) {
+    log.error("main", `插件事务恢复失败：${(e as Error).message}`);
   }
 
   // 命令行模式：跑完即退出，不起服务

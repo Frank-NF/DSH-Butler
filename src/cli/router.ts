@@ -23,6 +23,7 @@ import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
 import type { BackupListReport, BackupVerifyReport } from "../domains/backup/actions.ts";
+import type { PluginOpReport, PluginScanReport } from "../domains/plugin/mutate.ts";
 import { humanSize } from "../host/mod.ts";
 
 export const CLI_HELP = `
@@ -42,6 +43,7 @@ DSH Butler · 命令行
   runtime logs [-n 200]               日志收集与错误定位
   runtime diagnose                    运行时诊断（进程/服务/插件树分层 + 13 条规则）
   plugin diagnose                     插件诊断（双名单 / 作层资格 / 重复注册 / 僵尸锁）
+  plugin scan                         插件双名单快照（依赖 / 生效 / 作层资格 / 实体，装没装上的权威口径）
   backup list                         列出回滚点
   backup verify [id]                  校验回滚点完整性
 
@@ -51,6 +53,8 @@ DSH Butler · 命令行
   backup delete <id>                  删除回滚点
   core finishUpdate                   完成更新六步：停服 → 清残留 → 装依赖 → 全量重建 → 核对 → 重启（约 5-30 分钟）
   core rollback [id]                  回滚本体到最近的构建回滚点（缺省取最新；验证不过保留回滚点，绝不静默成功）
+  plugin install <名字> [--version v]  安装插件（写前回滚点 + 事务日志；失败或中途被杀，重启后自动回到操作前状态）
+  plugin uninstall <名字>              卸载插件（先摘名单再隔离目录 —— 绝不留「启动即崩」的半成品）
 
 其它：
   actions                             列出所有可用动作
@@ -118,7 +122,19 @@ export async function runCli(argv: string[]): Promise<number> {
       return usage(`runtime 的可用子命令：status / diagnose / logs`);
     case "plugin":
       if (sub === "diagnose") return await runOne("plugin.diagnose", {}, json);
-      return usage(`plugin 的可用子命令：diagnose`);
+      if (sub === "scan") return await runOne("plugin.scan", {}, json);
+      if (sub === "install") {
+        const name = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+        if (!name) return usage("plugin install 需要插件名：plugin install <名字> [--version x.y.z]");
+        const version = stringArg(args, "--version");
+        return await runWrite("plugin.install", version ? { name, version } : { name }, args, json);
+      }
+      if (sub === "uninstall") {
+        const name = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
+        if (!name) return usage("plugin uninstall 需要插件名：plugin uninstall <名字>");
+        return await runWrite("plugin.uninstall", { name }, args, json);
+      }
+      return usage(`plugin 的可用子命令：diagnose / scan / install / uninstall`);
     case "backup": {
       if (sub === "list") return await runOne("backup.list", {}, json);
       if (sub === "verify") return await runOne("backup.verify", args[2] ? { id: args[2] } : {}, json);
@@ -177,6 +193,14 @@ function numberArg(args: string[], flag: string): number | null {
   if (i < 0) return null;
   const v = Number(args[i + 1]);
   return Number.isFinite(v) ? v : null;
+}
+
+/** 取 flag 后面的字符串值（缺省或又是 flag 时返回 null）。 */
+function stringArg(args: string[], flag: string): string | null {
+  const i = args.indexOf(flag);
+  if (i < 0 || i + 1 >= args.length) return null;
+  const v = args[i + 1] ?? "";
+  return v === "" || v.startsWith("--") ? null : v;
 }
 
 async function jobCommand(args: string[], json: boolean): Promise<number> {
@@ -421,6 +445,34 @@ function printHuman(action: string, result: unknown): void {
         `插件：依赖 ${r.summary.deps} · 名单 ${r.summary.bundles} · 生效 ${r.summary.active} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
       );
       printFindings(r.findings);
+      return;
+    }
+    case "plugin.scan": {
+      const r = result as PluginScanReport;
+      console.log(`profile：${r.profileDir}${r.manifestExists ? "" : " ⚠ 清单缺失"}`);
+      console.log(
+        `插件：依赖 ${r.summary.deps} · 生效 ${r.summary.active} · 装了不生效 ${r.summary.declaredButInactive}`,
+      );
+      for (const l of r.layers) {
+        console.log(`  [${l.canLayer ? "生效" : "跳过"}] ${l.name}${l.canLayer ? "" : ` — ${l.reason ?? "?"}`}`);
+      }
+      for (const [name, exists] of Object.entries(r.entities)) {
+        if (!exists) console.log(`  ⚠ 依赖清单里有 ${name}，但磁盘上找不到包实体`);
+      }
+      return;
+    }
+    case "plugin.install":
+    case "plugin.uninstall": {
+      const r = result as PluginOpReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `${r.op === "install" ? "安装" : "卸载"}完成：${r.name}` +
+          (r.op === "install" ? ` · ${r.activated ? "已生效" : "已安装（不激活）"}` : "") +
+          (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : "") +
+          ` · 回滚点 ${r.rollbackId} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`,
+      );
+      for (const w of r.warnings) console.log(`  ⚠ ${w}`);
       return;
     }
     case "runtime.diagnose": {
