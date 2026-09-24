@@ -17,6 +17,7 @@ import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
+import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";
 import {
   backupApplyAction,
   backupCreateAction,
@@ -41,6 +42,7 @@ export function registerAllActions(): void {
     backupCreateAction,
     backupApplyAction,
     backupDeleteAction,
+    coreFinishUpdateAction,
   ];
   for (const def of defs) engine.register(def);
   log.info("registry", `已注册 ${defs.length} 个动作`);

@@ -28,6 +28,8 @@ export interface RunOptions {
   allowNonZero?: boolean;
   timeoutMs?: number;
   scope?: string;
+  /** 外部取消信号：触发时终止子进程（与超时无关，长任务要能被用户叫停）。 */
+  signal?: AbortSignal;
 }
 
 export interface RunResult {
@@ -57,11 +59,20 @@ export async function run(cmd: string, args: string[] = [], options: RunOptions 
 
   const controller = new AbortController();
   let timedOut = false;
+  let cancelled = false;
   const timeoutMs = options.timeoutMs ?? 30_000;
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
+  const onExternalAbort = () => {
+    cancelled = true;
+    controller.abort();
+  };
+  if (options.signal) {
+    if (options.signal.aborted) onExternalAbort();
+    else options.signal.addEventListener("abort", onExternalAbort, { once: true });
+  }
 
   let stdout = "";
   let stderr = "";
@@ -109,7 +120,9 @@ export async function run(cmd: string, args: string[] = [], options: RunOptions 
     code = status.code;
   } catch (e) {
     const err = e as Error;
-    if (err.name === "AbortError" || timedOut) {
+    if (cancelled && !timedOut) {
+      log.warn(scope, `命令已被取消：${cmd} ${args.join(" ")}`);
+    } else if (err.name === "AbortError" || timedOut) {
       log.warn(scope, `命令超时（${timeoutMs}ms）：${cmd} ${args.join(" ")}`);
     } else {
       log.warn(scope, `命令执行失败：${cmd} — ${err.message}`);
@@ -118,10 +131,14 @@ export async function run(cmd: string, args: string[] = [], options: RunOptions 
     code = -1;
   } finally {
     clearTimeout(timer);
+    options.signal?.removeEventListener("abort", onExternalAbort);
   }
 
   const result: RunResult = { code, stdout, stderr, timedOut, durationMs: Date.now() - started };
-  if (code !== 0 && !options.allowNonZero && !timedOut) {
+  if (cancelled && !timedOut) {
+    // 被外部叫停：不算超时、不算普通失败，调用方按「已取消」处理
+    log.debug(scope, `命令已取消：${cmd} ${args.join(" ")}`);
+  } else if (code !== 0 && !options.allowNonZero && !timedOut) {
     log.debug(scope, `命令非零退出(${code})：${cmd} ${args.join(" ")}`);
   }
   return result;

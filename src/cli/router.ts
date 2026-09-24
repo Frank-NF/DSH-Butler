@@ -17,6 +17,7 @@ import { renderMarkdown, type HealthReport } from "../domains/diag/health.ts";
 import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
 import type { CoreVerifyReport } from "../domains/core/verify.ts";
+import type { FinishUpdateReport } from "../domains/core/finish_update.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
@@ -47,6 +48,7 @@ DSH Butler · 命令行
   backup create <类型> <文件...>       创建回滚点（类型：core-build / plugin-set / config / snapshot / env）
   backup apply <id>                   回滚到指定回滚点（先校验完整性，验证不过保留回滚点）
   backup delete <id>                  删除回滚点
+  core finishUpdate                   完成更新六步：停服 → 清残留 → 装依赖 → 全量重建 → 核对 → 重启（约 5-30 分钟）
 
 其它：
   actions                             列出所有可用动作
@@ -99,7 +101,8 @@ export async function runCli(argv: string[]): Promise<number> {
     case "core":
       if (sub === "status") return await runOne("core.status", {}, json);
       if (sub === "verify") return await runOne("core.verify", {}, json);
-      return usage(`core 的可用子命令：status / verify`);
+      if (sub === "finishUpdate") return await runWrite("core.finishUpdate", {}, args, json);
+      return usage(`core 的可用子命令：status / verify / finishUpdate`);
     case "runtime":
       if (sub === "status") return await runOne("runtime.status", {}, json);
       if (sub === "diagnose") return await runOne("runtime.diagnose", {}, json);
@@ -260,7 +263,9 @@ async function runOne(action: string, params: Record<string, unknown>, json: boo
     return EXIT.PRECOND;
   }
 
-  const job = await waitForJob(created.jobId);
+  // 等待上限跟着动作自己的超时走（finishUpdate 预算 2 小时，不能用默认 300 秒掐断）
+  const def = engine.definition(action);
+  const job = await waitForJob(created.jobId, (def?.timeoutMs ?? 300_000) + 60_000);
   if (!job) {
     console.error("任务丢失");
     return EXIT.FAIL;
@@ -440,6 +445,17 @@ function printHuman(action: string, result: unknown): void {
         `分层结论：${layer} · 进程 ${r.facts.procCount} · 端口 ${r.facts.port ?? "?"} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
       );
       printFindings(r.findings);
+      return;
+    }
+    case "core.finishUpdate": {
+      const r = result as FinishUpdateReport;
+      for (const l of r.lines) console.log(l);
+      console.log("");
+      console.log(
+        `耗时 ${Math.round(r.elapsedMs / 1000)} 秒 · 回滚点 ${r.rollbackId}` +
+          (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
+      );
+      console.log(`需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"} · 源码 ${r.head?.slice(0, 12) ?? "未知"}`);
       return;
     }
     case "backup.list": {
