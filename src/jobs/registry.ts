@@ -17,18 +17,30 @@ import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
+import {
+  backupApplyAction,
+  backupCreateAction,
+  backupDeleteAction,
+  backupListAction,
+  backupVerifyAction,
+} from "../domains/backup/actions.ts";
 import { log } from "../util/log.ts";
 
 export function registerAllActions(): void {
-const defs = [
-  envProbeAction,
-  coreStatusAction,
-  coreVerifyAction,
-  runtimeStatusAction,
+  const defs = [
+    envProbeAction,
+    coreStatusAction,
+    coreVerifyAction,
+    runtimeStatusAction,
     runtimeLogsAction,
     runtimeDiagnoseAction,
     diagHealthAction,
     pluginDiagnoseAction,
+    backupListAction,
+    backupVerifyAction,
+    backupCreateAction,
+    backupApplyAction,
+    backupDeleteAction,
   ];
   for (const def of defs) engine.register(def);
   log.info("registry", `已注册 ${defs.length} 个动作`);

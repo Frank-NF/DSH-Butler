@@ -20,6 +20,7 @@ import type { CoreVerifyReport } from "../domains/core/verify.ts";
 import type { RuntimeStatus } from "../domains/runtime/status.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
+import type { BackupListReport, BackupVerifyReport } from "../domains/backup/actions.ts";
 import { humanSize } from "../host/mod.ts";
 
 export const CLI_HELP = `
@@ -39,6 +40,13 @@ DSH Butler · 命令行
   runtime logs [-n 200]               日志收集与错误定位
   runtime diagnose                    运行时诊断（进程/服务/插件树分层 + 13 条规则）
   plugin diagnose                     插件诊断（双名单 / 作层资格 / 重复注册 / 僵尸锁）
+  backup list                         列出回滚点
+  backup verify [id]                  校验回滚点完整性
+
+备份与回滚（写操作：不带 --yes 只出计划预览，加 --yes 才执行）：
+  backup create <类型> <文件...>       创建回滚点（类型：core-build / plugin-set / config / snapshot / env）
+  backup apply <id>                   回滚到指定回滚点（先校验完整性，验证不过保留回滚点）
+  backup delete <id>                  删除回滚点
 
 其它：
   actions                             列出所有可用动作
@@ -65,7 +73,7 @@ export function parseCli(argv: string[]): CliOptions {
 export function isCliInvocation(argv: string[]): boolean {
   const first = argv.find((a) => !a.startsWith("-"));
   if (!first) return false;
-  return ["doctor", "env", "core", "runtime", "plugin", "actions", "job", "help"].includes(first);
+  return ["doctor", "env", "core", "runtime", "plugin", "backup", "actions", "job", "help"].includes(first);
 }
 
 export function wantsHeadless(argv: string[]): boolean {
@@ -102,6 +110,29 @@ export async function runCli(argv: string[]): Promise<number> {
     case "plugin":
       if (sub === "diagnose") return await runOne("plugin.diagnose", {}, json);
       return usage(`plugin 的可用子命令：diagnose`);
+    case "backup": {
+      if (sub === "list") return await runOne("backup.list", {}, json);
+      if (sub === "verify") return await runOne("backup.verify", args[2] ? { id: args[2] } : {}, json);
+      if (sub === "create") {
+        const kind = args[2];
+        const paths = args.slice(3).filter((a) => !a.startsWith("--"));
+        if (!kind || paths.length === 0) {
+          return usage("backup create 需要类型与至少一个文件：backup create config <文件...>");
+        }
+        return await runWrite("backup.create", { kind, paths, trigger: "命令行创建" }, args, json);
+      }
+      if (sub === "apply") {
+        const id = args[2];
+        if (!id) return usage("backup apply 需要回滚点 id：backup apply <id>");
+        return await runWrite("backup.apply", { id }, args, json);
+      }
+      if (sub === "delete") {
+        const id = args[2];
+        if (!id) return usage("backup delete 需要回滚点 id：backup delete <id>");
+        return await runWrite("backup.delete", { id }, args, json);
+      }
+      return usage(`backup 的可用子命令：list / verify / create / apply / delete`);
+    }
     case "actions": {
       const defs = engine.definitions();
       if (json) {
@@ -409,6 +440,52 @@ function printHuman(action: string, result: unknown): void {
         `分层结论：${layer} · 进程 ${r.facts.procCount} · 端口 ${r.facts.port ?? "?"} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
       );
       printFindings(r.findings);
+      return;
+    }
+    case "backup.list": {
+      const r = result as BackupListReport;
+      console.log(`回滚存储：${r.root}`);
+      if (r.points.length === 0) {
+        console.log("没有回滚点");
+        return;
+      }
+      console.log(`共 ${r.points.length} 个回滚点：`);
+      for (const pt of r.points) {
+        console.log(
+          `  ${pt.id}  ${pt.kind.padEnd(11)}  ${pt.verified ? "已验证" : "⚠ 未验证"}  ${
+            humanSize(pt.sizeBytes)
+          }  ${pt.trigger}`,
+        );
+      }
+      return;
+    }
+    case "backup.verify": {
+      const r = result as BackupVerifyReport;
+      console.log(`校验 ${r.results.length} 个回滚点：${r.allOk ? "全部通过" : "存在问题"}`);
+      for (const x of r.results) {
+        if (x.ok) console.log(`  ✓ ${x.id}`);
+        else {
+          console.log(`  ✗ ${x.id}`);
+          for (const pr of x.problems) console.log(`      ${pr}`);
+        }
+      }
+      return;
+    }
+    case "backup.create": {
+      const pt = result as { id: string; artifacts: Array<{ path: string }>; sizeBytes: number };
+      console.log(`回滚点已创建：${pt.id}`);
+      console.log(`  ${pt.artifacts.length} 个条目 · ${humanSize(pt.sizeBytes)}`);
+      return;
+    }
+    case "backup.apply": {
+      const r = result as { id: string; result: { ok: boolean; warnings?: string[] } };
+      console.log(`已回滚到：${r.id}${r.result.ok ? "（验证通过）" : ""}`);
+      for (const w of r.result.warnings ?? []) console.log(`  ⚠ ${w}`);
+      return;
+    }
+    case "backup.delete": {
+      const r = result as { deleted: string };
+      console.log(`回滚点已删除：${r.deleted}`);
       return;
     }
     default:
