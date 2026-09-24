@@ -24,10 +24,10 @@ export const STYLE_CSS = `
   --text-3: #6B6A64;
   --border: #DAD7CD;
   --border-strong: #B9B6AB;
-  --brand: #F46123;
-  --brand-text: #B23C0B;
-  --brand-fill: #C2410C;
-  --brand-fill-hover: #A93A0A;
+  --brand: #F06A3D;          /* VI 主橙红（装饰用，不承载正文）*/
+  --brand-text: #C24A1E;     /* 浅底上的品牌文字（4.6:1）*/
+  --brand-fill: #C94A20;     /* 按钮实底：白字 4.7:1，过 AA */
+  --brand-fill-hover: #B23C0B;
   --brand-weak: #FBEDE6;
   --ok: #3B6D11;
   --ok-weak: #EAF3DE;
@@ -37,7 +37,7 @@ export const STYLE_CSS = `
   --err-weak: #FCEBEB;
   --info: #17548C;
   --info-weak: #E6F1FB;
-  --focus: #C2410C;
+  --focus: #C94A20;
   --shadow-1: 0 1px 2px rgba(24, 22, 18, .05);
   --shadow-2: 0 18px 48px rgba(24, 22, 18, .18);
   --radius: 10px;
@@ -61,10 +61,10 @@ export const STYLE_CSS = `
   --text-3: #918E85;
   --border: #35332E;
   --border-strong: #4A4740;
-  --brand: #FF8A5B;
-  --brand-text: #FF8A5B;
-  --brand-fill: #C2410C;
-  --brand-fill-hover: #D9520F;
+  --brand: #F0894E;          /* 暗底上用 VI 浅橙（6.7:1）*/
+  --brand-text: #F0894E;
+  --brand-fill: #C94A20;
+  --brand-fill-hover: #B23C0B;
   --brand-weak: #3A2416;
   --ok: #8FBF5A;
   --ok-weak: #22301A;
@@ -122,13 +122,13 @@ button { cursor: pointer; }
 }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 14px; }
 .brand-mark {
-  width: 26px; height: 26px; border-radius: 8px;
-  background: var(--brand-weak);
+  width: 26px; height: 26px;
   display: grid; place-items: center;
   flex: none;
 }
+.brand-mark img { width: 26px; height: 26px; display: block; }
 /* 深色下浅橙底会发灰，换更淡的暖底，让橙红鲸鱼保持对比 */
-:root[data-theme="dark"] .brand-mark { background: rgba(244, 97, 35, .14); }
+:root[data-theme="dark"] .brand-mark { background: rgba(240, 106, 61, .16); }
 .brand-sub { color: var(--text-3); font-size: 12.5px; font-weight: 400; }
 .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
 
