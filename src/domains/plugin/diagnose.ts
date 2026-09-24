@@ -53,7 +53,11 @@ export const pluginDiagnoseAction: ActionDef<Record<string, never>, PluginDiagno
     const findings = runRules(facts);
     const errors = findings.filter((f) => f.severity === "error").length;
     const warns = findings.filter((f) => f.severity === "warn").length;
-    ctx.detail(findings.length === 0 ? "全部通过" : `命中 ${findings.length} 条（错误 ${errors} / 警告 ${warns}）`);
+    ctx.detail(
+      findings.length === 0
+        ? "全部通过"
+        : `命中 ${findings.length} 条（错误 ${errors} / 警告 ${warns}）`,
+    );
     ctx.throwIfCancelled();
 
     ctx.step("done", "汇总");

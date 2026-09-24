@@ -23,7 +23,7 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { isDir, pathExists } from "../../host/fs.ts";
 import { dshProfileDir } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
@@ -62,7 +62,9 @@ async function runtimeRepairPreflight(): Promise<Finding[]> {
       finding("runtime.nothing-to-repair", "error", "没有需要清理的失效写锁", {
         cause: unreadable.length > 0
           ? `扫描到 ${unreadable.length} 个锁文件，但都读不出持有者 PID —— 按保守原则不判定为僵尸，绝不清（宁可漏，不可误清活锁）`
-          : `扫描 ${locks.length} 个锁文件：活锁 ${locks.filter((l) => l.verdict === "keep").length} 个，失效锁 0 个`,
+          : `扫描 ${locks.length} 个锁文件：活锁 ${
+            locks.filter((l) => l.verdict === "keep").length
+          } 个，失效锁 0 个`,
         impact: "没有可清理的对象",
         action: "配置仍写不进的话，用 runtime diagnose 查别的原因",
         fixAction: "runtime.diagnose",
@@ -72,12 +74,17 @@ async function runtimeRepairPreflight(): Promise<Finding[]> {
 
   if (unreadable.length > 0) {
     out.push(
-      finding("runtime.lock-unreadable", "info", `${unreadable.length} 个锁文件读不出持有者 PID（保守跳过）`, {
-        cause: "锁文件首行不是 PID 或内容为空/无权限",
-        impact: "无法判断持有者死活，因此不会自动清理 —— 宁可当没看见，也绝不误清活锁",
-        action: "人工确认无人持有后再处理",
-        evidence: unreadable.map((l) => l.file),
-      }),
+      finding(
+        "runtime.lock-unreadable",
+        "info",
+        `${unreadable.length} 个锁文件读不出持有者 PID（保守跳过）`,
+        {
+          cause: "锁文件首行不是 PID 或内容为空/无权限",
+          impact: "无法判断持有者死活，因此不会自动清理 —— 宁可当没看见，也绝不误清活锁",
+          action: "人工确认无人持有后再处理",
+          evidence: unreadable.map((l) => l.file),
+        },
+      ),
     );
   }
   return out;
@@ -128,7 +135,9 @@ async function runRuntimeRepair(ctx: ActionContext): Promise<RuntimeRepairReport
     }
   }
   if (bad.length === 0) {
-    const hint = report.skipped.length > 0 ? `（保守跳过 ${report.skipped.length} 个活锁/不可读锁）` : "";
+    const hint = report.skipped.length > 0
+      ? `（保守跳过 ${report.skipped.length} 个活锁/不可读锁）`
+      : "";
     throw new Error(`没有需要清理的失效写锁${hint}`);
   }
   line(
@@ -164,7 +173,9 @@ async function runRuntimeRepair(ctx: ActionContext): Promise<RuntimeRepairReport
     line(`失效锁改名留证：${l.file} → *.stale-${stamp}`);
   }
   if (report.renamed.length === 0 && report.failed.length > 0) {
-    throw new Error(`全部 ${report.failed.length} 个失效锁改名失败：${report.failed[0]?.error ?? "未知原因"}`);
+    throw new Error(
+      `全部 ${report.failed.length} 个失效锁改名失败：${report.failed[0]?.error ?? "未知原因"}`,
+    );
   }
   if (report.failed.length > 0) {
     line(`${report.failed.length} 个改名失败（多半正被占用，稍后重试）`);

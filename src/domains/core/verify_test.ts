@@ -38,19 +38,25 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
 function assertIncludes(haystack: string[], needle: string, msg: string): void {
   if (!haystack.includes(needle)) {
-    throw new Error(`断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`,
+    );
   }
 }
 
 function assertExcludes(haystack: string[], needle: string, msg: string): void {
   if (haystack.includes(needle)) {
-    throw new Error(`断言失败：${msg}\n  不该包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`);
+    throw new Error(
+      `断言失败：${msg}\n  不该包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`,
+    );
   }
 }
 
@@ -58,7 +64,8 @@ function assertExcludes(haystack: string[], needle: string, msg: string): void {
 
 const HAS_GIT = (() => {
   try {
-    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" }).outputSync().code === 0;
+    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" })
+      .outputSync().code === 0;
   } catch {
     return false;
   }
@@ -67,7 +74,17 @@ const HAS_GIT = (() => {
 /** 在指定仓库里跑 git（自带测试身份，关掉可能存在的全局 gpg 签名）。 */
 function sh(root: string, ...args: string[]): void {
   const out = new Deno.Command("git", {
-    args: ["-C", root, "-c", "user.email=butler@test.local", "-c", "user.name=butler", "-c", "commit.gpgsign=false", ...args],
+    args: [
+      "-C",
+      root,
+      "-c",
+      "user.email=butler@test.local",
+      "-c",
+      "user.name=butler",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
     stdout: "piped",
     stderr: "piped",
   }).outputSync();
@@ -77,7 +94,11 @@ function sh(root: string, ...args: string[]): void {
 }
 
 function gitHead(root: string): string {
-  const out = new Deno.Command("git", { args: ["-C", root, "rev-parse", "HEAD"], stdout: "piped", stderr: "piped" })
+  const out = new Deno.Command("git", {
+    args: ["-C", root, "rev-parse", "HEAD"],
+    stdout: "piped",
+    stderr: "piped",
+  })
     .outputSync();
   return new TextDecoder().decode(out.stdout).trim();
 }
@@ -106,8 +127,16 @@ function withDshWebDir<T>(dir: string, fn: () => Promise<T>): Promise<T> {
 function makeCoreFixture(mode: "stale" | "fresh"): string {
   const root = Deno.makeTempDirSync();
   Deno.mkdirSync(p(root, "apps", "cli"), { recursive: true });
-  writeFile(root, "package.json", JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }));
-  writeFile(root, "apps/cli/package.json", JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }));
+  writeFile(
+    root,
+    "package.json",
+    JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }),
+  );
+  writeFile(
+    root,
+    "apps/cli/package.json",
+    JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }),
+  );
 
   sh(root, "init", "-b", "main");
   sh(root, "add", "package.json", "apps/cli/package.json");
@@ -138,12 +167,19 @@ function makeCoreFixture(mode: "stale" | "fresh"): string {
 function makeLibFixture(): string {
   const root = Deno.makeTempDirSync();
   writeFile(root, "package.json", JSON.stringify({ name: "fixture-libs", version: "0.0.0" }));
-  writeFile(root, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n  - \'packages/*\' # 包目录\n');
+  writeFile(root, "pnpm-workspace.yaml", "packages:\n  - \"apps/*\"\n  - 'packages/*' # 包目录\n");
   writeFile(root, "apps/real/package.json", JSON.stringify({ name: "real-pkg" }));
   writeFile(root, "packages/gone/package.json", JSON.stringify({ name: "gone-pkg" }));
 
   sh(root, "init", "-b", "main");
-  sh(root, "add", "package.json", "pnpm-workspace.yaml", "apps/real/package.json", "packages/gone/package.json");
+  sh(
+    root,
+    "add",
+    "package.json",
+    "pnpm-workspace.yaml",
+    "apps/real/package.json",
+    "packages/gone/package.json",
+  );
   sh(root, "commit", "-m", "init");
 
   // 模拟上游删包后的现场：被跟踪的 package.json 没了，gitignore 的 lib/ 留着
@@ -168,7 +204,7 @@ function makeLibFixture(): string {
 function makeHealthyLibFixture(): string {
   const root = Deno.makeTempDirSync();
   writeFile(root, "package.json", JSON.stringify({ name: "fixture-healthy", version: "0.0.0" }));
-  writeFile(root, "pnpm-workspace.yaml", "packages:\n  - \"apps/*\"\n");
+  writeFile(root, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n');
   writeFile(root, "apps/real/package.json", JSON.stringify({ name: "real-pkg" }));
   writeFile(root, "apps/real/lib/index.js", "module.exports = {};\n"); // 有包的产物是正经东西
   sh(root, "init", "-b", "main");
@@ -209,7 +245,10 @@ Deno.test("AC-C1：HEAD 与构建记录不一致时，3 秒内给出「需要完
     const elapsed = Date.now() - t0;
 
     assert(status.needsFinishUpdate, "构建记录与 HEAD 不一致，必须判「需要完成更新」");
-    assert(status.finishReason !== null && status.finishReason.includes("构建"), `结论必须说清原因，实际：${status.finishReason}`);
+    assert(
+      status.finishReason !== null && status.finishReason.includes("构建"),
+      `结论必须说清原因，实际：${status.finishReason}`,
+    );
     const hit = status.findings.find((f) => f.id === "core.needs-finish-update");
     assert(hit !== undefined, "必须给出 core.needs-finish-update 发现（带四要素）");
     assertEq(hit?.severity, "error", "该发现必须是 error 级");
@@ -224,7 +263,10 @@ Deno.test("AC-C1 阴性：构建记录与 HEAD 一致时不许误报需要更新
   const root = makeCoreFixture("fresh");
   try {
     const status = await withDshWebDir(root, () => collectCoreStatus());
-    assert(!status.needsFinishUpdate, `源码与产物一致却被报成需要更新，finishReason=${status.finishReason}`);
+    assert(
+      !status.needsFinishUpdate,
+      `源码与产物一致却被报成需要更新，finishReason=${status.finishReason}`,
+    );
     assert(
       !status.findings.some((f) => f.id === "core.needs-finish-update"),
       "健康样本零命中：不得出现 core.needs-finish-update",
@@ -255,7 +297,11 @@ Deno.test("AC-C4：僵尸 lib / 真缺失 / 未提交三个筐各归各，绝不
 
     // 互斥不混报（按构造，这里显式钉死）
     const zombieDirs = libs.zombieLibs.map((z) => z.pkgDir);
-    assertExcludes(zombieDirs, "packages/gone", "HEAD 有包的目录绝不能报成僵尸（尽管磁盘留着 lib/）");
+    assertExcludes(
+      zombieDirs,
+      "packages/gone",
+      "HEAD 有包的目录绝不能报成僵尸（尽管磁盘留着 lib/）",
+    );
     assertExcludes(libs.missingPackages, "apps/ghost", "HEAD 没有的目录绝不能报成真缺失");
     assertExcludes(zombieDirs, "packages/newpkg", "磁盘有包的目录绝不能报成僵尸（用户正在写）");
     for (const z of zombieDirs) assertExcludes(libs.missingPackages, z, "僵尸与缺失必须互斥");
@@ -276,7 +322,11 @@ Deno.test("AC-C4：僵尸 lib / 真缺失 / 未提交三个筐各归各，绝不
     // findings 翻译：该升级成 error 的升级、该留 info 的留 info
     const findings = libResidueFindings(libs);
     const ids = findings.map((f) => f.id).sort();
-    assertEq(ids.join(","), "core.missing-package,core.untracked-package,core.zombie-lib", "findings 集合不对");
+    assertEq(
+      ids.join(","),
+      "core.missing-package,core.untracked-package,core.zombie-lib",
+      "findings 集合不对",
+    );
     assertEq(healthOf(findings), "error", "有僵尸与缺失，结论必须是 error");
     const z = findings.find((f) => f.id === "core.zombie-lib");
     assertEq(z?.severity, "error", "僵尸必须是 error 级");
@@ -301,7 +351,11 @@ Deno.test("AC-C4 阴性总闸：健康源码树上三筐全空、findings 为零
     assertEq(libs.missingPackages.length, 0, "健康样本不得报缺失");
     assertEq(libs.untrackedPackages.length, 0, "健康样本不得报未提交");
     const findings = libResidueFindings(libs);
-    assertEq(findings.length, 0, `健康样本必须零 findings，实际：${JSON.stringify(findings.map((f) => f.id))}`);
+    assertEq(
+      findings.length,
+      0,
+      `健康样本必须零 findings，实际：${JSON.stringify(findings.map((f) => f.id))}`,
+    );
     assertEq(healthOf(findings), "ok", "健康样本结论必须是 ok");
   } finally {
     removeAll(root);
@@ -325,11 +379,11 @@ Deno.test("AC-C4 降级：空 git 仓库（读不到 HEAD）返回 null 而不�
 Deno.test("parseWorkspaceGlobs：引号、注释、段边界都要处理对", () => {
   const yaml = [
     "packages:",
-    "  - \"apps/*\"",
+    '  - "apps/*"',
     "  - 'packages/*'   # 包目录",
     "  - tools/*",
     "otherKey:",
-    "  - \"should-not-be-picked\"",
+    '  - "should-not-be-picked"',
     "",
   ].join("\n");
   const globs = parseWorkspaceGlobs(yaml);
@@ -341,7 +395,7 @@ Deno.test("parseWorkspaceGlobs：引号、注释、段边界都要处理对", ()
 
   assertEq(parseWorkspaceGlobs("name: whatever\n").length, 0, "没有 packages 段应返回空");
   assertEq(parseWorkspaceGlobs("").length, 0, "空文件应返回空");
-  assertEq(parseWorkspaceGlobs("packages:\n  # - \"commented\"\n").length, 0, "注释行不该被收进来");
+  assertEq(parseWorkspaceGlobs('packages:\n  # - "commented"\n').length, 0, "注释行不该被收进来");
 });
 
 Deno.test("expandWorkspaceGlob：展开按段进行，跳过隐藏与已知残留形态", () => {
@@ -378,7 +432,10 @@ Deno.test("core.verify 动作：完整跑通并携带 AC-C1 结论与残留判�
   if (!HAS_GIT) return;
   const stale = makeCoreFixture("stale");
   try {
-    const report = await withDshWebDir(stale, () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>));
+    const report = await withDshWebDir(
+      stale,
+      () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>),
+    );
 
     assert(report.sourceRoot !== null, "应定位到源码树");
     assert(report.status !== null, "应携带 core.status 结论");
@@ -386,7 +443,10 @@ Deno.test("core.verify 动作：完整跑通并携带 AC-C1 结论与残留判�
     assert(report.libs !== null, "应执行残留检测");
     assertEq(report.libs?.zombieLibs.length, 0, "fixture 干净，不该有僵尸");
     assertEq(report.libs?.missingPackages.length, 0, "fixture 干净，不该有缺失");
-    assert(report.findings.some((f) => f.id === "core.needs-finish-update"), "findings 应含 AC-C1 的结论");
+    assert(
+      report.findings.some((f) => f.id === "core.needs-finish-update"),
+      "findings 应含 AC-C1 的结论",
+    );
     assertEq(report.health, "error", "有待完成更新结论时 health 必须是 error");
     assert(report.elapsedMs < 5000, `动作整体应远快于超时线，实际 ${report.elapsedMs}ms`);
   } finally {
@@ -403,7 +463,10 @@ Deno.test("core.verify 动作：残留检测被跳过时给出降级 finding 而
     writeFile(root, "package.json", JSON.stringify({ name: "fixture-nohead", version: "0.0.0" }));
     sh(root, "init", "-b", "main"); // 无提交
 
-    const report = await withDshWebDir(root, () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>));
+    const report = await withDshWebDir(
+      root,
+      () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>),
+    );
     assertEq(report.libs, null, "读不到 HEAD 时 libs 应为 null");
     const hit = report.findings.find((f) => f.id === "core.no-head");
     assert(hit !== undefined, "必须给出 core.no-head 降级提示");

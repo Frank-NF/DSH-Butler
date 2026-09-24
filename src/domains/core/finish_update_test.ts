@@ -11,7 +11,12 @@
  */
 
 import { stageSafetyProblems } from "../../jobs/registry.ts";
-import { FINISH_STEPS, coreFinishUpdateAction, isTransientBuildFailure, pickBuildErrors } from "./finish_update.ts";
+import {
+  coreFinishUpdateAction,
+  FINISH_STEPS,
+  isTransientBuildFailure,
+  pickBuildErrors,
+} from "./finish_update.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
 
@@ -21,13 +26,17 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
 function assertIncludes(haystack: string[], needle: string, msg: string): void {
   if (!haystack.some((l) => l.includes(needle))) {
-    throw new Error(`断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`,
+    );
   }
 }
 
@@ -36,7 +45,9 @@ function assertIncludes(haystack: string[], needle: string, msg: string): void {
 Deno.test("瞬断判定：纯 os error 5 / 拒绝访问 → 重试；混入真错误 → 绝不重试", () => {
   // 纯瞬断（Windows 并发写的典型现场）→ 重试
   assert(
-    isTransientBuildFailure("rolldown: failed to write dist/index.js\ncaused by: 拒绝访问 (os error 5)"),
+    isTransientBuildFailure(
+      "rolldown: failed to write dist/index.js\ncaused by: 拒绝访问 (os error 5)",
+    ),
     "纯瞬断应判定为可重试",
   );
   assert(isTransientBuildFailure("somefile.o: os error 5"), "只有 os error 5 也应可重试");
@@ -99,7 +110,11 @@ Deno.test("报错挑拣：五类模式命中、去重保序、噪音不收", () 
 Deno.test("六步清单：顺序固定且是单一事实来源", () => {
   assertEq(FINISH_STEPS.length, 6, "必须是六步");
   assertEq(coreFinishUpdateAction.steps?.length, 6, "动作声明的步骤必须与清单一致");
-  assertEq(coreFinishUpdateAction.steps?.[0], FINISH_STEPS[0], "动作步骤必须直接引用清单（单一事实来源）");
+  assertEq(
+    coreFinishUpdateAction.steps?.[0],
+    FINISH_STEPS[0],
+    "动作步骤必须直接引用清单（单一事实来源）",
+  );
   assert(coreFinishUpdateAction.steps?.[1]?.includes("清理"), "第 2 步必须是清理残留");
   assert(coreFinishUpdateAction.steps?.[3]?.includes("全量重建"), "第 4 步必须是全量重建");
   assert(coreFinishUpdateAction.steps?.[5]?.includes("重启"), "第 6 步必须是重启服务");
@@ -107,11 +122,18 @@ Deno.test("六步清单：顺序固定且是单一事实来源", () => {
 
 Deno.test("写动作准入：core.finishUpdate 带齐 preflight + steps，防呆零问题", () => {
   assertEq(coreFinishUpdateAction.readonly, false, "这是写动作");
-  assert(typeof coreFinishUpdateAction.preflight === "function", "写动作必须有 preflight（写前检查）");
+  assert(
+    typeof coreFinishUpdateAction.preflight === "function",
+    "写动作必须有 preflight（写前检查）",
+  );
   assert((coreFinishUpdateAction.steps?.length ?? 0) > 0, "写动作必须声明步骤");
   assert(
     (coreFinishUpdateAction.timeoutMs ?? 0) >= 3_600_000,
     "六步最坏预算必须比默认 jobTotal 宽（构建 3 次重试可能到 1.5 小时以上）",
   );
-  assertEq(stageSafetyProblems([coreFinishUpdateAction as never]).length, 0, "阶段安全防呆必须零问题");
+  assertEq(
+    stageSafetyProblems([coreFinishUpdateAction as never]).length,
+    0,
+    "阶段安全防呆必须零问题",
+  );
 });

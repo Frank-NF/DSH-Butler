@@ -32,7 +32,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -58,7 +60,10 @@ interface Fixture {
  *   【不设 DSH_WEB_DIR 或设成非法值都会回落真机】—— 所以 no-root 不可测。
  * - git 用 -c 内联配置提交：不依赖构建机的 user.name / gpgsign 全局设置。
  */
-async function withRepo(fn: (f: Fixture) => Promise<void>, opts: { git?: boolean } = {}): Promise<void> {
+async function withRepo(
+  fn: (f: Fixture) => Promise<void>,
+  opts: { git?: boolean } = {},
+): Promise<void> {
   const root = Deno.makeTempDirSync();
   const f: Fixture = { root, webDir: p(root, "dsh-src") };
   Deno.mkdirSync(p(f.webDir, "apps", "cli"), { recursive: true });

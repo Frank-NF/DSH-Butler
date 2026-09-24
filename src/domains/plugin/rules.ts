@@ -53,16 +53,14 @@ const RULES: Rule[] = [
     id: "plugin.manifest-missing",
     title: "profile 的 package.json 缺失或无法解析",
     test: (f) =>
-      f.manifestExists
-        ? []
-        : [
-            finding("plugin.manifest-missing", "error", "profile 的 package.json 缺失或无法解析", {
-              cause: `读不到或解析失败：${f.profileDir}\\package.json`,
-              impact: "DSH 无法加载 profile，插件双名单、依赖全部无从谈起。",
-              action: "检查该文件是否被误删或写坏；从备份恢复，或重建 profile。",
-              evidence: [f.profileDir],
-            }),
-          ],
+      f.manifestExists ? [] : [
+        finding("plugin.manifest-missing", "error", "profile 的 package.json 缺失或无法解析", {
+          cause: `读不到或解析失败：${f.profileDir}\\package.json`,
+          impact: "DSH 无法加载 profile，插件双名单、依赖全部无从谈起。",
+          action: "检查该文件是否被误删或写坏；从备份恢复，或重建 profile。",
+          evidence: [f.profileDir],
+        }),
+      ],
   },
   {
     id: "plugin.declared-but-inactive",
@@ -77,7 +75,7 @@ const RULES: Rule[] = [
             "把它补登记进 dsh.profile.bundles；若同时命中「不可作层」告警，先修包本身再登记。",
           fixAction: "plugin.repair",
           data: { plugin: name },
-        }),
+        })
       ),
   },
   {
@@ -92,7 +90,7 @@ const RULES: Rule[] = [
             impact: "多半是安装中断过（pnpm 没装完），插件不可用。",
             action: "重装该插件（或补跑一次安装），不要直接补登记 bundles —— 目录都没有。",
             data: { plugin: l.name },
-          }),
+          })
         ),
   },
   {
@@ -105,10 +103,11 @@ const RULES: Rule[] = [
           finding("plugin.repair-blocked", "error", `插件「${l.name}」不能直接补登记进 bundles`, {
             cause: `${REASON_TEXT[l.reason ?? "no-dsh-bundle"]}（${l.reason}）`,
             impact: BAD_LAYER_IMPACT,
-            action: "先修复包本身（补 dsh.bundle 声明 / 补 patch 文件），修好再登记。绕过这道守卫会把 DSH 搞出启动问题。",
+            action:
+              "先修复包本身（补 dsh.bundle 声明 / 补 patch 文件），修好再登记。绕过这道守卫会把 DSH 搞出启动问题。",
             evidence: l.dir ? [l.dir] : [],
             data: { plugin: l.name, reason: l.reason },
-          }),
+          })
         ),
   },
   {
@@ -117,11 +116,12 @@ const RULES: Rule[] = [
     test: (f) =>
       f.lists.bundledButUndeclared.map((name) =>
         finding("plugin.bundled-but-undeclared", "error", `bundles 里的「${name}」找不到包`, {
-          cause: "安装锚点与 profile 的 node_modules 都没有这个包（多半是被卸载/清残留时清掉了目录，名单却没删）。",
+          cause:
+            "安装锚点与 profile 的 node_modules 都没有这个包（多半是被卸载/清残留时清掉了目录，名单却没删）。",
           impact: BAD_LAYER_IMPACT,
           action: "要么补装这个包，要么把它从 bundles 名单里摘掉 —— 名单和实物必须对得上。",
           data: { plugin: name },
-        }),
+        })
       ),
   },
   {
@@ -137,7 +137,7 @@ const RULES: Rule[] = [
             action: "不要改 profile 去迁就它；修复包本身（补声明/补文件），或把它从 bundles 摘掉。",
             evidence: l.dir ? [l.dir, ...l.patchFiles] : [],
             data: { plugin: l.name, reason: l.reason },
-          }),
+          })
         ),
   },
   {
@@ -154,8 +154,10 @@ const RULES: Rule[] = [
         if (owner === undefined) continue;
         out.push(
           finding("plugin.dup-insert-profile-bundle", "error", `插件入口「${id}」被注册了两次`, {
-            cause: `profile 的 cordis.patch.yml 与包 ${owner} 自带的 patch 都对它做了 - insert:（双重注册）。`,
-            impact: "loader entry 双重注册，插件树加载失败或行为错乱（历史上 aigc-canvas 就这么炸过）。",
+            cause:
+              `profile 的 cordis.patch.yml 与包 ${owner} 自带的 patch 都对它做了 - insert:（双重注册）。`,
+            impact:
+              "loader entry 双重注册，插件树加载失败或行为错乱（历史上 aigc-canvas 就这么炸过）。",
             action: "两处只留一处 insert：包自己带 patch 就删 profile 里那份；反之亦然。",
             evidence: [`profile cordis.patch.yml`, `pkg ${owner}`],
             data: { insertId: id, pkg: owner },
@@ -181,13 +183,18 @@ const RULES: Rule[] = [
       for (const [id, sources] of byId) {
         if (sources.length < 2) continue;
         out.push(
-          finding("plugin.dup-insert-cross-bundle", "error", `插件入口「${id}」被注册了 ${sources.length} 次`, {
-            cause: `多个 patch 文件都对它做了 - insert:：${sources.join("、")}`,
-            impact: "loader entry 双重注册，插件树加载失败或行为错乱。",
-            action: "确认哪个包才是该入口的正主，把多余的 insert 摘掉。",
-            evidence: sources,
-            data: { insertId: id, sources },
-          }),
+          finding(
+            "plugin.dup-insert-cross-bundle",
+            "error",
+            `插件入口「${id}」被注册了 ${sources.length} 次`,
+            {
+              cause: `多个 patch 文件都对它做了 - insert:：${sources.join("、")}`,
+              impact: "loader entry 双重注册，插件树加载失败或行为错乱。",
+              action: "确认哪个包才是该入口的正主，把多余的 insert 摘掉。",
+              evidence: sources,
+              data: { insertId: id, sources },
+            },
+          ),
         );
       }
       return out;
@@ -207,16 +214,18 @@ const RULES: Rule[] = [
               ? `僵尸写锁：${l.path}（PID ${l.pid} 已不存在）`
               : `失效写锁：${l.path}（PID ${l.pid} 已被 ${l.procName ?? "别的程序"} 复用）`,
             {
-              cause:
-                l.verdict === "stale"
-                  ? "持有者进程已崩溃/退出，锁文件却留在原地。"
-                  : "锁里记的 PID 还活着，但已经是别的程序 —— 这把锁早已失效。",
-              impact: "DSH 的 atomic-write 只等 2 秒就超时、绝不自行移除别人的锁 → 之后所有配置写入全部失败。",
-              action: "把锁改名留证（.stale-<时间戳>）再继续；持有者是活 node 进程时绝不清（本规则不会对 held 报警）。",
-              evidence: [l.path, `firstLine=${l.firstLine}`, l.procName ? `proc=${l.procName}` : ""].filter(Boolean),
+              cause: l.verdict === "stale"
+                ? "持有者进程已崩溃/退出，锁文件却留在原地。"
+                : "锁里记的 PID 还活着，但已经是别的程序 —— 这把锁早已失效。",
+              impact:
+                "DSH 的 atomic-write 只等 2 秒就超时、绝不自行移除别人的锁 → 之后所有配置写入全部失败。",
+              action:
+                "把锁改名留证（.stale-<时间戳>）再继续；持有者是活 node 进程时绝不清（本规则不会对 held 报警）。",
+              evidence: [l.path, `firstLine=${l.firstLine}`, l.procName ? `proc=${l.procName}` : ""]
+                .filter(Boolean),
               data: { path: l.path, pid: l.pid, verdict: l.verdict },
             },
-          ),
+          )
         ),
   },
   {
@@ -227,12 +236,14 @@ const RULES: Rule[] = [
         .filter((l) => l.verdict === "unknown")
         .map((l) =>
           finding("plugin.lock-unrecognized", "info", `看不懂的锁文件：${l.path}`, {
-            cause: l.firstLine === "" ? "读不到首行（文件为空或无权限）。" : `首行不是 PID：「${l.firstLine}」`,
+            cause: l.firstLine === ""
+              ? "读不到首行（文件为空或无权限）。"
+              : `首行不是 PID：「${l.firstLine}」`,
             impact: "无法判断持有者死活，因此不会自动清理 —— 宁可当没看见，也绝不误清活锁。",
             action: "人工看一眼这是什么进程的锁；确认无人持有后再处理。",
             evidence: [l.path],
             data: { path: l.path },
-          }),
+          })
         ),
   },
   {
@@ -260,17 +271,16 @@ const RULES: Rule[] = [
     id: "plugin.pnpm-residue",
     title: "profile/node_modules 下有 pnpm 中断残留",
     test: (f) =>
-      f.residue.length === 0
-        ? []
-        : [
-            finding("plugin.pnpm-residue", "warn", `发现 ${f.residue.length} 处安装残留`, {
-              cause: "pnpm 安装/更新被中断时会留下临时目录或孤儿包（特征形态见 kind 说明）。",
-              impact: "残留物可能被当作打包入口或占住包名，导致构建/加载异常（实测踩过：孤儿 lib/ 让构建挂掉）。",
-              action: "清走残留（只进隔离区、不删文件）；本阶段只读报告，清理动作后续提供。",
-              evidence: f.residue.map((r) => `${r.name}（${r.kind}）`),
-              data: { count: f.residue.length },
-            }),
-          ],
+      f.residue.length === 0 ? [] : [
+        finding("plugin.pnpm-residue", "warn", `发现 ${f.residue.length} 处安装残留`, {
+          cause: "pnpm 安装/更新被中断时会留下临时目录或孤儿包（特征形态见 kind 说明）。",
+          impact:
+            "残留物可能被当作打包入口或占住包名，导致构建/加载异常（实测踩过：孤儿 lib/ 让构建挂掉）。",
+          action: "清走残留（只进隔离区、不删文件）；本阶段只读报告，清理动作后续提供。",
+          evidence: f.residue.map((r) => `${r.name}（${r.kind}）`),
+          data: { count: f.residue.length },
+        }),
+      ],
   },
 ];
 
@@ -288,6 +298,10 @@ export const RULE_COUNT = RULES.length;
  * S2 阶段 repair 尚未注册，这个入口先钉住契约并被测试覆盖。
  */
 export function repairBlockers(facts: PluginFacts): Finding[] {
-  const ids = new Set(["plugin.repair-blocked", "plugin.not-a-layer", "plugin.bundled-but-undeclared"]);
+  const ids = new Set([
+    "plugin.repair-blocked",
+    "plugin.not-a-layer",
+    "plugin.bundled-but-undeclared",
+  ]);
   return RULES.filter((r) => ids.has(r.id)).flatMap((r) => r.test(facts));
 }

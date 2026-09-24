@@ -157,7 +157,11 @@ export async function diskSpace(path: string): Promise<DiskSpace | null> {
   }
 
   const { run } = await import("./shell.ts");
-  const r = await run("df", ["-k", path], { timeoutMs: 10_000, allowNonZero: true, scope: "sysinfo" });
+  const r = await run("df", ["-k", path], {
+    timeoutMs: 10_000,
+    allowNonZero: true,
+    scope: "sysinfo",
+  });
   const lines = r.stdout.trim().split(/\r?\n/);
   const cols = lines[lines.length - 1]?.trim().split(/\s+/) ?? [];
   const total = Number(cols[1]);

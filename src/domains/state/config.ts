@@ -98,7 +98,10 @@ export function loadConfig(): AppConfig {
     if ((existing.schemaVersion ?? 0) < CONFIG_SCHEMA_VERSION) {
       merged.schemaVersion = CONFIG_SCHEMA_VERSION;
       saveConfig(merged);
-      log.info("config", `配置已从 schema v${existing.schemaVersion} 升级到 v${CONFIG_SCHEMA_VERSION}`);
+      log.info(
+        "config",
+        `配置已从 schema v${existing.schemaVersion} 升级到 v${CONFIG_SCHEMA_VERSION}`,
+      );
     }
     cached = merged;
     return cached;
@@ -156,15 +159,17 @@ export function migrateFromLegacy(): AppConfig | null {
   };
 
   const dropped: string[] = [];
-  for (const k of [
-    "server_host",
-    "server_port",
-    "server_user",
-    "server_key",
-    "server_remote_dir",
-    "server_dsh_dir",
-    "server_update_cmd",
-  ] as const) {
+  for (
+    const k of [
+      "server_host",
+      "server_port",
+      "server_user",
+      "server_key",
+      "server_remote_dir",
+      "server_dsh_dir",
+      "server_update_cmd",
+    ] as const
+  ) {
     if (legacy[k]) dropped.push(k);
   }
 

@@ -19,13 +19,17 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
 function someId(findings: { id: string }[], id: string, msg: string): void {
   if (!findings.some((f) => f.id === id)) {
-    throw new Error(`断言失败：${msg}\n  应出现 ${id}，实际：${findings.map((f) => f.id).join(", ") || "（空）"}`);
+    throw new Error(
+      `断言失败：${msg}\n  应出现 ${id}，实际：${findings.map((f) => f.id).join(", ") || "（空）"}`,
+    );
   }
 }
 
@@ -50,7 +54,14 @@ function baseFacts(over: Partial<RuntimeFacts> = {}): RuntimeFacts {
     http: null,
     foreignPorts: [],
     locks: [],
-    startupDump: { present: false, failed: false, ageMs: null, failedPlugins: [], lines: [], path: null },
+    startupDump: {
+      present: false,
+      failed: false,
+      ageMs: null,
+      failedPlugins: [],
+      lines: [],
+      path: null,
+    },
     logHits: {},
     checkedAt: "2026-09-24T00:00:00.000Z",
     ...over,
@@ -68,7 +79,14 @@ function runningFacts(over: Partial<RuntimeFacts> = {}): RuntimeFacts {
   });
 }
 
-const FRESH_DUMP = { present: true, failed: true, ageMs: 60_000, failedPlugins: ["dsh-ghost"], lines: ["StartupError: dsh: startup failed: 1 required plugin did not activate"], path: "C:\\Users\\niufe\\.dsh\\logs\\startup-x.log" };
+const FRESH_DUMP = {
+  present: true,
+  failed: true,
+  ageMs: 60_000,
+  failedPlugins: ["dsh-ghost"],
+  lines: ["StartupError: dsh: startup failed: 1 required plugin did not activate"],
+  path: "C:\\Users\\niufe\\.dsh\\logs\\startup-x.log",
+};
 
 // ══ 总门槛与 AC-R3 回归映射 ═══════════════════════════════════════
 
@@ -141,7 +159,10 @@ Deno.test("proc-no-http：cause 引用新鲜失败转储的插件名单（A 组�
     http: { reachable: false, status: null, error: "timeout" },
     startupDump: FRESH_DUMP,
   }));
-  assert(String(hitOf(out, "runtime.proc-no-http")?.cause ?? "").includes("dsh-ghost"), "没带上转储证据");
+  assert(
+    String(hitOf(out, "runtime.proc-no-http")?.cause ?? "").includes("dsh-ghost"),
+    "没带上转储证据",
+  );
 });
 
 // ══ 2 plugins-not-ready（阴性） ═══════════════════════════════════
@@ -153,14 +174,20 @@ Deno.test("plugins-not-ready：阴性 —— HTTP 通且转储非失败时不报
 // ══ 3 duplicate-processes ═════════════════════════════════════════
 
 Deno.test("duplicate-processes：阳性 2 进程 → warn；阴性 1 进程 → 不报", () => {
-  someId(runRules(runningFacts({ procCount: 2, pids: [1, 2] })), "runtime.duplicate-processes", "双进程没报");
+  someId(
+    runRules(runningFacts({ procCount: 2, pids: [1, 2] })),
+    "runtime.duplicate-processes",
+    "双进程没报",
+  );
   noId(runRules(runningFacts()), "runtime.duplicate-processes", "单进程被误报");
 });
 
 // ══ 4 port-foreign ════════════════════════════════════════════════
 
 Deno.test("port-foreign：阳性 —— 没进程 + 端口被别人占 → warn", () => {
-  const out = runRules(baseFacts({ foreignPorts: [{ port: 3081, owners: ["other-app(PID 999)"] }] }));
+  const out = runRules(
+    baseFacts({ foreignPorts: [{ port: 3081, owners: ["other-app(PID 999)"] }] }),
+  );
   someId(out, "runtime.port-foreign", "端口被占没报");
 });
 
@@ -199,7 +226,11 @@ Deno.test("boot-failed：新近失败（无进程）→ error；陈旧失败 →
   const stale = runRules(baseFacts({ startupDump: { ...FRESH_DUMP, ageMs: 48 * 3600_000 } }));
   assertEq(hitOf(stale, "runtime.boot-failed")?.severity, "info", "两天前的历史失败应降为 info");
 
-  noId(runRules(runningFacts({ startupDump: FRESH_DUMP })), "runtime.boot-failed", "有进程时不该由本规则报（归态B管）");
+  noId(
+    runRules(runningFacts({ startupDump: FRESH_DUMP })),
+    "runtime.boot-failed",
+    "有进程时不该由本规则报（归态B管）",
+  );
 });
 
 Deno.test("boot-failed：阴性 —— 转储存在但非失败（正常启动日志）不报", () => {
@@ -212,7 +243,18 @@ Deno.test("boot-failed：阴性 —— 转储存在但非失败（正常启动�
 
 // ══ 7-12 日志原文规则：每条 fresh→error / stale→info / 无→不报 ════
 
-const LOG_RULE_CASES: Array<{ id: string; key: "remoteHang" | "doubleReg" | "depUnresolved" | "moduleTable" | "strictCodec" | "presetUnmount" }> = [
+const LOG_RULE_CASES: Array<
+  {
+    id: string;
+    key:
+      | "remoteHang"
+      | "doubleReg"
+      | "depUnresolved"
+      | "moduleTable"
+      | "strictCodec"
+      | "presetUnmount";
+  }
+> = [
   { id: "runtime.remote-hang", key: "remoteHang" },
   { id: "runtime.double-registration", key: "doubleReg" },
   { id: "runtime.dep-unresolved", key: "depUnresolved" },
@@ -223,11 +265,19 @@ const LOG_RULE_CASES: Array<{ id: string; key: "remoteHang" | "doubleReg" | "dep
 
 for (const c of LOG_RULE_CASES) {
   Deno.test(`${c.id}：fresh → error / stale → info / 无 → 不报`, () => {
-    const fresh = runRules(baseFacts({ logHits: { [c.key]: [{ text: "real error line", fresh: true }] } }));
+    const fresh = runRules(
+      baseFacts({ logHits: { [c.key]: [{ text: "real error line", fresh: true }] } }),
+    );
     assertEq(hitOf(fresh, c.id)?.severity, "error", "现场故障应为 error");
 
-    const stale = runRules(baseFacts({ logHits: { [c.key]: [{ text: "old error line", fresh: false }] } }));
-    assertEq(hitOf(stale, c.id)?.severity, "info", "历史现场应降为 info —— 不许让用户去修已修好的问题");
+    const stale = runRules(
+      baseFacts({ logHits: { [c.key]: [{ text: "old error line", fresh: false }] } }),
+    );
+    assertEq(
+      hitOf(stale, c.id)?.severity,
+      "info",
+      "历史现场应降为 info —— 不许让用户去修已修好的问题",
+    );
 
     noId(runRules(baseFacts()), c.id, "无证据却报了");
   });

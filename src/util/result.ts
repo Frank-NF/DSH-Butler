@@ -56,7 +56,11 @@ export function ok<T>(data: T): StepResult<T> {
   return { ok: true, data };
 }
 
-export function fail(message: string, code: ExitCode = EXIT.FAIL, ...evidence: string[]): StepResult<never> {
+export function fail(
+  message: string,
+  code: ExitCode = EXIT.FAIL,
+  ...evidence: string[]
+): StepResult<never> {
   const out: StepResult<never> = { ok: false, error: message, code };
   if (evidence.length) (out as { data?: unknown }).data = { evidence };
   return out;

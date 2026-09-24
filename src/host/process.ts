@@ -146,7 +146,10 @@ export async function killProcess(pid: number, force = false): Promise<boolean> 
     const r = await run("taskkill", args, { timeoutMs: 15_000, allowNonZero: true, scope: "proc" });
     const okKill = r.code === 0;
     if (!okKill) {
-      log.warn("proc", `taskkill 失败(${r.code})，pid=${pid}：${r.stderr.trim() || r.stdout.trim()}`);
+      log.warn(
+        "proc",
+        `taskkill 失败(${r.code})，pid=${pid}：${r.stderr.trim() || r.stdout.trim()}`,
+      );
     }
     return okKill;
   }

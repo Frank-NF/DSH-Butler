@@ -29,7 +29,15 @@ const RISKY_SEGMENTS = ["src", "tests", "test", "benchmarks", "__tests__"];
 const SOURCE_EXTS = ["ts", "tsx", "js", "jsx", "mts", "cts", "css", "map"];
 
 /** 构建产物的常见目录名。一个包目录里只剩这些东西，说明包本身已经不在了。 */
-const RESIDUE_NAMES = ["lib", "node_modules", ".typecheck", ".dsh-build", "dist", "tmp", "coverage"];
+const RESIDUE_NAMES = [
+  "lib",
+  "node_modules",
+  ".typecheck",
+  ".dsh-build",
+  "dist",
+  "tmp",
+  "coverage",
+];
 
 /**
  * 判断一个「未跟踪且不属于 HEAD」的路径是否危险到需要隔离。

@@ -25,7 +25,7 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { isDir, moveSafe, pathExists, writeJsonAtomic } from "../../host/fs.ts";
 import { dshProfileDir, p, stampOf } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
@@ -72,7 +72,8 @@ async function cleanResiduePreflight(): Promise<Finding[]> {
   if (residue.length === 0) {
     out.push(
       finding("plugin.nothing-to-clean", "error", "没有可清理的安装残留", {
-        cause: "扫描 profile/node_modules 未发现 pnpm 暂存特征的目录（隐藏前缀 / _tmp_ / 随机后缀 / 日期戳）",
+        cause:
+          "扫描 profile/node_modules 未发现 pnpm 暂存特征的目录（隐藏前缀 / _tmp_ / 随机后缀 / 日期戳）",
         impact: "没有需要移动的对象",
         action: "双名单之外的问题用 plugin diagnose 查",
         fixAction: "plugin.diagnose",
@@ -152,7 +153,13 @@ async function runCleanResidue(ctx: ActionContext): Promise<CleanResidueReport> 
     ctx.onUndo(async () => {
       if (!pathExists(to)) return;
       const back = moveSafe(to, from);
-      if (!back.ok) ctx.log(`⚠ 还原残留目录失败：${r.name} — ${back.error ?? "未知原因"}（隔离区有 MANIFEST 可人工还原）`);
+      if (!back.ok) {
+        ctx.log(
+          `⚠ 还原残留目录失败：${r.name} — ${
+            back.error ?? "未知原因"
+          }（隔离区有 MANIFEST 可人工还原）`,
+        );
+      }
     });
     if (items.length % 10 === 0) ctx.detail(`已隔离 ${items.length}/${residue.length} 项`);
   }

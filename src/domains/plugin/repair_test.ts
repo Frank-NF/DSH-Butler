@@ -20,12 +20,7 @@ import { isFile } from "../../host/fs.ts";
 import { dirname, p } from "../../util/paths.ts";
 import { stageSafetyProblems } from "../../jobs/registry.ts";
 import { readPluginLists } from "../core/status.ts";
-import {
-  pluginRepairAction,
-  profileManifestPath,
-  readActiveTxn,
-  REPAIR_STEPS,
-} from "./mutate.ts";
+import { pluginRepairAction, profileManifestPath, readActiveTxn, REPAIR_STEPS } from "./mutate.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
 
@@ -35,7 +30,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -168,7 +165,10 @@ Deno.test("AC-P2：bundles 造洞（名单里的包解析不到）→ bundled-bu
 
     const out = await preRepair({});
     const hit = out.find((x) => x.id === "plugin.bundled-but-undeclared");
-    assert(hit, `应报 bundled-but-undeclared，实际：${out.map((x) => x.id).join("、") || "（空）"}`);
+    assert(
+      hit,
+      `应报 bundled-but-undeclared，实际：${out.map((x) => x.id).join("、") || "（空）"}`,
+    );
     assertEq(hit.severity, "error", "名单有洞必须是 error 级（preflight 才会拦截）");
   });
 });
@@ -328,7 +328,11 @@ Deno.test("preflight nothing-to-repair：四种 cause 各归各位", async () =>
 Deno.test("plugin.repair 装备：五步清单单一事实来源 + 写动作准入", () => {
   assertEq(REPAIR_STEPS.length, 5, "必须是五步");
   assertEq(pluginRepairAction.steps?.length, 5, "动作声明的步骤必须与清单一致");
-  assertEq(pluginRepairAction.steps?.[0], REPAIR_STEPS[0], "动作步骤必须直接引用清单（单一事实来源）");
+  assertEq(
+    pluginRepairAction.steps?.[0],
+    REPAIR_STEPS[0],
+    "动作步骤必须直接引用清单（单一事实来源）",
+  );
   assert(pluginRepairAction.steps?.[2]?.includes("补登记"), "第 3 步必须是补登记双名单");
   assert(pluginRepairAction.steps?.[4]?.includes("提交"), "第 5 步必须是提交事务并重启服务");
   assertEq(pluginRepairAction.readonly, false, "这是写动作");

@@ -9,12 +9,17 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
-import { listDshProcesses, liveProcesses, looksLikeNodeProcess, type ProcInfo } from "../../host/process.ts";
+import { type Finding, finding } from "../../util/result.ts";
+import {
+  listDshProcesses,
+  liveProcesses,
+  looksLikeNodeProcess,
+  type ProcInfo,
+} from "../../host/process.ts";
 import { describePort } from "../../host/port.ts";
 import { dshProfileDir, p } from "../../util/paths.ts";
 import { humanSize } from "../../host/fs.ts";
-import { dirSizeBudgeted, listDir, isDir, isFile } from "../../host/fs.ts";
+import { dirSizeBudgeted, isDir, isFile, listDir } from "../../host/fs.ts";
 import { DSH_PORT_CANDIDATES } from "../../version.ts";
 
 export interface HealthCheck {
@@ -187,7 +192,8 @@ export async function scanLocks(profileDir: string): Promise<LockInfo[]> {
         holderName,
         sizeBytes: size,
         verdict: "recycled",
-        note: `PID ${pidMatch} 已被 ${holderName} 占用 —— 原来的进程早已消失，这个号被系统回收复用，锁同样是废的`,
+        note:
+          `PID ${pidMatch} 已被 ${holderName} 占用 —— 原来的进程早已消失，这个号被系统回收复用，锁同样是废的`,
       });
     }
   }
@@ -243,7 +249,13 @@ export function scanProfileResidue(profileDir: string, totalBudgetMs = 250): Pro
       existing.sizeBytes += bytes;
       existing.sizeComplete = existing.sizeComplete && complete;
     } else {
-      out.push({ name: e.name, kind: hit.kind, sizeBytes: bytes, sizeComplete: complete, count: 1 });
+      out.push({
+        name: e.name,
+        kind: hit.kind,
+        sizeBytes: bytes,
+        sizeComplete: complete,
+        count: 1,
+      });
     }
   }
   return out.sort((a, b) => b.sizeBytes - a.sizeBytes);
@@ -284,7 +296,9 @@ export async function collectRuntimeStatus(): Promise<RuntimeStatus> {
         cause: "可能有多次启动没有正确结束（旧版常见：重复点启动 / 端口冲突后换了端口再起一个）",
         impact: "插件树可能被两个进程同时改写，出现「改了不生效」或莫名冲突",
         action: "保留一个所需端口上的进程，结束其余进程后重启服务",
-        evidence: procs.map((x) => `PID ${x.pid} · 端口 ${x.port ?? "?"} · ${x.cmdline.slice(0, 120)}`),
+        evidence: procs.map((x) =>
+          `PID ${x.pid} · 端口 ${x.port ?? "?"} · ${x.cmdline.slice(0, 120)}`
+        ),
       }),
     );
   }
@@ -382,7 +396,9 @@ export const runtimeStatusAction: ActionDef<Record<string, never>, RuntimeStatus
     ctx.step("s1", "识别服务进程");
     ctx.progress(0.2);
     const status = await collectRuntimeStatus();
-    ctx.detail(status.running ? `运行中（PID ${status.pid}，端口 ${status.port ?? "未知"}）` : "未运行");
+    ctx.detail(
+      status.running ? `运行中（PID ${status.pid}，端口 ${status.port ?? "未知"}）` : "未运行",
+    );
     ctx.throwIfCancelled();
 
     ctx.step("s2", "探测服务端口");
@@ -404,7 +420,9 @@ export const runtimeStatusAction: ActionDef<Record<string, never>, RuntimeStatus
     ctx.step("s4", "扫描僵尸锁与残留物");
     ctx.progress(0.85);
     ctx.detail(
-      `${status.locks.length} 个锁文件（其中 ${status.locks.filter((l) => l.verdict === "stale").length} 个疑似僵尸）· ` +
+      `${status.locks.length} 个锁文件（其中 ${
+        status.locks.filter((l) => l.verdict === "stale").length
+      } 个疑似僵尸）· ` +
         `${status.residue.length} 类残留备份`,
     );
     ctx.progress(1);

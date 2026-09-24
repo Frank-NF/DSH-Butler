@@ -70,8 +70,7 @@ export async function hostFacts(opts: { fresh?: boolean } = {}): Promise<HostFac
 }
 
 async function queryHostFacts(): Promise<HostFacts> {
-  const script =
-    `$cpu=(Get-CimInstance Win32_Processor | Select-Object -First 1).Name; ` +
+  const script = `$cpu=(Get-CimInstance Win32_Processor | Select-Object -First 1).Name; ` +
     `$os=Get-CimInstance Win32_OperatingSystem; ` +
     `$adm=([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent())` +
     `.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator); ` +

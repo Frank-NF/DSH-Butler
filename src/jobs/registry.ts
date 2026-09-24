@@ -17,7 +17,12 @@ import { runtimeLogsAction } from "../domains/runtime/logs.ts";
 import { runtimeDiagnoseAction } from "../domains/runtime/diagnose.ts";
 import { diagHealthAction } from "../domains/diag/health.ts";
 import { pluginDiagnoseAction } from "../domains/plugin/diagnose.ts";
-import { pluginInstallAction, pluginRepairAction, pluginScanAction, pluginUninstallAction } from "../domains/plugin/mutate.ts";
+import {
+  pluginInstallAction,
+  pluginRepairAction,
+  pluginScanAction,
+  pluginUninstallAction,
+} from "../domains/plugin/mutate.ts";
 import { pluginCleanResidueAction } from "../domains/plugin/clean_residue.ts";
 import { runtimeRepairAction } from "../domains/runtime/repair.ts";
 import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";

@@ -26,13 +26,13 @@ import {
   beginTxn,
   collectScanReport,
   pluginInstallAction,
+  type PluginScanReport,
+  type PluginTxnJournal,
   pluginUninstallAction,
   profileManifestPath,
   readActiveTxn,
   recoverPluginTxn,
   unregisterFromProfile,
-  type PluginScanReport,
-  type PluginTxnJournal,
 } from "./mutate.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
@@ -43,7 +43,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -280,7 +282,10 @@ Deno.test("AC-P3：安装中途被杀（清单已写、未提交），恢复后�
     assertEq(after, before, "恢复后必须回到安装前状态（清单不含半写入的包）");
     assert(readActiveTxn() === null, "日志应清");
     // 实体不删（install 的回滚只还原清单；npm 下次安装会重算）——快照只含依赖项，不受影响
-    assert(isDir(p(f.profileDir, "node_modules", "@fixture", "kill-pkg")), "预置实体保留（回滚不碰目录）");
+    assert(
+      isDir(p(f.profileDir, "node_modules", "@fixture", "kill-pkg")),
+      "预置实体保留（回滚不碰目录）",
+    );
   });
 });
 
@@ -291,7 +296,10 @@ Deno.test("install 成功：双名单同步登记，可作层进生效名单", a
     makeProfile(f);
     makeInstallTarget(f, "@fixture/layer-pkg", true);
 
-    const rep = await pluginInstallAction.run(fakeCtx(), { name: "@fixture/layer-pkg", version: "2.0.0" });
+    const rep = await pluginInstallAction.run(fakeCtx(), {
+      name: "@fixture/layer-pkg",
+      version: "2.0.0",
+    });
     assertEq(rep.activated, true, "可作层的包必须激活");
     assert(rep.rollbackId.length > 0, "应创建写前回滚点");
 
@@ -472,7 +480,9 @@ Deno.test("preflight 四条防呆：坏名 / 已安装 / 未安装 / 缺清单",
     const clean = await preInstall({ name: "@fixture/fresh-pkg" });
     assert(
       !clean.some((x) => x.severity === "error"),
-      `正常请求不应有 error：${clean.filter((x) => x.severity === "error").map((x) => x.id).join("、")}`,
+      `正常请求不应有 error：${
+        clean.filter((x) => x.severity === "error").map((x) => x.id).join("、")
+      }`,
     );
   });
 });

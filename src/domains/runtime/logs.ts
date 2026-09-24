@@ -10,7 +10,7 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { butlerLogsDir, dshLogsDir, p } from "../../util/paths.ts";
 import { isDir, isFile, listDir } from "../../host/fs.ts";
 import { humanSize } from "../../host/mod.ts";
@@ -213,29 +213,35 @@ export async function collectLogs(): Promise<LogsReport> {
     // 实测本机只剩一份 09-22 的失败启动日志，而服务此刻是正常运行的 ——
     // 若只报一句"启动日志里发现错误"，用户会去修一个早就修好的问题。
     // 判据用日志自身的写入时间，不猜"当前实例启动于何时"（那需要进程创建时间，代价更高且未必准）。
-    const times = recentErrors.map((r) => (r.mtime ? Date.parse(r.mtime) : NaN)).filter((n) => Number.isFinite(n));
+    const times = recentErrors.map((r) => (r.mtime ? Date.parse(r.mtime) : NaN)).filter((n) =>
+      Number.isFinite(n)
+    );
     const newestMs = times.length > 0 ? Math.max(...times) : NaN;
     const ageMs = Number.isFinite(newestMs) ? Date.now() - newestMs : NaN;
     const isStale = Number.isFinite(ageMs) && ageMs > STALE_LOG_HOURS * 3600_000;
 
-    const when = Number.isFinite(ageMs)
-      ? `最近一次写入于 ${hoursAgo(ageMs)}`
-      : "无法确定日志时间";
+    const when = Number.isFinite(ageMs) ? `最近一次写入于 ${hoursAgo(ageMs)}` : "无法确定日志时间";
 
     findings.push(
-      finding("logs.errors-present", isStale ? "info" : "warn", isStale
-        ? `历史启动日志里有错误记录（${when}）`
-        : "启动日志里发现错误", {
-        cause: `${recentErrors.length} 份启动日志包含错误行；${when}`,
-        impact: isStale
-          ? "这份日志记录的是过去某次失败启动，未必代表现在还有问题 —— 若当前服务能正常使用，可据此忽略"
-          : "DSH 可能启动不完整（界面能打开但功能缺失）",
-        action: "查看错误详情，或运行自动诊断定位原因",
-        fixAction: "runtime.diagnose",
-        evidence: recentErrors.flatMap((r) =>
-          [`【${new Date(r.mtime ?? 0).toLocaleString("zh-CN")}】${r.source}`, ...r.lines.slice(0, 5)]
-        ),
-      }),
+      finding(
+        "logs.errors-present",
+        isStale ? "info" : "warn",
+        isStale ? `历史启动日志里有错误记录（${when}）` : "启动日志里发现错误",
+        {
+          cause: `${recentErrors.length} 份启动日志包含错误行；${when}`,
+          impact: isStale
+            ? "这份日志记录的是过去某次失败启动，未必代表现在还有问题 —— 若当前服务能正常使用，可据此忽略"
+            : "DSH 可能启动不完整（界面能打开但功能缺失）",
+          action: "查看错误详情，或运行自动诊断定位原因",
+          fixAction: "runtime.diagnose",
+          evidence: recentErrors.flatMap((
+            r,
+          ) => [
+            `【${new Date(r.mtime ?? 0).toLocaleString("zh-CN")}】${r.source}`,
+            ...r.lines.slice(0, 5),
+          ]),
+        },
+      ),
     );
   }
 

@@ -112,7 +112,12 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
           data: { status: job.status, steps: job.steps, progress: job.progress },
         });
         if (job.status !== "running" && job.status !== "queued") {
-          send({ type: "done", jobId, message: job.error ?? "任务已结束", data: { status: job.status } });
+          send({
+            type: "done",
+            jobId,
+            message: job.error ?? "任务已结束",
+            data: { status: job.status },
+          });
         }
 
         unsub = engine.subscribe((ev) => {
@@ -127,7 +132,12 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
           if (ev.stepId) payload.stepId = ev.stepId;
           const cur = engine.get(jobId);
           if (cur) {
-            payload.data = { status: cur.status, steps: cur.steps, progress: cur.progress, ...(ev.data ?? {}) };
+            payload.data = {
+              status: cur.status,
+              steps: cur.steps,
+              progress: cur.progress,
+              ...(ev.data ?? {}),
+            };
           } else if (ev.data) {
             payload.data = ev.data;
           }
@@ -300,7 +310,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     {
       hostname: "127.0.0.1",
       ...(opts.port ? { port: opts.port } : {}),
-      onListen: () => { /* 端口在下方读取 */ },
+      onListen: () => {/* 端口在下方读取 */},
     },
     (req) => {
       // debug 级请求日志：排查「窗口到底加载到哪一步」时，这是唯一能看到 webview

@@ -109,7 +109,11 @@ export interface CollectOptions {
  * 与 core/status.ts 的 resolvesBundle 同源；这里返回目录而非布尔，
  * 因为作层判定要读包里的 package.json。
  */
-export function locateBundleDir(name: string, installRoot: string | null, profileDir: string): string | null {
+export function locateBundleDir(
+  name: string,
+  installRoot: string | null,
+  profileDir: string,
+): string | null {
   const anchors: string[] = [];
   if (installRoot) {
     anchors.push(p(installRoot, "node_modules"), p(installRoot, "apps", "cli", "node_modules"));
@@ -252,10 +256,15 @@ async function collectLocks(profileDir: string): Promise<LockFact[]> {
 /** 采集插件事实（只读）。 */
 export async function collectPluginFacts(options: CollectOptions = {}): Promise<PluginFacts> {
   const profileDir = options.profileDir ?? dshProfileDir();
-  const installRoot = options.installRoot !== undefined ? options.installRoot : resolveDshSourceRoot()?.path ?? null;
+  const installRoot = options.installRoot !== undefined
+    ? options.installRoot
+    : resolveDshSourceRoot()?.path ?? null;
 
-  const lists = readPluginLists(p(profileDir, "package.json"), { installRoot: installRoot ?? "", profileDir })
-    ?? {
+  const lists = readPluginLists(p(profileDir, "package.json"), {
+    installRoot: installRoot ?? "",
+    profileDir,
+  }) ??
+    {
       dependencies: [],
       bundles: [],
       active: [],

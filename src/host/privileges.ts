@@ -7,7 +7,7 @@
 
 import { isWritable } from "./fs.ts";
 import { hostFacts } from "./windows-facts.ts";
-import { finding, type Finding } from "../util/result.ts";
+import { type Finding, finding } from "../util/result.ts";
 
 /** 当前进程是否具备管理员/root 权限。 */
 export async function isElevated(): Promise<boolean> {

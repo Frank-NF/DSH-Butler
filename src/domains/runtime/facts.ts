@@ -22,7 +22,7 @@
  */
 
 import type { Finding } from "../../util/result.ts";
-import { healthCheck, scanLocks, type LockInfo } from "./status.ts";
+import { healthCheck, type LockInfo, scanLocks } from "./status.ts";
 import { extractErrors, listLogSources, readTail } from "./logs.ts";
 import { listDshProcesses } from "../../host/process.ts";
 import { describePort } from "../../host/port.ts";
@@ -61,7 +61,8 @@ export const LOG_PATTERNS: Record<LogKey, RegExp> = {
   depUnresolved: /Cannot find (?:package|module)/i,
   moduleTable: /missed the module table|does not provide an export named/i,
   strictCodec: /strict codec has no create\(\)/i,
-  presetUnmount: /failed to mount|resume failed for session|names a plugin that cannot be resolved/i,
+  presetUnmount:
+    /failed to mount|resume failed for session|names a plugin that cannot be resolved/i,
   saveFail: /保存失败/,
 };
 
@@ -103,7 +104,8 @@ export interface CollectOptions {
   skipProbes?: boolean;
 }
 
-const FAILED_DUMP_RE = /startup failed|required plugin did not activate|Failed plugins \(|StartupError/i;
+const FAILED_DUMP_RE =
+  /startup failed|required plugin did not activate|Failed plugins \(|StartupError/i;
 const FRESH_MS = LOG_FRESH_HOURS * 3600_000;
 const HIT_MAX_PER_KEY = 5;
 
@@ -125,7 +127,14 @@ function readHead(path: string, bytes = 512 * 1024): string {
 
 /** 解析最新一份启动日志：是不是失败现场、哪些插件没激活。 */
 function collectStartupDump(): StartupDump {
-  const empty: StartupDump = { present: false, failed: false, ageMs: null, failedPlugins: [], lines: [], path: null };
+  const empty: StartupDump = {
+    present: false,
+    failed: false,
+    ageMs: null,
+    failedPlugins: [],
+    lines: [],
+    path: null,
+  };
   const latest = listLogSources().find((s) => s.kind === "dsh-startup");
   if (!latest) return empty;
 

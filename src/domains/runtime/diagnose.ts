@@ -38,7 +38,9 @@ export const runtimeDiagnoseAction: ActionDef<Record<string, never>, RuntimeDiag
     const facts = await collectRuntimeFacts();
     ctx.detail(
       facts.procCount > 0
-        ? `进程 ${facts.procCount} 个 · 端口 ${facts.port ?? "?"} · HTTP ${facts.http?.reachable ? "通" : "不通"}`
+        ? `进程 ${facts.procCount} 个 · 端口 ${facts.port ?? "?"} · HTTP ${
+          facts.http?.reachable ? "通" : "不通"
+        }`
         : "服务未运行",
     );
     ctx.throwIfCancelled();

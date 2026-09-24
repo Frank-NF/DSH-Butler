@@ -7,7 +7,7 @@
  * 所以「产品名必须纯 ASCII」是硬约束，必须有测试钉住，不能只靠注释提醒。
  */
 
-import { assertEquals, assert } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { APP_ID, APP_NAME } from "./version.ts";
 
 /** 是否全部落在可打印 ASCII 范围内（0x20–0x7E）。 */

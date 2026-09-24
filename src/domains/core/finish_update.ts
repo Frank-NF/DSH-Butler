@@ -29,11 +29,16 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { locate, powershell, run, type RunResult } from "../../host/shell.ts";
 import { isFile } from "../../host/fs.ts";
 import { describePort, findDshPort, isPortFree } from "../../host/port.ts";
-import { invalidateLiveCache, invalidateProcessCache, killProcess, listDshProcesses } from "../../host/process.ts";
+import {
+  invalidateLiveCache,
+  invalidateProcessCache,
+  killProcess,
+  listDshProcesses,
+} from "../../host/process.ts";
 import {
   butlerLogsDir,
   isWindows,
@@ -49,7 +54,7 @@ import {
   DSH_PROFILE_DEFAULT,
   TIMEOUTS,
 } from "../../version.ts";
-import { deepCleanInto, type CleanReport } from "./deep_clean.ts";
+import { type CleanReport, deepCleanInto } from "./deep_clean.ts";
 import { invalidateBuildIntegrityCache, verifyBuildIntegrity } from "./official.ts";
 import { collectCoreStatus } from "./status.ts";
 import { createRollbackPoint } from "../backup/rollback.ts";
@@ -107,7 +112,13 @@ export async function detectPnpm(): Promise<PnpmToolchain | null> {
 
 // ── 构建日志判据（移植旧版，测试钉住） ──────────────────────────────
 
-const BUILD_ERROR_PATTERNS = ["MISSING_EXPORT", "error TS", "Failed to write file", "拒绝访问", "Cannot find module"];
+const BUILD_ERROR_PATTERNS = [
+  "MISSING_EXPORT",
+  "error TS",
+  "Failed to write file",
+  "拒绝访问",
+  "Cannot find module",
+];
 
 /**
  * 从构建日志里挑出真正的报错行（去重，保序）。
@@ -133,7 +144,8 @@ export function pickBuildErrors(text: string): string[] {
  */
 export function isTransientBuildFailure(text: string): boolean {
   const transient = text.includes("os error 5") || text.includes("拒绝访问");
-  const real = text.includes("MISSING_EXPORT") || text.includes("error TS") || text.includes("Cannot find module");
+  const real = text.includes("MISSING_EXPORT") || text.includes("error TS") ||
+    text.includes("Cannot find module");
   return transient && !real;
 }
 
@@ -197,13 +209,17 @@ export async function startDshServer(root: string, port: number): Promise<StartO
     if (st.isDsh) return { ok: true, message: `已在运行（端口 ${port}）`, logFiles };
     return {
       ok: false,
-      message: `端口 ${port} 被非 DSH 进程占用：${st.owners.map((o) => o.name).join("、") || "未知进程"}`,
+      message: `端口 ${port} 被非 DSH 进程占用：${
+        st.owners.map((o) => o.name).join("、") || "未知进程"
+      }`,
       logFiles,
     };
   }
 
   const node = Deno.env.get("DSH_NODE_PATH") ?? (await locate("node"));
-  if (!node) return { ok: false, message: "找不到 node（可在环境体检里确认 Node.js 是否安装）", logFiles };
+  if (!node) {
+    return { ok: false, message: "找不到 node（可在环境体检里确认 Node.js 是否安装）", logFiles };
+  }
 
   const cliDir = p(root, DSH_CLI_SUBDIR);
   const binJs = p(cliDir, "lib", "bin.js");
@@ -228,8 +244,7 @@ export async function startDshServer(root: string, port: number): Promise<StartO
     String(port),
   ].map(q).join(",");
 
-  const script =
-    `$p = Start-Process -FilePath ${q(node)} -ArgumentList ${argList} ` +
+  const script = `$p = Start-Process -FilePath ${q(node)} -ArgumentList ${argList} ` +
     `-WorkingDirectory ${q(cliDir)} -RedirectStandardOutput ${q(logOut)} ` +
     `-RedirectStandardError ${q(logErr)} -NoNewWindow -PassThru; $p.Id`;
   const ps = await powershell(script, { timeoutMs: 20_000 });
@@ -263,7 +278,9 @@ export async function startDshServer(root: string, port: number): Promise<StartO
     .slice(0, 12);
   return {
     ok: false,
-    message: `15 秒内端口 ${port} 未监听${tails.length ? `。启动日志尾部：\n${tails.join("\n")}` : ""}`,
+    message: `15 秒内端口 ${port} 未监听${
+      tails.length ? `。启动日志尾部：\n${tails.join("\n")}` : ""
+    }`,
     logFiles,
   };
 }
@@ -432,7 +449,13 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
     report,
     line,
     stepIds: ["s2", "s3", "s4", "s5", "s6"],
-    stepTitles: [FINISH_STEPS[1], FINISH_STEPS[2], FINISH_STEPS[3], FINISH_STEPS[4], FINISH_STEPS[5]],
+    stepTitles: [
+      FINISH_STEPS[1],
+      FINISH_STEPS[2],
+      FINISH_STEPS[3],
+      FINISH_STEPS[4],
+      FINISH_STEPS[5],
+    ],
     mapProgress: (v) => v,
   });
   ctx.progress(1);
@@ -487,7 +510,9 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
     if (clean.quarantineDir) {
       line(`　隔离区（要还原就把里面的文件搬回原位）：${clean.quarantineDir}`);
     }
-    ctx.detail(`孤儿包 ${clean.orphanPackages} · 残留源文件 ${clean.quarantined} · 编译缓存 ${clean.tsbuildinfoReset}`);
+    ctx.detail(
+      `孤儿包 ${clean.orphanPackages} · 残留源文件 ${clean.quarantined} · 编译缓存 ${clean.tsbuildinfoReset}`,
+    );
   } catch (e) {
     line(`清理残留：未能完成（${(e as Error).message}），继续构建`);
   }
@@ -509,7 +534,9 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
   } else {
     const last = tailLines(inst.stdout + "\n" + inst.stderr, 1)[0] ?? "";
     line(
-      `安装 / 更新依赖：${inst.timedOut ? "超时" : `退出码 ${inst.code}`}（已跳过，继续构建）${last ? ` — ${last}` : ""}`,
+      `安装 / 更新依赖：${inst.timedOut ? "超时" : `退出码 ${inst.code}`}（已跳过，继续构建）${
+        last ? ` — ${last}` : ""
+      }`,
     );
   }
   ctx.throwIfCancelled();
@@ -523,7 +550,9 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
   for (;;) {
     attempt++;
     ctx.detail(
-      `第 ${attempt}/${BUILD_ATTEMPTS} 次构建，通常需要 5-20 分钟${attempt > 1 ? "（瞬时拒绝，重试中）" : ""}`,
+      `第 ${attempt}/${BUILD_ATTEMPTS} 次构建，通常需要 5-20 分钟${
+        attempt > 1 ? "（瞬时拒绝，重试中）" : ""
+      }`,
     );
     outcome = await run(tc.node, [tc.pnpmCjs, "run", "build"], {
       cwd: root,
@@ -538,7 +567,9 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
     });
     if (outcome.code === 0 && !outcome.timedOut) break;
     if (outcome.timedOut) break;
-    if (attempt >= BUILD_ATTEMPTS || !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)) break;
+    if (
+      attempt >= BUILD_ATTEMPTS || !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)
+    ) break;
     ctx.log(`第 ${attempt} 次撞上 Windows 并发写的瞬时拒绝（换个包再来一次通常就过），正在重试…`);
   }
   // 用户中途取消时 run 返回的也是非 0 —— 先按「已取消」走，别报成构建失败

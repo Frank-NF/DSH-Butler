@@ -13,7 +13,7 @@
 import { engine } from "../jobs/engine.ts";
 import type { Job } from "../jobs/types.ts";
 import { EXIT } from "../util/result.ts";
-import { renderMarkdown, type HealthReport } from "../domains/diag/health.ts";
+import { type HealthReport, renderMarkdown } from "../domains/diag/health.ts";
 import type { EnvReport } from "../domains/env/probe.ts";
 import type { CoreStatus } from "../domains/core/status.ts";
 import type { CoreVerifyReport } from "../domains/core/verify.ts";
@@ -25,7 +25,11 @@ import type { RuntimeRepairReport } from "../domains/runtime/repair.ts";
 import type { LogsReport } from "../domains/runtime/logs.ts";
 import { DUMP_FRESH_MS } from "../domains/runtime/facts.ts";
 import type { BackupListReport, BackupVerifyReport } from "../domains/backup/actions.ts";
-import type { PluginOpReport, PluginRepairReport, PluginScanReport } from "../domains/plugin/mutate.ts";
+import type {
+  PluginOpReport,
+  PluginRepairReport,
+  PluginScanReport,
+} from "../domains/plugin/mutate.ts";
 import type { CleanResidueReport } from "../domains/plugin/clean_residue.ts";
 import { humanSize } from "../host/mod.ts";
 
@@ -88,7 +92,8 @@ export function parseCli(argv: string[]): CliOptions {
 export function isCliInvocation(argv: string[]): boolean {
   const first = argv.find((a) => !a.startsWith("-"));
   if (!first) return false;
-  return ["doctor", "env", "core", "runtime", "plugin", "backup", "actions", "job", "help"].includes(first);
+  return ["doctor", "env", "core", "runtime", "plugin", "backup", "actions", "job", "help"]
+    .includes(first);
 }
 
 export function wantsHeadless(argv: string[]): boolean {
@@ -134,7 +139,9 @@ export async function runCli(argv: string[]): Promise<number> {
       if (sub === "scan") return await runOne("plugin.scan", {}, json);
       if (sub === "install") {
         const name = args[2] && !args[2].startsWith("--") ? args[2] : undefined;
-        if (!name) return usage("plugin install 需要插件名：plugin install <名字> [--version x.y.z]");
+        if (!name) {
+          return usage("plugin install 需要插件名：plugin install <名字> [--version x.y.z]");
+        }
         const version = stringArg(args, "--version");
         return await runWrite("plugin.install", version ? { name, version } : { name }, args, json);
       }
@@ -148,10 +155,14 @@ export async function runCli(argv: string[]): Promise<number> {
         return await runWrite("plugin.repair", name ? { name } : {}, args, json);
       }
       if (sub === "cleanResidue") return await runWrite("plugin.cleanResidue", {}, args, json);
-      return usage(`plugin 的可用子命令：diagnose / scan / install / uninstall / repair / cleanResidue`);
+      return usage(
+        `plugin 的可用子命令：diagnose / scan / install / uninstall / repair / cleanResidue`,
+      );
     case "backup": {
       if (sub === "list") return await runOne("backup.list", {}, json);
-      if (sub === "verify") return await runOne("backup.verify", args[2] ? { id: args[2] } : {}, json);
+      if (sub === "verify") {
+        return await runOne("backup.verify", args[2] ? { id: args[2] } : {}, json);
+      }
       if (sub === "create") {
         const kind = args[2];
         const paths = args.slice(3).filter((a) => !a.startsWith("--"));
@@ -175,12 +186,16 @@ export async function runCli(argv: string[]): Promise<number> {
     case "actions": {
       const defs = engine.definitions();
       if (json) {
-        console.log(JSON.stringify(defs.map((d) => ({
-          name: d.name,
-          domain: d.domain,
-          title: d.title,
-          readonly: d.readonly,
-        })), null, 2));
+        console.log(JSON.stringify(
+          defs.map((d) => ({
+            name: d.name,
+            domain: d.domain,
+            title: d.title,
+            readonly: d.readonly,
+          })),
+          null,
+          2,
+        ));
       } else {
         for (const d of defs) {
           console.log(`  ${d.name.padEnd(18)} ${d.title}${d.readonly ? "（只读）" : ""}`);
@@ -229,7 +244,9 @@ async function jobCommand(args: string[], json: boolean): Promise<number> {
     } else {
       for (const j of jobs) {
         console.log(
-          `  ${j.id}  ${j.status.padEnd(10)}  ${j.actionTitle}  ${new Date(j.createdAt).toLocaleString("zh-CN")}`,
+          `  ${j.id}  ${j.status.padEnd(10)}  ${j.actionTitle}  ${
+            new Date(j.createdAt).toLocaleString("zh-CN")
+          }`,
         );
       }
     }
@@ -270,14 +287,18 @@ export async function runWrite(
   if (!yes) {
     const findings = def.preflight ? await def.preflight(params as never) : [];
     if (json) {
-      console.log(JSON.stringify({
-        plan: true,
-        action,
-        title: def.title,
-        description: def.description ?? "",
-        steps: def.steps ?? [],
-        findings,
-      }, null, 2));
+      console.log(JSON.stringify(
+        {
+          plan: true,
+          action,
+          title: def.title,
+          description: def.description ?? "",
+          steps: def.steps ?? [],
+          findings,
+        },
+        null,
+        2,
+      ));
     } else {
       console.log(`计划执行：${def.title}`);
       if (def.description) console.log(`  ${def.description}`);
@@ -287,7 +308,11 @@ export async function runWrite(
         console.log("");
         console.log("写前检查：");
         for (const f of findings) {
-          console.log(`  [${f.severity === "error" ? "错误" : f.severity === "warn" ? "警告" : "提示"}] ${f.title}`);
+          console.log(
+            `  [${
+              f.severity === "error" ? "错误" : f.severity === "warn" ? "警告" : "提示"
+            }] ${f.title}`,
+          );
         }
       }
       console.log("");
@@ -300,7 +325,11 @@ export async function runWrite(
 }
 
 /** 创建任务、等待完成、输出结果。 */
-async function runOne(action: string, params: Record<string, unknown>, json: boolean): Promise<number> {
+async function runOne(
+  action: string,
+  params: Record<string, unknown>,
+  json: boolean,
+): Promise<number> {
   const created = await engine.create(action, params);
   if (!created.ok || !created.jobId) {
     console.error(created.error ?? "无法创建任务");
@@ -317,7 +346,13 @@ async function runOne(action: string, params: Record<string, unknown>, json: boo
 
   if (job.status !== "succeeded") {
     if (json) {
-      console.log(JSON.stringify({ ok: false, status: job.status, error: job.error, steps: job.steps }, null, 2));
+      console.log(
+        JSON.stringify(
+          { ok: false, status: job.status, error: job.error, steps: job.steps },
+          null,
+          2,
+        ),
+      );
     } else {
       console.error(`任务未成功（${job.status}）：${job.error ?? "无详细信息"}`);
       for (const s of job.steps) {
@@ -358,8 +393,16 @@ function printHuman(action: string, result: unknown): void {
       return;
     case "env.probe": {
       const r = result as EnvReport;
-      console.log(`系统：${r.system.platform} ${r.system.arch} · ${r.system.cpuCount} 核 · ${humanSize(r.system.memTotalBytes)} 内存`);
-      console.log(`运行时环境：${r.runtime.map((x) => `${x.label}=${x.found ? x.version ?? "已装" : "缺失"}`).join("  ")}`);
+      console.log(
+        `系统：${r.system.platform} ${r.system.arch} · ${r.system.cpuCount} 核 · ${
+          humanSize(r.system.memTotalBytes)
+        } 内存`,
+      );
+      console.log(
+        `运行时环境：${
+          r.runtime.map((x) => `${x.label}=${x.found ? x.version ?? "已装" : "缺失"}`).join("  ")
+        }`,
+      );
       console.log(`DSH 本体：${r.dsh.sourceRoot ?? "未找到"}`);
       printFindings(r.findings);
       return;
@@ -367,12 +410,18 @@ function printHuman(action: string, result: unknown): void {
     case "core.status": {
       const r = result as CoreStatus;
       console.log(`本体位置：${r.sourceRoot ?? "未找到"}`);
-      if (r.git) console.log(`源码：${r.git.branch} @ ${r.git.headShort}（改动 ${r.git.dirtyTracked} 个文件）`);
+      if (r.git) {
+        console.log(
+          `源码：${r.git.branch} @ ${r.git.headShort}（改动 ${r.git.dirtyTracked} 个文件）`,
+        );
+      }
       if (r.build) console.log(`构建记录：${r.build.commit} / ${r.build.version}`);
       if (r.integrity) {
         if (r.integrity.official && r.integrity.verified) {
           console.log(
-            `产物完整性：通过官方校验（${r.integrity.fileCount} 个文件，摘要 ${(r.integrity.sha256 ?? "").slice(0, 12)}…）`,
+            `产物完整性：通过官方校验（${r.integrity.fileCount} 个文件，摘要 ${
+              (r.integrity.sha256 ?? "").slice(0, 12)
+            }…）`,
           );
         } else if (r.integrity.official) {
           console.log(`产物完整性：官方判定不一致 —— ${r.integrity.error}`);
@@ -380,11 +429,21 @@ function printHuman(action: string, result: unknown): void {
           console.log(`产物完整性：无法校验 —— ${r.integrity.error}`);
         }
       }
-      console.log(`需要完成更新：${r.needsFinishUpdate ? "是" : "否"}${r.finishReason ? " — " + r.finishReason : ""}`);
+      console.log(
+        `需要完成更新：${r.needsFinishUpdate ? "是" : "否"}${
+          r.finishReason ? " — " + r.finishReason : ""
+        }`,
+      );
       if (r.plugins) {
-        console.log(`插件：依赖 ${r.plugins.dependencies.length} · 名单 ${r.plugins.bundles.length} · 生效 ${r.plugins.active.length}`);
+        console.log(
+          `插件：依赖 ${r.plugins.dependencies.length} · 名单 ${r.plugins.bundles.length} · 生效 ${r.plugins.active.length}`,
+        );
         if (r.plugins.inBox.length > 0) {
-          console.log(`      其中 ${r.plugins.inBox.length} 个是本体自带基座包（不必写进依赖）：${r.plugins.inBox.join("、")}`);
+          console.log(
+            `      其中 ${r.plugins.inBox.length} 个是本体自带基座包（不必写进依赖）：${
+              r.plugins.inBox.join("、")
+            }`,
+          );
         }
       }
       printFindings(r.findings);
@@ -395,7 +454,11 @@ function printHuman(action: string, result: unknown): void {
       console.log(`本体位置：${r.sourceRoot ?? "未找到"}`);
       const st = r.status;
       if (st) {
-        console.log(`需要完成更新：${st.needsFinishUpdate ? "是" : "否"}${st.finishReason ? " — " + st.finishReason : ""}`);
+        console.log(
+          `需要完成更新：${st.needsFinishUpdate ? "是" : "否"}${
+            st.finishReason ? " — " + st.finishReason : ""
+          }`,
+        );
         if (st.integrity) {
           if (st.integrity.official && st.integrity.verified) {
             console.log(`产物完整性：通过官方校验（${st.integrity.fileCount} 个文件）`);
@@ -414,7 +477,9 @@ function printHuman(action: string, result: unknown): void {
           `残留判定：僵尸 lib ${r.libs.zombieLibs.length} · 缺失包 ${r.libs.missingPackages.length} · 未提交包 ${r.libs.untrackedPackages.length}`,
         );
         for (const z of r.libs.zombieLibs.slice(0, 20)) console.log(`      ⚠ 僵尸 ${z.libPath}`);
-        for (const m of r.libs.missingPackages.slice(0, 20)) console.log(`      ✗ 缺失 ${m}/package.json`);
+        for (const m of r.libs.missingPackages.slice(0, 20)) {
+          console.log(`      ✗ 缺失 ${m}/package.json`);
+        }
         for (const u of r.libs.untrackedPackages.slice(0, 20)) console.log(`      · 未提交 ${u}`);
       }
       printFindings(r.findings);
@@ -422,9 +487,21 @@ function printHuman(action: string, result: unknown): void {
     }
     case "runtime.status": {
       const r = result as RuntimeStatus;
-      console.log(`服务：${r.running ? `运行中（PID ${r.pid}，端口 ${r.port ?? "?"}）` : "未运行"}`);
-      if (r.launchForm) console.log(`启动形态：${r.launchForm === "compiled" ? "编译版" : "开发态"}`);
-      if (r.health) console.log(`健康检查：${r.health.reachable ? `HTTP ${r.health.status} / ${r.health.latencyMs}ms` : "不可访问 — " + r.health.error}`);
+      console.log(
+        `服务：${r.running ? `运行中（PID ${r.pid}，端口 ${r.port ?? "?"}）` : "未运行"}`,
+      );
+      if (r.launchForm) {
+        console.log(`启动形态：${r.launchForm === "compiled" ? "编译版" : "开发态"}`);
+      }
+      if (r.health) {
+        console.log(
+          `健康检查：${
+            r.health.reachable
+              ? `HTTP ${r.health.status} / ${r.health.latencyMs}ms`
+              : "不可访问 — " + r.health.error
+          }`,
+        );
+      }
       const locks = r.locks ?? [];
       const bad = locks.filter((l) => l.verdict === "stale" || l.verdict === "recycled");
       console.log(`写锁：${locks.length} 个${bad.length ? `（其中 ${bad.length} 个已失效）` : ""}`);
@@ -468,7 +545,11 @@ function printHuman(action: string, result: unknown): void {
         `插件：依赖 ${r.summary.deps} · 生效 ${r.summary.active} · 装了不生效 ${r.summary.declaredButInactive}`,
       );
       for (const l of r.layers) {
-        console.log(`  [${l.canLayer ? "生效" : "跳过"}] ${l.name}${l.canLayer ? "" : ` — ${l.reason ?? "?"}`}`);
+        console.log(
+          `  [${l.canLayer ? "生效" : "跳过"}] ${l.name}${
+            l.canLayer ? "" : ` — ${l.reason ?? "?"}`
+          }`,
+        );
       }
       for (const [name, exists] of Object.entries(r.entities)) {
         if (!exists) console.log(`  ⚠ 依赖清单里有 ${name}，但磁盘上找不到包实体`);
@@ -494,7 +575,9 @@ function printHuman(action: string, result: unknown): void {
       for (const l of r.lines) console.log(l);
       console.log("");
       console.log(
-        `修复完成：补登记 ${r.repaired.length} 个${r.repaired.length ? `（${r.repaired.join("、")}）` : ""}` +
+        `修复完成：补登记 ${r.repaired.length} 个${
+          r.repaired.length ? `（${r.repaired.join("、")}）` : ""
+        }` +
           ` · 回滚点 ${r.rollbackId} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`,
       );
       for (const w of r.warnings) console.log(`  ⚠ ${w}`);
@@ -517,9 +600,9 @@ function printHuman(action: string, result: unknown): void {
       for (const l of r.lines) console.log(l);
       console.log("");
       console.log(
-        `写锁清理完成：改名留证 ${r.renamed.length} 个 · 复扫剩余失效锁 ${r.remaining}${r.remaining > 0 ? " ⚠" : " ✓"} · 耗时 ${
-          Math.round(r.elapsedMs / 1000)
-        } 秒`,
+        `写锁清理完成：改名留证 ${r.renamed.length} 个 · 复扫剩余失效锁 ${r.remaining}${
+          r.remaining > 0 ? " ⚠" : " ✓"
+        } · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`,
       );
       for (const s of r.skipped) console.log(`  · 保留 ${s.file}（${s.verdict}）`);
       for (const f of r.failed) console.log(`  ⚠ ${f.file}：${f.error}`);
@@ -550,7 +633,9 @@ function printHuman(action: string, result: unknown): void {
         ? "服务通了但插件树没加载完"
         : "正常（进程 / 服务 / 插件树三层全通）";
       console.log(
-        `分层结论：${layer} · 进程 ${r.facts.procCount} · 端口 ${r.facts.port ?? "?"} · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
+        `分层结论：${layer} · 进程 ${r.facts.procCount} · 端口 ${
+          r.facts.port ?? "?"
+        } · 规则 ${r.rulesRun} 条 · 结论 ${r.health}`,
       );
       printFindings(r.findings);
       return;
@@ -563,14 +648,22 @@ function printHuman(action: string, result: unknown): void {
         `耗时 ${Math.round(r.elapsedMs / 1000)} 秒 · 回滚点 ${r.rollbackId}` +
           (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
       );
-      console.log(`需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"} · 源码 ${r.head?.slice(0, 12) ?? "未知"}`);
+      console.log(
+        `需要完成更新（复核）：${r.needsFinishUpdateAfter ? "是 ⚠" : "否 ✓"} · 源码 ${
+          r.head?.slice(0, 12) ?? "未知"
+        }`,
+      );
       return;
     }
     case "core.update": {
       const r = result as CoreUpdateReport;
       for (const l of r.lines) console.log(l);
       console.log("");
-      console.log(`源码：${r.fromCommit.slice(0, 12)} → ${r.toCommit.slice(0, 12)}${r.fromCommit === r.toCommit ? "（远端暂无新提交）" : ""}`);
+      console.log(
+        `源码：${r.fromCommit.slice(0, 12)} → ${r.toCommit.slice(0, 12)}${
+          r.fromCommit === r.toCommit ? "（远端暂无新提交）" : ""
+        }`,
+      );
       console.log(
         `耗时 ${Math.round(r.elapsedMs / 1000)} 秒 · 回滚点 ${r.rollbackId}` +
           (r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""),
@@ -584,10 +677,18 @@ function printHuman(action: string, result: unknown): void {
       console.log("");
       console.log(
         `回滚点 ${r.rollbackId} → ${r.targetCommit.slice(0, 12)}… · 重建：${
-          r.rebuild === "done" ? "已完成" : r.rebuild === "skipped-no-script" ? "跳过（无 build 脚本）" : "跳过（未找到 pnpm）"
+          r.rebuild === "done"
+            ? "已完成"
+            : r.rebuild === "skipped-no-script"
+            ? "跳过（无 build 脚本）"
+            : "跳过（未找到 pnpm）"
         }${r.quarantineDir ? ` · 隔离区 ${r.quarantineDir}` : ""}`,
       );
-      console.log(`复核：${r.green ? "全绿 ✓" : "未通过 ✗"} · 源码 ${r.head?.slice(0, 12) ?? "未知"} · 耗时 ${Math.round(r.elapsedMs / 1000)} 秒`);
+      console.log(
+        `复核：${r.green ? "全绿 ✓" : "未通过 ✗"} · 源码 ${r.head?.slice(0, 12) ?? "未知"} · 耗时 ${
+          Math.round(r.elapsedMs / 1000)
+        } 秒`,
+      );
       return;
     }
     case "backup.list": {
@@ -641,7 +742,9 @@ function printHuman(action: string, result: unknown): void {
   }
 }
 
-function printFindings(findings: Array<{ severity: string; title: string; action?: string }>): void {
+function printFindings(
+  findings: Array<{ severity: string; title: string; action?: string }>,
+): void {
   if (findings.length === 0) {
     console.log("问题清单：无");
     return;

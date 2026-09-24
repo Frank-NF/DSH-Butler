@@ -28,11 +28,11 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, healthOf, type Finding } from "../../util/result.ts";
+import { type Finding, finding, healthOf } from "../../util/result.ts";
 import { run } from "../../host/shell.ts";
 import { isDir, isFile } from "../../host/fs.ts";
 import { p } from "../../util/paths.ts";
-import { collectCoreStatus, residueKindOf, type CoreStatus } from "./status.ts";
+import { collectCoreStatus, type CoreStatus, residueKindOf } from "./status.ts";
 
 /** 一处僵尸 lib/。 */
 export interface ZombieLib {
@@ -160,7 +160,8 @@ export async function collectLibResidue(root: string): Promise<LibResidueReport 
     for (const d of expandWorkspaceGlob(root, pat)) candidates.add(d);
   }
 
-  const pkgJsonAt = (dir: string): string => dir ? p(root, dir, "package.json") : p(root, "package.json");
+  const pkgJsonAt = (dir: string): string =>
+    dir ? p(root, dir, "package.json") : p(root, "package.json");
 
   const zombieLibs: ZombieLib[] = [];
   const untrackedPackages: string[] = [];
@@ -203,38 +204,56 @@ export function libResidueFindings(libs: LibResidueReport): Finding[] {
 
   if (libs.zombieLibs.length > 0) {
     out.push(
-      finding("core.zombie-lib", "error", `发现 ${libs.zombieLibs.length} 处僵尸 lib/（包已被上游删除）`, {
-        cause:
-          "这些目录里留着构建产物 lib/，但 package.json 已不在磁盘、也不在当前源码记录里 —— 上游删包后 git pull 只清被跟踪的文件，gitignore 的产物原样留了下来",
-        impact:
-          "下次全量构建时打包工具会把这些残留目录当入口，构建直接失败（2026-09-23 本体构建失败的头号原因）",
-        action: "点「完成更新」做深度清理：非 HEAD 残留会被移入隔离区（只移动不删除，可整体还原）",
-        fixAction: "core.finishUpdate",
-        evidence: libs.zombieLibs.slice(0, 20).map((z) => z.libPath),
-      }),
+      finding(
+        "core.zombie-lib",
+        "error",
+        `发现 ${libs.zombieLibs.length} 处僵尸 lib/（包已被上游删除）`,
+        {
+          cause:
+            "这些目录里留着构建产物 lib/，但 package.json 已不在磁盘、也不在当前源码记录里 —— 上游删包后 git pull 只清被跟踪的文件，gitignore 的产物原样留了下来",
+          impact:
+            "下次全量构建时打包工具会把这些残留目录当入口，构建直接失败（2026-09-23 本体构建失败的头号原因）",
+          action:
+            "点「完成更新」做深度清理：非 HEAD 残留会被移入隔离区（只移动不删除，可整体还原）",
+          fixAction: "core.finishUpdate",
+          evidence: libs.zombieLibs.slice(0, 20).map((z) => z.libPath),
+        },
+      ),
     );
   }
 
   if (libs.missingPackages.length > 0) {
     out.push(
-      finding("core.missing-package", "error", `${libs.missingPackages.length} 个包在源码记录里但磁盘缺失`, {
-        cause: "源码记录（HEAD）里有这些 package.json，但文件已经不在磁盘上（被误删或某次操作中断）",
-        impact: "本体工作树不完整，构建与运行都会异常",
-        action: "点「完成更新」重新对齐源码（会把缺失文件恢复回来）",
-        fixAction: "core.finishUpdate",
-        evidence: libs.missingPackages.slice(0, 20).map((d) => `${d || "."}/package.json`),
-      }),
+      finding(
+        "core.missing-package",
+        "error",
+        `${libs.missingPackages.length} 个包在源码记录里但磁盘缺失`,
+        {
+          cause:
+            "源码记录（HEAD）里有这些 package.json，但文件已经不在磁盘上（被误删或某次操作中断）",
+          impact: "本体工作树不完整，构建与运行都会异常",
+          action: "点「完成更新」重新对齐源码（会把缺失文件恢复回来）",
+          fixAction: "core.finishUpdate",
+          evidence: libs.missingPackages.slice(0, 20).map((d) => `${d || "."}/package.json`),
+        },
+      ),
     );
   }
 
   if (libs.untrackedPackages.length > 0) {
     out.push(
-      finding("core.untracked-package", "info", `${libs.untrackedPackages.length} 个本地新增、尚未提交的包目录`, {
-        cause: "磁盘上有它们的 package.json，但从未进入源码记录 —— 多半是你本地新建的包，也可能是残留",
-        impact: "若非有意新建，它们会在下次构建时被当成工作区包参与打包",
-        action: "是自己新建的就正常提交使用；不确定的，点「完成更新」的深度清理会一并处理",
-        evidence: libs.untrackedPackages.slice(0, 20),
-      }),
+      finding(
+        "core.untracked-package",
+        "info",
+        `${libs.untrackedPackages.length} 个本地新增、尚未提交的包目录`,
+        {
+          cause:
+            "磁盘上有它们的 package.json，但从未进入源码记录 —— 多半是你本地新建的包，也可能是残留",
+          impact: "若非有意新建，它们会在下次构建时被当成工作区包参与打包",
+          action: "是自己新建的就正常提交使用；不确定的，点「完成更新」的深度清理会一并处理",
+          evidence: libs.untrackedPackages.slice(0, 20),
+        },
+      ),
     );
   }
 
@@ -276,12 +295,17 @@ export const coreVerifyAction: ActionDef<Record<string, never>, CoreVerifyReport
       } else {
         if (libs.patterns.length === 0) {
           findings.push(
-            finding("core.no-workspace-globs", "info", "未解析到工作区包清单，僵尸 lib 检测已跳过", {
-              cause: "pnpm-workspace.yaml 缺失或没有 packages 段",
-              impact: "缺失包检测不受影响，但僵尸 lib/ 这一项目前查不了",
-              action: "确认本体源码是否完整；一般重跑「完成更新」即可恢复",
-              evidence: [p(status.sourceRoot, "pnpm-workspace.yaml")],
-            }),
+            finding(
+              "core.no-workspace-globs",
+              "info",
+              "未解析到工作区包清单，僵尸 lib 检测已跳过",
+              {
+                cause: "pnpm-workspace.yaml 缺失或没有 packages 段",
+                impact: "缺失包检测不受影响，但僵尸 lib/ 这一项目前查不了",
+                action: "确认本体源码是否完整；一般重跑「完成更新」即可恢复",
+                evidence: [p(status.sourceRoot, "pnpm-workspace.yaml")],
+              },
+            ),
           );
         }
         findings.push(...libResidueFindings(libs));

@@ -15,7 +15,14 @@
  */
 
 import { pathExists } from "../../host/fs.ts";
-import { basename, dirname, normalize, p, quarantineStampDir, sameVolume } from "../../util/paths.ts";
+import {
+  basename,
+  dirname,
+  normalize,
+  p,
+  quarantineStampDir,
+  sameVolume,
+} from "../../util/paths.ts";
 import { deepCleanInto, isOrphanPackage, isResidueName, isRiskyPath } from "./deep_clean.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
@@ -26,7 +33,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -34,7 +43,8 @@ function assertEq<T>(actual: T, expected: T, msg: string): void {
 
 const HAS_GIT = (() => {
   try {
-    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" }).outputSync().code === 0;
+    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" })
+      .outputSync().code === 0;
   } catch {
     return false;
   }
@@ -43,7 +53,17 @@ const HAS_GIT = (() => {
 /** 在指定仓库里跑 git（自带测试身份，关掉可能存在的全局 gpg 签名）。 */
 function sh(root: string, ...args: string[]): void {
   const out = new Deno.Command("git", {
-    args: ["-C", root, "-c", "user.email=butler@test.local", "-c", "user.name=butler", "-c", "commit.gpgsign=false", ...args],
+    args: [
+      "-C",
+      root,
+      "-c",
+      "user.email=butler@test.local",
+      "-c",
+      "user.name=butler",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
     stdout: "piped",
     stderr: "piped",
   }).outputSync();
@@ -72,12 +92,18 @@ function removeAll(...dirs: string[]): void {
 Deno.test("AC-C2 判据：risky_path 只命中会炸构建的文件（7 阳 7 阴）", () => {
   // 必须命中：不属于 HEAD 的残留测试/源码（真实的故障来源）
   assert(isRiskyPath("apps/web/tests/message-feedback-layout.e2e.ts"), "残留 e2e 测试应命中");
-  assert(isRiskyPath("packages/client/ui-tool/tests/tool-details-render.client.tsx"), "残留组件测试应命中");
+  assert(
+    isRiskyPath("packages/client/ui-tool/tests/tool-details-render.client.tsx"),
+    "残留组件测试应命中",
+  );
   assert(isRiskyPath("packages/feedback/message-feedback/src/spec.ts"), "残留 spec 应命中");
   assert(isRiskyPath("packages/core/agent/src/inbox.ts"), "残留源文件应命中");
   // 编译产物倒灌进 src/ 的伴生文件
   assert(isRiskyPath("packages/test-support/llm-replay/src/index.js"), "src/ 下的 js 应命中");
-  assert(isRiskyPath("packages/test-support/llm-replay/src/index.d.ts.map"), "src/ 下的 map 应命中");
+  assert(
+    isRiskyPath("packages/test-support/llm-replay/src/index.d.ts.map"),
+    "src/ 下的 map 应命中",
+  );
   // 外来的样式文件同样会被通配符收进工程
   assert(isRiskyPath("packages/client/ui-chat/src/Details.module.css"), "src/ 下的 css 应命中");
 
@@ -93,8 +119,14 @@ Deno.test("AC-C2 判据：risky_path 只命中会炸构建的文件（7 阳 7 �
 });
 
 Deno.test("AC-C2 判据：.stale-* 是本工具自己的残留，无论在哪都要认领", () => {
-  assert(isRiskyPath("packages/client/ui-chat/lib/types.stale-2026-09-18T14-30-26"), "lib 下的 stale 应命中");
-  assert(isRiskyPath("tsconfig.client.tsbuildinfo.stale-2026-09-18T15-08-00"), "根目录 stale 应命中");
+  assert(
+    isRiskyPath("packages/client/ui-chat/lib/types.stale-2026-09-18T14-30-26"),
+    "lib 下的 stale 应命中",
+  );
+  assert(
+    isRiskyPath("tsconfig.client.tsbuildinfo.stale-2026-09-18T15-08-00"),
+    "根目录 stale 应命中",
+  );
 });
 
 // ══ 只读判据：残渣名与孤儿包三条件 ════════════════════════════════
@@ -132,7 +164,10 @@ Deno.test("AC-C2 判据：孤儿包三条件缺一不可", () => {
     assert(isOrphanPackage(at("full"), "full", new Set()), "三条件全中应判孤儿");
     assert(!isOrphanPackage(at("haspkg"), "haspkg", new Set()), "有 package.json 不是孤儿");
     assert(!isOrphanPackage(at("mixed"), "mixed", new Set()), "还有源码的目录不是孤儿");
-    assert(!isOrphanPackage(at("empty"), "empty", new Set()), "空目录不是孤儿（缺「至少一个子项」）");
+    assert(
+      !isOrphanPackage(at("empty"), "empty", new Set()),
+      "空目录不是孤儿（缺「至少一个子项」）",
+    );
     assert(!isOrphanPackage(at("watched"), "watched", tracked), "git 跟踪中的目录绝不能碰");
   } finally {
     removeAll(root);
@@ -151,7 +186,10 @@ Deno.test("AC-C2 路径规则：隔离区落在源码树父目录下（=同盘�
     `隔离区必须落在源码树父目录内（=同盘）：期望在 ${parent} 下，实际 ${q}`,
   );
   assert(q.includes("dsh-quarantine"), `名字要能一眼看出是隔离区：${q}`);
-  assert(basename(q).includes("20260918-120000"), `每次执行要有独立的时间戳子目录，免得互相覆盖：${q}`);
+  assert(
+    basename(q).includes("20260918-120000"),
+    `每次执行要有独立的时间戳子目录，免得互相覆盖：${q}`,
+  );
   assert(sameVolume(root, q), `卷标识必须一致（跨盘 rename 在 Windows 必失败）：${root} vs ${q}`);
 
   // 极端情况：本体直接装在盘符根，没有父目录——也必须给得出可用的绝对路径
@@ -261,7 +299,10 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
     assertEq(manifest.movedCount, 9, "清单计数应为 1 缓存 + 1 stale + 4 孤儿 + 3 残留");
     assertEq(manifest.moved.length, 9, "清单明细条数与计数一致");
     assert(lines.some((l) => l.includes("孤儿包")), "汇报里要说清清了几个孤儿包");
-    assert(lines.some((l) => l.includes("隔离「不属于当前版本」")), "汇报里要说清隔离了几个残留文件");
+    assert(
+      lines.some((l) => l.includes("隔离「不属于当前版本」")),
+      "汇报里要说清隔离了几个残留文件",
+    );
 
     // ── 第二遍：幂等——现场已干净，什么都别再动 ────────────────────────
     const again = await deepCleanInto(repo, destRoot);
@@ -292,7 +333,10 @@ Deno.test("AC-C2 降级：读不到 git 清单时只清编译缓存，绝不动�
     assertEq(report.tsbuildinfoReset, 1, "编译缓存不依赖 git，照常作废");
     assertEq(report.orphanPackages, 0, "读不到清单时不许清孤儿包（不能把读不到当成全部未跟踪）");
     assertEq(report.quarantined, 0, "读不到清单时不许隔离任何文件");
-    assert(pathExists(p(repo, "packages", "ghost", "lib", "index.js")), "孤儿形状的目录必须原样保留");
+    assert(
+      pathExists(p(repo, "packages", "ghost", "lib", "index.js")),
+      "孤儿形状的目录必须原样保留",
+    );
     assert(pathExists(p(repo, "src", "leftover.ts")), "残留源文件必须原样保留");
     assert(
       lines.some((l) => l.includes("读不到 git")),

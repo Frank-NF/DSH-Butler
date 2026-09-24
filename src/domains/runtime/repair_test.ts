@@ -20,10 +20,7 @@ import type { Finding } from "../../util/result.ts";
 import { isFile } from "../../host/fs.ts";
 import { dirname, p } from "../../util/paths.ts";
 import { stageSafetyProblems } from "../../jobs/registry.ts";
-import {
-  RUNTIME_REPAIR_STEPS,
-  runtimeRepairAction,
-} from "./repair.ts";
+import { RUNTIME_REPAIR_STEPS, runtimeRepairAction } from "./repair.ts";
 import { scanLocks } from "./status.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
@@ -34,7 +31,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 

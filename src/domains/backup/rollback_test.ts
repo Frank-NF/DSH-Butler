@@ -32,11 +32,17 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
-async function assertThrows(fn: () => Promise<unknown>, contains: string, msg: string): Promise<void> {
+async function assertThrows(
+  fn: () => Promise<unknown>,
+  contains: string,
+  msg: string,
+): Promise<void> {
   try {
     await fn();
   } catch (e) {
@@ -126,7 +132,11 @@ Deno.test("create：源文件不存在必须抛错，且不留任何半成品（
 
     assertEq(listRollbackPoints().length, 0, "失败后索引里不该有条目");
     const leftovers = [...Deno.readDirSync(store)].filter((e) => e.isDirectory);
-    assertEq(leftovers.length, 0, `失败后不该留下孤儿目录，实际：${leftovers.map((x) => x.name).join(", ")}`);
+    assertEq(
+      leftovers.length,
+      0,
+      `失败后不该留下孤儿目录，实际：${leftovers.map((x) => x.name).join(", ")}`,
+    );
   });
 });
 
@@ -146,7 +156,10 @@ Deno.test("create：manifest-only 只记哈希不复制；git-ref 钉住 commit"
 
     // 上面这条因 git-ref 在非仓库上解析失败而整体抛错（原子性：要么全成要么全不成）
     assert(pt instanceof Error, "非 git 仓库上的 git-ref 必须让创建整体失败");
-    assert((pt as Error).message.includes("git 引用无法解析"), `报错应说明 git 解析失败，实际：${(pt as Error).message}`);
+    assert(
+      (pt as Error).message.includes("git 引用无法解析"),
+      `报错应说明 git 解析失败，实际：${(pt as Error).message}`,
+    );
     assertEq(listRollbackPoints().length, 0, "部分失败不应留下半条索引");
 
     // manifest-only 单独建：不复制内容
@@ -269,7 +282,8 @@ Deno.test("apply npm-reinstall：清单两件套一并还原", async () => {
 Deno.test("apply git-reset：HEAD 退回目标提交，隔离区内容移回（只移动不删除）", async () => {
   await withTempStore(async () => {
     const repo = Deno.makeTempDirSync();
-    const sh = (args: string[]) => run("git", ["-C", repo, ...args], { timeoutMs: 20_000, allowNonZero: true });
+    const sh = (args: string[]) =>
+      run("git", ["-C", repo, ...args], { timeoutMs: 20_000, allowNonZero: true });
 
     await run("git", ["init", repo], { timeoutMs: 20_000, allowNonZero: true });
     await sh(["config", "user.email", "t@test.local"]);
@@ -302,7 +316,11 @@ Deno.test("apply git-reset：HEAD 退回目标提交，隔离区内容移回（�
     assert(res.ok, `git-reset 回滚应成功，实际：${JSON.stringify(res)}`);
     assertEq(Deno.readTextFileSync(file), "v1", "工作树内容应退回 c1");
     assertEq((await sh(["rev-parse", "HEAD"])).stdout.trim(), c1, "HEAD 应落在 c1");
-    assertEq(Deno.readTextFileSync(p(repo, "stray.txt")), "被隔离的残留包", "隔离区内容应移回仓库根");
+    assertEq(
+      Deno.readTextFileSync(p(repo, "stray.txt")),
+      "被隔离的残留包",
+      "隔离区内容应移回仓库根",
+    );
     assert(!isFile(p(quarantine, "stray.txt")), "移回是移动不是复制，原位置不应还有");
 
     Deno.removeSync(repo, { recursive: true });
@@ -312,7 +330,8 @@ Deno.test("apply git-reset：HEAD 退回目标提交，隔离区内容移回（�
 Deno.test("apply git-reset：copy 副本必须一并还原（reset 删掉/改坏的快照文件要以副本为准）", async () => {
   await withTempStore(async () => {
     const repo = Deno.makeTempDirSync();
-    const sh = (args: string[]) => run("git", ["-C", repo, ...args], { timeoutMs: 20_000, allowNonZero: true });
+    const sh = (args: string[]) =>
+      run("git", ["-C", repo, ...args], { timeoutMs: 20_000, allowNonZero: true });
 
     await run("git", ["init", repo], { timeoutMs: 20_000, allowNonZero: true });
     await sh(["config", "user.email", "t@test.local"]);
@@ -362,7 +381,10 @@ Deno.test("索引损坏：list 必须炸出来，绝不静默当成「回滚点�
     try {
       listRollbackPoints();
     } catch (e) {
-      assert((e as Error).message.includes("损坏"), `报错应说明索引损坏，实际：${(e as Error).message}`);
+      assert(
+        (e as Error).message.includes("损坏"),
+        `报错应说明索引损坏，实际：${(e as Error).message}`,
+      );
       return;
     }
     throw new Error("断言失败：损坏索引必须抛错");
@@ -423,7 +445,9 @@ async function makePoint(tag: string, verified: boolean): Promise<RollbackPoint>
 Deno.test("prune 数量上限：超过 keep 的最旧已验证点被删（索引 + 目录），孤儿目录一并清", async () => {
   await withTempStore(async (store) => {
     const points: RollbackPoint[] = [];
-    for (let i = 0; i < 12; i++) points.push(await makePoint(`p${String(i).padStart(2, "0")}`, true));
+    for (let i = 0; i < 12; i++) {
+      points.push(await makePoint(`p${String(i).padStart(2, "0")}`, true));
+    }
 
     // 手工塞一个「复制了内容但没写进索引」的无主目录（create 中途崩溃的遗留形态）
     const orphan = p(store, "rp-orphan-xxxx");

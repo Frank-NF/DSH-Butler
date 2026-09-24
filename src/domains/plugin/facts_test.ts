@@ -21,7 +21,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -74,7 +76,11 @@ plugins:
       - id: second
       - id: "quoted-third"
 `;
-  assertArrEq(extractInsertIds(yaml), ["first", "second", "quoted-third"], "多块 insert / 块结束判定有误");
+  assertArrEq(
+    extractInsertIds(yaml),
+    ["first", "second", "quoted-third"],
+    "多块 insert / 块结束判定有误",
+  );
 });
 
 Deno.test("extractInsertIds：insert 深处 config 里的 - id: 是数据不是 entry（真机 presets 形态，防误报根基）", () => {
@@ -101,7 +107,11 @@ Deno.test("extractInsertIds：insert 深处 config 里的 - id: 是数据不是 
       name: '@deepseek-ai/dsh-agent-preset'
 `;
   // 直接子级只有 preset-standard / preset-second；深处的 persona / tool-bash 是配置数据
-  assertArrEq(extractInsertIds(yaml), ["preset-standard", "preset-second"], "把 config 深处的 id 当成了 entry");
+  assertArrEq(
+    extractInsertIds(yaml),
+    ["preset-standard", "preset-second"],
+    "把 config 深处的 id 当成了 entry",
+  );
 });
 
 // ══ judgeLayer（四态，用临时目录 fixture） ══════════════════════════
@@ -138,7 +148,9 @@ Deno.test("judgeLayer：没有 dsh.bundle 对象 → no-dsh-bundle", () => {
 Deno.test("judgeLayer：patch 是字符串且文件存在 → 可作层（真机 dshmarket 形态）", () => {
   const dir = Deno.makeTempDirSync();
   try {
-    makePkg(dir, { name: "dshmarket", dsh: { bundle: { patch: "./cordis.patch.yml" } } }, { "cordis.patch.yml": "plugins: []\n" });
+    makePkg(dir, { name: "dshmarket", dsh: { bundle: { patch: "./cordis.patch.yml" } } }, {
+      "cordis.patch.yml": "plugins: []\n",
+    });
     const v = judgeLayer("dshmarket", dir);
     assertEq(v.canLayer, true, "字符串 patch + 文件存在应可作层");
     assertArrEq(v.patchFiles, ["./cordis.patch.yml"], "patchFiles 应记录声明原文");

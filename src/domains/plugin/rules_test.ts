@@ -22,20 +22,28 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
 function noId(findings: { id: string }[], id: string, msg: string): void {
   const hits = findings.filter((f) => f.id === id);
   if (hits.length > 0) {
-    throw new Error(`断言失败：${msg}\n  不该出现 ${id}，实际命中 ${hits.length} 条：${JSON.stringify(hits, null, 2)}`);
+    throw new Error(
+      `断言失败：${msg}\n  不该出现 ${id}，实际命中 ${hits.length} 条：${
+        JSON.stringify(hits, null, 2)
+      }`,
+    );
   }
 }
 
 function someId(findings: { id: string }[], id: string, msg: string): void {
   if (!findings.some((f) => f.id === id)) {
-    throw new Error(`断言失败：${msg}\n  应出现 ${id}，实际：${findings.map((f) => f.id).join(", ") || "（空）"}`);
+    throw new Error(
+      `断言失败：${msg}\n  应出现 ${id}，实际：${findings.map((f) => f.id).join(", ") || "（空）"}`,
+    );
   }
 }
 
@@ -83,13 +91,36 @@ function healthyFacts(): PluginFacts {
     depEntries: { "dsh-cost-meter": "^1.2.3", dshmarket: "^0.5.0" },
     layers: [
       // 真机形态：web-app 的 patch 是 5 元素数组 —— 合法，不许报 not-a-layer
-      { name: "@deepseek-ai/dsh-web-app", dir: "G:\\DeepSeek_Harness\\node_modules\\@deepseek-ai\\dsh-web-app", canLayer: true, reason: null, patchFiles: ["a.patch.yml", "b.patch.yml", "c.patch.yml", "d.patch.yml", "e.patch.yml"] },
-      { name: "dshmarket", dir: "C:\\Users\\niufe\\.dsh\\profiles\\web\\node_modules\\dshmarket", canLayer: true, reason: null, patchFiles: ["./cordis.patch.yml"] },
+      {
+        name: "@deepseek-ai/dsh-web-app",
+        dir: "G:\\DeepSeek_Harness\\node_modules\\@deepseek-ai\\dsh-web-app",
+        canLayer: true,
+        reason: null,
+        patchFiles: ["a.patch.yml", "b.patch.yml", "c.patch.yml", "d.patch.yml", "e.patch.yml"],
+      },
+      {
+        name: "dshmarket",
+        dir: "C:\\Users\\niufe\\.dsh\\profiles\\web\\node_modules\\dshmarket",
+        canLayer: true,
+        reason: null,
+        patchFiles: ["./cordis.patch.yml"],
+      },
     ],
     // 真机形态：profile 顶层 targeting 的 id 不会进这里（extractInsertIds 只认 insert 块）
     profilePatchInsertIds: [],
-    bundlePatchInsertIds: [{ pkg: "dshmarket", patchFile: "./cordis.patch.yml", ids: ["dsh-market"] }],
-    locks: [{ path: "C:\\Users\\niufe\\.dsh\\profiles\\web\\config.lock", firstLine: "12345", pid: 12345, alive: true, procName: "node.exe", verdict: "held" }],
+    bundlePatchInsertIds: [{
+      pkg: "dshmarket",
+      patchFile: "./cordis.patch.yml",
+      ids: ["dsh-market"],
+    }],
+    locks: [{
+      path: "C:\\Users\\niufe\\.dsh\\profiles\\web\\config.lock",
+      firstLine: "12345",
+      pid: 12345,
+      alive: true,
+      procName: "node.exe",
+      verdict: "held",
+    }],
   });
 }
 
@@ -115,7 +146,11 @@ Deno.test("manifest-missing：阳性 —— package.json 缺失要报 error", ()
 });
 
 Deno.test("manifest-missing：阴性 —— manifest 正常时不报", () => {
-  noId(runRules(baseFacts({ manifestExists: true })), "plugin.manifest-missing", "manifest 正常却报了");
+  noId(
+    runRules(baseFacts({ manifestExists: true })),
+    "plugin.manifest-missing",
+    "manifest 正常却报了",
+  );
 });
 
 // ══ 2. plugin.declared-but-inactive（AC-P1 核心） ══════════════════
@@ -128,16 +163,29 @@ Deno.test("AC-P1：装了插件但未进 bundles，diagnose 必须指出原因",
       declaredButInactive: ["dsh-cost-meter"],
     },
     inactiveLayers: [
-      { name: "dsh-cost-meter", dir: "C:\\x\\node_modules\\dsh-cost-meter", canLayer: true, reason: null, patchFiles: ["./cordis.patch.yml"] },
+      {
+        name: "dsh-cost-meter",
+        dir: "C:\\x\\node_modules\\dsh-cost-meter",
+        canLayer: true,
+        reason: null,
+        patchFiles: ["./cordis.patch.yml"],
+      },
     ],
   });
   const out = runRules(facts);
   const hit = out.find((f) => f.id === "plugin.declared-but-inactive");
   assert(hit !== null, "装了没生效却没报出来");
   assertEq(hit?.severity, "error", "装了不生效应为 error");
-  assert(String(hit?.cause ?? "").includes("bundles"), "cause 必须点名双名单/ bundles —— 这就是『指出原因』");
+  assert(
+    String(hit?.cause ?? "").includes("bundles"),
+    "cause 必须点名双名单/ bundles —— 这就是『指出原因』",
+  );
   assertEq(hit?.fixAction, "plugin.repair", "必须挂上一键修复入口（AC-P1 的 repair 指针）");
-  assertEq((hit?.data as { plugin?: string } | undefined)?.plugin, "dsh-cost-meter", "data 要带上插件名");
+  assertEq(
+    (hit?.data as { plugin?: string } | undefined)?.plugin,
+    "dsh-cost-meter",
+    "data 要带上插件名",
+  );
 });
 
 Deno.test("declared-but-inactive：阴性 —— 双名单一致时不报", () => {
@@ -149,7 +197,13 @@ Deno.test("declared-but-inactive：阴性 —— 双名单一致时不报", () =
 Deno.test("declared-not-installed：阳性 —— 声明了但包目录不存在", () => {
   const out = runRules(baseFacts({
     lists: { dependencies: ["ghost-pkg"], declaredButInactive: ["ghost-pkg"] },
-    inactiveLayers: [{ name: "ghost-pkg", dir: null, canLayer: false, reason: "unresolved", patchFiles: [] }],
+    inactiveLayers: [{
+      name: "ghost-pkg",
+      dir: null,
+      canLayer: false,
+      reason: "unresolved",
+      patchFiles: [],
+    }],
   }));
   someId(out, "plugin.declared-not-installed", "包目录不存在却没报");
 });
@@ -157,7 +211,13 @@ Deno.test("declared-not-installed：阳性 —— 声明了但包目录不存在
 Deno.test("declared-not-installed：阴性 —— 装了没生效但包在、可作层时归规则 2 管，不报本条", () => {
   const out = runRules(baseFacts({
     lists: { dependencies: ["dsh-cost-meter"], declaredButInactive: ["dsh-cost-meter"] },
-    inactiveLayers: [{ name: "dsh-cost-meter", dir: "C:\\x", canLayer: true, reason: null, patchFiles: [] }],
+    inactiveLayers: [{
+      name: "dsh-cost-meter",
+      dir: "C:\\x",
+      canLayer: true,
+      reason: null,
+      patchFiles: [],
+    }],
   }));
   noId(out, "plugin.declared-not-installed", "包明明在，却报了『没装上』");
   someId(out, "plugin.declared-but-inactive", "这种场景应由规则 2 报");
@@ -168,7 +228,13 @@ Deno.test("declared-not-installed：阴性 —— 装了没生效但包在、可
 Deno.test("AC-P2：装了没生效但不可作层 —— 必须拦住『盲目补登记』", () => {
   const out = runRules(baseFacts({
     lists: { dependencies: ["bad-pkg"], declaredButInactive: ["bad-pkg"] },
-    inactiveLayers: [{ name: "bad-pkg", dir: "C:\\x\\bad-pkg", canLayer: false, reason: "patch-missing", patchFiles: ["./cordis.patch.yml"] }],
+    inactiveLayers: [{
+      name: "bad-pkg",
+      dir: "C:\\x\\bad-pkg",
+      canLayer: false,
+      reason: "patch-missing",
+      patchFiles: ["./cordis.patch.yml"],
+    }],
   }));
   const hit = out.find((f) => f.id === "plugin.repair-blocked");
   assert(hit !== null, "不可作层的『装了没生效』却没拦截");
@@ -180,7 +246,13 @@ Deno.test("AC-P2：装了没生效但不可作层 —— 必须拦住『盲目�
 Deno.test("repair-blocked：阴性 —— 可作层的插件走正常补登记，不拦", () => {
   const out = runRules(baseFacts({
     lists: { dependencies: ["dsh-cost-meter"], declaredButInactive: ["dsh-cost-meter"] },
-    inactiveLayers: [{ name: "dsh-cost-meter", dir: "C:\\x", canLayer: true, reason: null, patchFiles: [] }],
+    inactiveLayers: [{
+      name: "dsh-cost-meter",
+      dir: "C:\\x",
+      canLayer: true,
+      reason: null,
+      patchFiles: [],
+    }],
   }));
   noId(out, "plugin.repair-blocked", "可作层却被拦了 —— 会把正常修复堵死");
 });
@@ -188,7 +260,9 @@ Deno.test("repair-blocked：阴性 —— 可作层的插件走正常补登记�
 // ══ 5. plugin.bundled-but-undeclared ═══════════════════════════════
 
 Deno.test("bundled-but-undeclared：阳性 —— 名单里的包哪儿都解析不到", () => {
-  const out = runRules(baseFacts({ lists: { bundles: ["dsh-ghost"], bundledButUndeclared: ["dsh-ghost"] } }));
+  const out = runRules(
+    baseFacts({ lists: { bundles: ["dsh-ghost"], bundledButUndeclared: ["dsh-ghost"] } }),
+  );
   someId(out, "plugin.bundled-but-undeclared", "真缺失却没报");
 });
 
@@ -205,7 +279,13 @@ Deno.test("AC-P2：把不可作层的包误登记进 bundles，诊断必须在�
   for (const reason of reasons) {
     const out = runRules(baseFacts({
       lists: { bundles: ["bad-pkg"], active: ["bad-pkg"] },
-      layers: [{ name: "bad-pkg", dir: "C:\\x\\bad-pkg", canLayer: false, reason, patchFiles: ["./cordis.patch.yml"] }],
+      layers: [{
+        name: "bad-pkg",
+        dir: "C:\\x\\bad-pkg",
+        canLayer: false,
+        reason,
+        patchFiles: ["./cordis.patch.yml"],
+      }],
     }));
     const hit = out.find((f) => f.id === "plugin.not-a-layer");
     assert(hit !== null, `reason=${reason} 的误登记没被报出来`);
@@ -215,7 +295,13 @@ Deno.test("AC-P2：把不可作层的包误登记进 bundles，诊断必须在�
   // 修复入口必须先跑拦截：有 error → 引擎拒绝执行（改动文件前拦住）
   const blockers = repairBlockers(baseFacts({
     lists: { bundles: ["bad-pkg"], active: ["bad-pkg"] },
-    layers: [{ name: "bad-pkg", dir: "C:\\x\\bad-pkg", canLayer: false, reason: "no-dsh-bundle", patchFiles: [] }],
+    layers: [{
+      name: "bad-pkg",
+      dir: "C:\\x\\bad-pkg",
+      canLayer: false,
+      reason: "no-dsh-bundle",
+      patchFiles: [],
+    }],
   }));
   assert(blockers.some((f) => f.severity === "error"), "repairBlockers 必须给出 error 级拦截");
 });
@@ -238,7 +324,11 @@ Deno.test("not-a-layer：阴性 —— 解析不到的条目归规则 5 管，�
 Deno.test("dup-insert-profile-bundle：阳性 —— profile 与包自带 patch 都 insert 同一 id", () => {
   const out = runRules(baseFacts({
     profilePatchInsertIds: ["dsh-market"],
-    bundlePatchInsertIds: [{ pkg: "dshmarket", patchFile: "./cordis.patch.yml", ids: ["dsh-market"] }],
+    bundlePatchInsertIds: [{
+      pkg: "dshmarket",
+      patchFile: "./cordis.patch.yml",
+      ids: ["dsh-market"],
+    }],
   }));
   someId(out, "plugin.dup-insert-profile-bundle", "双重注册没报出来");
 });
@@ -246,7 +336,11 @@ Deno.test("dup-insert-profile-bundle：阳性 —— profile 与包自带 patch 
 Deno.test("dup-insert-profile-bundle：阴性 —— 两处 insert 的 id 各不相同则不报", () => {
   const out = runRules(baseFacts({
     profilePatchInsertIds: ["profile-only-id"],
-    bundlePatchInsertIds: [{ pkg: "dshmarket", patchFile: "./cordis.patch.yml", ids: ["dsh-market"] }],
+    bundlePatchInsertIds: [{
+      pkg: "dshmarket",
+      patchFile: "./cordis.patch.yml",
+      ids: ["dsh-market"],
+    }],
   }));
   noId(out, "plugin.dup-insert-profile-bundle", "id 不同却被报成重复注册");
 });
@@ -278,8 +372,22 @@ Deno.test("dup-insert-cross-bundle：阴性 —— 各包 id 不撞车则不报"
 Deno.test("zombie-lock：阳性 —— stale（PID 已死）与 recycled（PID 被复用）都要报", () => {
   const out = runRules(baseFacts({
     locks: [
-      { path: "C:\\p\\a.lock", firstLine: "99999", pid: 99999, alive: false, procName: null, verdict: "stale" },
-      { path: "C:\\p\\b.lock", firstLine: "1001", pid: 1001, alive: true, procName: "notepad.exe", verdict: "recycled" },
+      {
+        path: "C:\\p\\a.lock",
+        firstLine: "99999",
+        pid: 99999,
+        alive: false,
+        procName: null,
+        verdict: "stale",
+      },
+      {
+        path: "C:\\p\\b.lock",
+        firstLine: "1001",
+        pid: 1001,
+        alive: true,
+        procName: "notepad.exe",
+        verdict: "recycled",
+      },
     ],
   }));
   const hits = out.filter((f) => f.id === "plugin.zombie-lock");
@@ -290,8 +398,22 @@ Deno.test("zombie-lock：阳性 —— stale（PID 已死）与 recycled（PID �
 Deno.test("zombie-lock：阴性 —— held（持有者是活 node）绝不能报，unknown 也不算僵尸", () => {
   const out = runRules(baseFacts({
     locks: [
-      { path: "C:\\p\\live.lock", firstLine: "12345", pid: 12345, alive: true, procName: "node.exe", verdict: "held" },
-      { path: "C:\\p\\weird.lock", firstLine: "not-a-pid", pid: null, alive: null, procName: null, verdict: "unknown" },
+      {
+        path: "C:\\p\\live.lock",
+        firstLine: "12345",
+        pid: 12345,
+        alive: true,
+        procName: "node.exe",
+        verdict: "held",
+      },
+      {
+        path: "C:\\p\\weird.lock",
+        firstLine: "not-a-pid",
+        pid: null,
+        alive: null,
+        procName: null,
+        verdict: "unknown",
+      },
     ],
   }));
   noId(out, "plugin.zombie-lock", "活锁/看不懂的锁被误报成僵尸锁 —— 会诱导用户清掉真锁");
@@ -301,7 +423,14 @@ Deno.test("zombie-lock：阴性 —— held（持有者是活 node）绝不能�
 
 Deno.test("lock-unrecognized：阳性 —— 看不懂的锁报 info（只报告不判可清）", () => {
   const out = runRules(baseFacts({
-    locks: [{ path: "C:\\p\\weird.lock", firstLine: "garbage", pid: null, alive: null, procName: null, verdict: "unknown" }],
+    locks: [{
+      path: "C:\\p\\weird.lock",
+      firstLine: "garbage",
+      pid: null,
+      alive: null,
+      procName: null,
+      verdict: "unknown",
+    }],
   }));
   const hit = out.find((f) => f.id === "plugin.lock-unrecognized");
   assert(hit !== null, "看不懂的锁没报告");
@@ -310,7 +439,14 @@ Deno.test("lock-unrecognized：阳性 —— 看不懂的锁报 info（只报告
 
 Deno.test("lock-unrecognized：阴性 —— 正常锁（held/stale）不报本条", () => {
   const out = runRules(baseFacts({
-    locks: [{ path: "C:\\p\\x.lock", firstLine: "1", pid: 1, alive: false, procName: null, verdict: "stale" }],
+    locks: [{
+      path: "C:\\p\\x.lock",
+      firstLine: "1",
+      pid: 1,
+      alive: false,
+      procName: null,
+      verdict: "stale",
+    }],
   }));
   noId(out, "plugin.lock-unrecognized", "看得懂的锁被报成看不懂");
 });
@@ -338,7 +474,10 @@ Deno.test("temp-dependency：阴性 —— 正常版本号与非临时路径的 
 
 Deno.test("pnpm-residue：阳性 —— 有残留要报并带证据", () => {
   const out = runRules(baseFacts({
-    residue: [{ name: "@codemirror/.autocomplete_tmp_15580_31-2kN2ZzMh", kind: "scope 下的 _tmp_ 隐藏目录" }],
+    residue: [{
+      name: "@codemirror/.autocomplete_tmp_15580_31-2kN2ZzMh",
+      kind: "scope 下的 _tmp_ 隐藏目录",
+    }],
   }));
   const hit = out.find((f) => f.id === "plugin.pnpm-residue");
   assert(hit !== null, "残留没报");
@@ -354,7 +493,13 @@ Deno.test("pnpm-residue：阴性 —— 干净的 node_modules 不报", () => {
 Deno.test("AC-P2：repairBlockers —— 健康场景必须放行（不误伤正常修复）", () => {
   const blockers = repairBlockers(baseFacts({
     lists: { dependencies: ["dsh-cost-meter"], declaredButInactive: ["dsh-cost-meter"] },
-    inactiveLayers: [{ name: "dsh-cost-meter", dir: "C:\\x", canLayer: true, reason: null, patchFiles: ["./cordis.patch.yml"] }],
+    inactiveLayers: [{
+      name: "dsh-cost-meter",
+      dir: "C:\\x",
+      canLayer: true,
+      reason: null,
+      patchFiles: ["./cordis.patch.yml"],
+    }],
   }));
   assertEq(blockers.length, 0, `可作层的正常修复被误拦：${JSON.stringify(blockers)}`);
 });

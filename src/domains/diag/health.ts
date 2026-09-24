@@ -7,7 +7,7 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { healthOf, type Finding } from "../../util/result.ts";
+import { type Finding, healthOf } from "../../util/result.ts";
 import { collectEnv, type EnvReport } from "../env/probe.ts";
 import { collectCoreStatus, type CoreStatus } from "../core/status.ts";
 import { collectRuntimeStatus, type RuntimeStatus } from "../runtime/status.ts";
@@ -64,7 +64,12 @@ export async function runHealthCheck(
   const sections: HealthSection[] = [];
 
   const env = await collectEnv();
-  sections.push({ name: "env", label: "环境与配置", verdict: healthOf(env.findings), findings: env.findings });
+  sections.push({
+    name: "env",
+    label: "环境与配置",
+    verdict: healthOf(env.findings),
+    findings: env.findings,
+  });
   onStage?.({
     stage: "env",
     label: "检查环境与配置",
@@ -72,7 +77,12 @@ export async function runHealthCheck(
   });
 
   const core = await collectCoreStatus();
-  sections.push({ name: "core", label: "DSH 本体", verdict: healthOf(core.findings), findings: core.findings });
+  sections.push({
+    name: "core",
+    label: "DSH 本体",
+    verdict: healthOf(core.findings),
+    findings: core.findings,
+  });
   onStage?.({
     stage: "core",
     label: "检查 DSH 本体",
@@ -84,7 +94,12 @@ export async function runHealthCheck(
   });
 
   const runtime = await collectRuntimeStatus();
-  sections.push({ name: "runtime", label: "运行状态", verdict: healthOf(runtime.findings), findings: runtime.findings });
+  sections.push({
+    name: "runtime",
+    label: "运行状态",
+    verdict: healthOf(runtime.findings),
+    findings: runtime.findings,
+  });
   onStage?.({
     stage: "runtime",
     label: "检查运行状态",
@@ -92,7 +107,12 @@ export async function runHealthCheck(
   });
 
   const logs = await collectLogs();
-  sections.push({ name: "logs", label: "日志", verdict: healthOf(logs.findings), findings: logs.findings });
+  sections.push({
+    name: "logs",
+    label: "日志",
+    verdict: healthOf(logs.findings),
+    findings: logs.findings,
+  });
   onStage?.({
     stage: "logs",
     label: "分析日志",
@@ -145,7 +165,9 @@ export function renderMarkdown(report: HealthReport): string {
   lines.push(`- 平台：${report.platform}`);
   lines.push(`- 耗时：${report.durationMs} ms`);
   lines.push(
-    `- 结论：**${v(report.verdict)}**（${report.summary.errors} 项错误 / ${report.summary.warns} 项警告 / ${report.summary.infos} 项提示）`,
+    `- 结论：**${
+      v(report.verdict)
+    }**（${report.summary.errors} 项错误 / ${report.summary.warns} 项警告 / ${report.summary.infos} 项提示）`,
   );
   lines.push("");
 
@@ -177,41 +199,57 @@ export function renderMarkdown(report: HealthReport): string {
   lines.push("## 环境摘要");
   const env = report.data.env;
   lines.push("");
-  lines.push(`- 系统：${env.system.platform} ${env.system.arch} · ${env.system.cpuCount} 核 · ${(env.system.memTotalBytes / 1024 ** 3).toFixed(1)} GB 内存`);
-  lines.push(`- 运行时：${env.runtime.map((r) => `${r.label} ${r.found ? r.version ?? "已装" : "缺失"}`).join(" · ")}`);
+  lines.push(
+    `- 系统：${env.system.platform} ${env.system.arch} · ${env.system.cpuCount} 核 · ${
+      (env.system.memTotalBytes / 1024 ** 3).toFixed(1)
+    } GB 内存`,
+  );
+  lines.push(
+    `- 运行时：${
+      env.runtime.map((r) => `${r.label} ${r.found ? r.version ?? "已装" : "缺失"}`).join(" · ")
+    }`,
+  );
   lines.push(`- DSH 本体：${env.dsh.sourceRoot ?? "未找到"}`);
-  lines.push(`- 服务：${report.data.runtime.running ? `运行中（端口 ${report.data.runtime.port ?? "?"}）` : "未运行"}`);
+  lines.push(
+    `- 服务：${
+      report.data.runtime.running ? `运行中（端口 ${report.data.runtime.port ?? "?"}）` : "未运行"
+    }`,
+  );
   if (report.data.core.git) {
-    lines.push(`- 源码：分支 ${report.data.core.git.branch} · 提交 ${report.data.core.git.headShort}`);
+    lines.push(
+      `- 源码：分支 ${report.data.core.git.branch} · 提交 ${report.data.core.git.headShort}`,
+    );
   }
 
   return redact(lines.join("\n"));
 }
 
-export const diagHealthAction: ActionDef<{ format?: "json" | "markdown" }, HealthReport | string> = {
-  name: "diag.healthCheck",
-  domain: "diag",
-  title: "全面体检",
-  description: "依次检查环境、本体、运行状态与日志，汇总成一份可分享的体检报告。只读，绝不修改任何东西。",
-  readonly: true,
-  steps: ["检查环境与配置", "检查 DSH 本体", "检查运行状态", "分析日志", "汇总报告"],
-  run: async (ctx, params) => {
-    // 步骤与进度全部由 runHealthCheck 的阶段回调驱动 —— 采集逻辑只有那一份实现
-    const report = await runHealthCheck((p) => {
-      ctx.step(p.stage, p.label);
-      ctx.detail(p.detail);
-      ctx.progress(STAGE_PROGRESS[p.stage]);
-      ctx.throwIfCancelled();
-    });
+export const diagHealthAction: ActionDef<{ format?: "json" | "markdown" }, HealthReport | string> =
+  {
+    name: "diag.healthCheck",
+    domain: "diag",
+    title: "全面体检",
+    description:
+      "依次检查环境、本体、运行状态与日志，汇总成一份可分享的体检报告。只读，绝不修改任何东西。",
+    readonly: true,
+    steps: ["检查环境与配置", "检查 DSH 本体", "检查运行状态", "分析日志", "汇总报告"],
+    run: async (ctx, params) => {
+      // 步骤与进度全部由 runHealthCheck 的阶段回调驱动 —— 采集逻辑只有那一份实现
+      const report = await runHealthCheck((p) => {
+        ctx.step(p.stage, p.label);
+        ctx.detail(p.detail);
+        ctx.progress(STAGE_PROGRESS[p.stage]);
+        ctx.throwIfCancelled();
+      });
 
-    ctx.detail(
-      `${report.summary.errors} 项错误 · ${report.summary.warns} 项警告 · ${report.summary.infos} 项提示（耗时 ${report.durationMs} ms）`,
-    );
-    ctx.progress(1);
+      ctx.detail(
+        `${report.summary.errors} 项错误 · ${report.summary.warns} 项警告 · ${report.summary.infos} 项提示（耗时 ${report.durationMs} ms）`,
+      );
+      ctx.progress(1);
 
-    return params.format === "markdown" ? renderMarkdown(report) : report;
-  },
-};
+      return params.format === "markdown" ? renderMarkdown(report) : report;
+    },
+  };
 
 /** 各阶段对应的进度比例。 */
 const STAGE_PROGRESS: Record<HealthStage, number> = {

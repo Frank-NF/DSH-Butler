@@ -26,15 +26,28 @@
  *      当前它只作为生命周期原语存在，接线在后续任务。
  */
 
-import { p, basename, butlerRoot, dirname } from "../../util/paths.ts";
-import { isFile, pathExists, moveSafe, readJson, removeRecursive, writeJsonAtomic } from "../../host/fs.ts";
+import { basename, butlerRoot, dirname, p } from "../../util/paths.ts";
+import {
+  isFile,
+  moveSafe,
+  pathExists,
+  readJson,
+  removeRecursive,
+  writeJsonAtomic,
+} from "../../host/fs.ts";
 import { run } from "../../host/shell.ts";
 
 // ── 模型（方案 §8.1，字段与方案一一对应） ─────────────────────────
 
 export type RollbackKind = "core-build" | "plugin-set" | "config" | "snapshot" | "env";
 
-export const ROLLBACK_KINDS: RollbackKind[] = ["core-build", "plugin-set", "config", "snapshot", "env"];
+export const ROLLBACK_KINDS: RollbackKind[] = [
+  "core-build",
+  "plugin-set",
+  "config",
+  "snapshot",
+  "env",
+];
 
 export type ArtifactMode = "copy" | "git-ref" | "manifest-only";
 
@@ -111,7 +124,9 @@ async function sha256Bytes(bytes: Uint8Array): Promise<string> {
 function newId(existing: Set<string>): string {
   const z = (n: number) => String(n).padStart(2, "0");
   const d = new Date();
-  const stamp = `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}T${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+  const stamp = `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}T${z(d.getHours())}${
+    z(d.getMinutes())
+  }${z(d.getSeconds())}`;
   for (let i = 0; i < 16; i++) {
     const id = `rp-${stamp}-${crypto.randomUUID().slice(0, 6)}`;
     if (!existing.has(id)) return id;
@@ -156,7 +171,9 @@ export async function createRollbackPoint(spec: CreateSpec): Promise<RollbackPoi
           scope: "rollback",
         });
         if (r.code !== 0) {
-          throw new Error(`git 引用无法解析（${ref}）：${r.stderr.trim() || `仓库不可用（${a.path}）`}`);
+          throw new Error(
+            `git 引用无法解析（${ref}）：${r.stderr.trim() || `仓库不可用（${a.path}）`}`,
+          );
         }
         artifacts.push({ path: a.path, sha256: r.stdout.trim(), size: 0, mode: "git-ref" });
         continue;
@@ -281,7 +298,10 @@ interface ReverseOutcome {
   headExpect?: { repo: string; commit: string };
 }
 
-export async function applyRollbackPoint(id: string, opts: ApplyOptions = {}): Promise<ApplyResult> {
+export async function applyRollbackPoint(
+  id: string,
+  opts: ApplyOptions = {},
+): Promise<ApplyResult> {
   const pt = getRollbackPoint(id);
   if (!pt) throw new Error(`回滚点不存在：${id}`);
 

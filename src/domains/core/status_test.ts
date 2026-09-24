@@ -19,19 +19,25 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
 function assertIncludes(haystack: string[], needle: string, msg: string): void {
   if (!haystack.includes(needle)) {
-    throw new Error(`断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`,
+    );
   }
 }
 
 function assertExcludes(haystack: string[], needle: string, msg: string): void {
   if (haystack.includes(needle)) {
-    throw new Error(`断言失败：${msg}\n  不该包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`);
+    throw new Error(
+      `断言失败：${msg}\n  不该包含 ${JSON.stringify(needle)}\n  实际 ${JSON.stringify(haystack)}`,
+    );
   }
 }
 
@@ -126,7 +132,17 @@ Deno.test("scanResidue：真实 node_modules 上跑一遍，确认零误报", ()
   const names = found.map((r) => r.name);
 
   // 关键回归：这几类曾经被误报成"残留包"
-  for (const mustNot of ["rolldown", "typescript", "nan", "ws", "zod", "cosmokit", "@deepseek-ai/dsh-subprocess"]) {
+  for (
+    const mustNot of [
+      "rolldown",
+      "typescript",
+      "nan",
+      "ws",
+      "zod",
+      "cosmokit",
+      "@deepseek-ai/dsh-subprocess",
+    ]
+  ) {
     assertExcludes(names, mustNot, "正常依赖被误报为残留");
   }
   // 拿 scoped 名字再核一遍（scanResidue 对 scoped 是拆开成 @scope/sub 的）
@@ -194,19 +210,22 @@ Deno.test("readPluginLists：本体自带基座包算 inBox，不算依赖缺失
     );
 
     const pkgPath = `${profileDir}\\package.json`;
-    Deno.writeTextFileSync(pkgPath, JSON.stringify({
-      dependencies: { "dsh-cost-meter": "^1.0.0", "dsh-not-loaded": "^1.0.0" },
-      dsh: {
-        profile: {
-          bundles: [
-            "@deepseek-ai/dsh-base",
-            "@deepseek-ai/dsh-web-app",
-            "dsh-cost-meter",
-            "dsh-ghost-plugin", // 哪里都解析不到 → 真缺失
-          ],
+    Deno.writeTextFileSync(
+      pkgPath,
+      JSON.stringify({
+        dependencies: { "dsh-cost-meter": "^1.0.0", "dsh-not-loaded": "^1.0.0" },
+        dsh: {
+          profile: {
+            bundles: [
+              "@deepseek-ai/dsh-base",
+              "@deepseek-ai/dsh-web-app",
+              "dsh-cost-meter",
+              "dsh-ghost-plugin", // 哪里都解析不到 → 真缺失
+            ],
+          },
         },
-      },
-    }));
+      }),
+    );
 
     const r = readPluginLists(pkgPath, { installRoot: dir, profileDir });
     assert(r !== null, "应能读出清单");
@@ -231,10 +250,13 @@ Deno.test("readPluginLists：不传定位信息时【绝不】把名字报成缺
   const dir = Deno.makeTempDirSync();
   try {
     const pkgPath = `${dir}\\package.json`;
-    Deno.writeTextFileSync(pkgPath, JSON.stringify({
-      dependencies: {},
-      dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "whatever"] } },
-    }));
+    Deno.writeTextFileSync(
+      pkgPath,
+      JSON.stringify({
+        dependencies: {},
+        dsh: { profile: { bundles: ["@deepseek-ai/dsh-base", "whatever"] } },
+      }),
+    );
     const r = readPluginLists(pkgPath);
     assert(r !== null, "应能读出清单");
     if (!r) return;

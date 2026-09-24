@@ -9,7 +9,7 @@
  */
 
 import { engine } from "./jobs/engine.ts";
-import { registerAllActions, assertStageSafety } from "./jobs/registry.ts";
+import { assertStageSafety, registerAllActions } from "./jobs/registry.ts";
 import { recoverPluginTxn } from "./domains/plugin/mutate.ts";
 import { loadConfig } from "./domains/state/config.ts";
 import { createApiServer } from "./api/server.ts";
@@ -18,7 +18,7 @@ import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
 import { log } from "./util/log.ts";
 import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "./version.ts";
 import { isDir } from "./host/fs.ts";
-import { hasDesktopRuntime, applyDesktopWorkarounds } from "./util/runtime-kind.ts";
+import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.ts";
 import { hideOwnConsole } from "./host/console-hide.ts";
 
 async function main(): Promise<void> {
@@ -156,12 +156,15 @@ function adoptDesktopWindow(url: string): void {
       show: () => void;
       setTitle?: (t: string) => void;
     }
-    const BW = (Deno as unknown as Record<string, unknown>).BrowserWindow as
-      new (o: Record<string, unknown>) => ButlerWindow;
+    const BW = (Deno as unknown as Record<string, unknown>).BrowserWindow as new (
+      o: Record<string, unknown>,
+    ) => ButlerWindow;
     // 默认 800×600 对 1080p 屏太袖珍，按 1.8 倍放到 1440×1080（不超屏）。
     const win = new BW({ title: APP_NAME, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
     win.navigate(url);
-    try { win.show(); } catch { /* 某些平台构造即显示 */ }
+    try {
+      win.show();
+    } catch { /* 某些平台构造即显示 */ }
     log.info("main", `已接管桌面窗口并导航（标题=${APP_NAME}，${WINDOW_WIDTH}×${WINDOW_HEIGHT}）`);
   } catch (e) {
     log.warn("main", `接管桌面窗口失败（不影响使用，运行时会自行导航）：${(e as Error).message}`);

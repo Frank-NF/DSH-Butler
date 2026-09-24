@@ -35,7 +35,7 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { run, type RunResult } from "../../host/shell.ts";
 import { moveSafe, readJson } from "../../host/fs.ts";
 import { findDshPort } from "../../host/port.ts";
@@ -59,10 +59,10 @@ import {
   type StopOutcome,
 } from "./finish_update.ts";
 import {
+  type ApplyResult,
   applyRollbackPoint,
   getRollbackPoint,
   listRollbackPoints,
-  type ApplyResult,
   type RollbackPoint,
 } from "../backup/rollback.ts";
 
@@ -106,7 +106,11 @@ export interface GreenVerdict {
  *   - 还原后工作树无已跟踪改动（reset --hard 的直接保证，出现即还原不完整）;
  *   - error 级 findings 清零（僵尸 lib / 缺失包 / 需要完成更新 …），排除集见上。
  */
-export function rollbackGreen(status: CoreStatus, libs: LibResidueReport | null, phase: GreenPhase): GreenVerdict {
+export function rollbackGreen(
+  status: CoreStatus,
+  libs: LibResidueReport | null,
+  phase: GreenPhase,
+): GreenVerdict {
   const problems: string[] = [];
 
   if (!status.sourceRoot) problems.push("未找到本体源码树");
@@ -115,7 +119,9 @@ export function rollbackGreen(status: CoreStatus, libs: LibResidueReport | null,
   const rec = status.build?.commit ?? null;
   if (!rec) problems.push("构建记录缺少源码提交号");
   else if (!status.git?.head?.startsWith(rec)) {
-    problems.push(`构建记录（${rec.slice(0, 12)}…）与当前源码提交（${status.git?.headShort ?? "?"}）不一致`);
+    problems.push(
+      `构建记录（${rec.slice(0, 12)}…）与当前源码提交（${status.git?.headShort ?? "?"}）不一致`,
+    );
   }
 
   const dirty = status.git?.dirtyTracked ?? 0;
@@ -190,9 +196,13 @@ async function preflight(params: CoreRollbackParams): Promise<Finding[]> {
         "error",
         id ? `回滚点不存在：${id}` : "没有可回滚的构建回滚点",
         {
-          cause: id ? "索引里没有这个 id" : "回滚存储里没有 kind=core-build 的点——「完成更新」动手前才会自动创建",
+          cause: id
+            ? "索引里没有这个 id"
+            : "回滚存储里没有 kind=core-build 的点——「完成更新」动手前才会自动创建",
           impact: "无法执行回滚",
-          action: id ? "backup list 查看现有回滚点" : "还没有可回滚的节点；下次点「完成更新」前会自动创建",
+          action: id
+            ? "backup list 查看现有回滚点"
+            : "还没有可回滚的节点；下次点「完成更新」前会自动创建",
           evidence: id ? [id] : [],
         },
       ),
@@ -205,7 +215,8 @@ async function preflight(params: CoreRollbackParams): Promise<Finding[]> {
       finding("core.rollback.bad-kind", "error", `回滚点类型不是 core-build：${pt.kind}`, {
         cause: "指定的回滚点不是「本体构建」类型（可能是配置/插件类的点）",
         impact: "对错类型的点执行本体回滚，逆操作与现场对不上",
-        action: "用 backup list 找 kind=core-build 的点，或 core rollback 不带 id 取最新的构建回滚点",
+        action:
+          "用 backup list 找 kind=core-build 的点，或 core rollback 不带 id 取最新的构建回滚点",
         evidence: [pt.id],
       }),
     );
@@ -253,7 +264,10 @@ function hasBuildScript(root: string): boolean {
 
 // ── 动作 ────────────────────────────────────────────────────────────
 
-async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Promise<CoreRollbackReport> {
+async function runRollback(
+  ctx: ActionContext,
+  params: CoreRollbackParams,
+): Promise<CoreRollbackReport> {
   const t0 = Date.now();
   const probe = resolveDshSourceRoot();
   if (!probe) throw new Error("未找到 DSH 本体目录");
@@ -337,7 +351,9 @@ async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Prom
       ? verifyProblems.join("；")
       : (res.problems && res.problems.length > 0 ? res.problems.join("；") : "");
     throw new Error(
-      `${res.error ?? "回滚失败"}${extra ? `：${extra}` : ""}（回滚点 ${pt.id} 已保留，可排查后重试）`,
+      `${res.error ?? "回滚失败"}${
+        extra ? `：${extra}` : ""
+      }（回滚点 ${pt.id} 已保留，可排查后重试）`,
     );
   }
   for (const w of res.warnings ?? []) line(`⚠ ${w}`);
@@ -369,7 +385,9 @@ async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Prom
       }
       report.quarantineDir = destRoot;
       line(
-        `清理过期缓存：已隔离 ${movedN} 项（编译缓存 ${tsbuildinfo.length + stale.length} · 孤儿包 ${orphans.length}）` +
+        `清理过期缓存：已隔离 ${movedN} 项（编译缓存 ${
+          tsbuildinfo.length + stale.length
+        } · 孤儿包 ${orphans.length}）` +
           (failed.length ? `，${failed.length} 项未能移动` : ""),
       );
       line(`　隔离区（要还原就把里面的文件搬回原位）：${destRoot}`);
@@ -399,7 +417,9 @@ async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Prom
         signal: ctx.signal,
       });
       if (inst.code === 0 && !inst.timedOut) line("安装 / 更新依赖：完成");
-      else line(`安装 / 更新依赖：${inst.timedOut ? "超时" : `退出码 ${inst.code}`}（已跳过，继续构建）`);
+      else {line(
+          `安装 / 更新依赖：${inst.timedOut ? "超时" : `退出码 ${inst.code}`}（已跳过，继续构建）`,
+        );}
       ctx.throwIfCancelled();
 
       ctx.detail("全量重建，通常需要 5-20 分钟");
@@ -422,15 +442,22 @@ async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Prom
           },
         });
         if (outcome.code === 0 || outcome.timedOut) break;
-        if (attempt >= BUILD_ATTEMPTS || !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)) break;
-        ctx.log(`第 ${attempt} 次撞上 Windows 并发写的瞬时拒绝（换个包再来一次通常就过），正在重试…`);
+        if (
+          attempt >= BUILD_ATTEMPTS ||
+          !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)
+        ) break;
+        ctx.log(
+          `第 ${attempt} 次撞上 Windows 并发写的瞬时拒绝（换个包再来一次通常就过），正在重试…`,
+        );
       }
       ctx.throwIfCancelled();
       if (!outcome || outcome.timedOut || outcome.code !== 0) {
         const text = (outcome?.stdout ?? "") + "\n" + (outcome?.stderr ?? "");
         const errs = pickBuildErrors(text);
         const brief = errs.length > 0 ? errs.slice(0, 12) : tailLines(text, 12);
-        const why = outcome?.timedOut ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束` : `退出码 ${outcome?.code ?? -1}`;
+        const why = outcome?.timedOut
+          ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束`
+          : `退出码 ${outcome?.code ?? -1}`;
         throw new Error(
           `源码已还原，但重建失败（${why}）。从构建日志里定位到的报错：\n${brief.join("\n")}\n\n` +
             `产物可能处于新旧混合状态——建议把上面的报错发给知行排查。`,
@@ -450,7 +477,9 @@ async function runRollback(ctx: ActionContext, params: CoreRollbackParams): Prom
   if (report.serviceWasRunning) {
     const started = await startDshServer(root, restartPort);
     if (!started.ok) {
-      throw new Error(`源码已还原，但重启服务失败：${started.message}\n可在面板上用「启动」按钮手动启动。`);
+      throw new Error(
+        `源码已还原，但重启服务失败：${started.message}\n可在面板上用「启动」按钮手动启动。`,
+      );
     }
     report.serviceRestarted = true;
     line(`重启 DSH 服务：${started.message}`);

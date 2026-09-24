@@ -19,11 +19,11 @@
 import { stageSafetyProblems } from "../../jobs/registry.ts";
 import type { ActionContext } from "../../jobs/types.ts";
 import { isFile } from "../../host/fs.ts";
-import { p, dirname, quarantineStampDir } from "../../util/paths.ts";
+import { dirname, p, quarantineStampDir } from "../../util/paths.ts";
 import { createRollbackPoint, getRollbackPoint } from "../backup/rollback.ts";
 import { collectCoreStatus, type CoreStatus } from "./status.ts";
 import { collectLibResidue, coreVerifyAction, type LibResidueReport } from "./verify.ts";
-import { ROLLBACK_STEPS, coreRollbackAction, rollbackGreen } from "./rollback.ts";
+import { coreRollbackAction, ROLLBACK_STEPS, rollbackGreen } from "./rollback.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
 
@@ -33,7 +33,9 @@ function assert(cond: unknown, msg: string): asserts cond {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -47,7 +49,8 @@ function assertIncludes(haystack: string, needle: string, msg: string): void {
 
 const HAS_GIT = (() => {
   try {
-    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" }).outputSync().code === 0;
+    return new Deno.Command("git", { args: ["--version"], stdout: "piped", stderr: "piped" })
+      .outputSync().code === 0;
   } catch {
     return false;
   }
@@ -55,7 +58,17 @@ const HAS_GIT = (() => {
 
 function sh(root: string, ...args: string[]): void {
   const out = new Deno.Command("git", {
-    args: ["-C", root, "-c", "user.email=butler@test.local", "-c", "user.name=butler", "-c", "commit.gpgsign=false", ...args],
+    args: [
+      "-C",
+      root,
+      "-c",
+      "user.email=butler@test.local",
+      "-c",
+      "user.name=butler",
+      "-c",
+      "commit.gpgsign=false",
+      ...args,
+    ],
     stdout: "piped",
     stderr: "piped",
   }).outputSync();
@@ -65,7 +78,11 @@ function sh(root: string, ...args: string[]): void {
 }
 
 function gitHead(root: string): string {
-  const out = new Deno.Command("git", { args: ["-C", root, "rev-parse", "HEAD"], stdout: "piped", stderr: "piped" })
+  const out = new Deno.Command("git", {
+    args: ["-C", root, "rev-parse", "HEAD"],
+    stdout: "piped",
+    stderr: "piped",
+  })
     .outputSync();
   return new TextDecoder().decode(out.stdout).trim();
 }
@@ -156,8 +173,16 @@ interface Scenario {
 async function makeBrokenScenario(): Promise<Scenario> {
   const root = Deno.makeTempDirSync();
   Deno.mkdirSync(p(root, "apps", "cli"), { recursive: true });
-  writeFile(root, "package.json", JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }));
-  writeFile(root, "apps/cli/package.json", JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }));
+  writeFile(
+    root,
+    "package.json",
+    JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }),
+  );
+  writeFile(
+    root,
+    "apps/cli/package.json",
+    JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }),
+  );
   writeFile(root, "pnpm-workspace.yaml", 'packages:\n  - "apps/*"\n  - "packages/*"\n');
   writeFile(root, "packages/gone/package.json", JSON.stringify({ name: "gone-pkg" }));
 
@@ -199,8 +224,16 @@ async function makeBrokenScenario(): Promise<Scenario> {
   sh(root, "commit", "-m", "v2 upstream drops gone");
   writeFile(root, "packages/gone/lib/index.js", "module.exports = {};\n");
   // ② 源码推进到 v2 + 新文件；构建记录仍是 c1（没重建完）
-  writeFile(root, "package.json", JSON.stringify({ name: "fixture-core", version: "0.0.10-fixture" }));
-  writeFile(root, "apps/cli/package.json", JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.10-fixture" }));
+  writeFile(
+    root,
+    "package.json",
+    JSON.stringify({ name: "fixture-core", version: "0.0.10-fixture" }),
+  );
+  writeFile(
+    root,
+    "apps/cli/package.json",
+    JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.10-fixture" }),
+  );
   writeFile(root, "new-feature.txt", "v2 only");
   sh(root, "add", "-A");
   sh(root, "commit", "-m", "v2 feature");
@@ -212,8 +245,16 @@ async function makeBrokenScenario(): Promise<Scenario> {
 function makeCoreOnly(): string {
   const root = Deno.makeTempDirSync();
   Deno.mkdirSync(p(root, "apps", "cli"), { recursive: true });
-  writeFile(root, "package.json", JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }));
-  writeFile(root, "apps/cli/package.json", JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }));
+  writeFile(
+    root,
+    "package.json",
+    JSON.stringify({ name: "fixture-core", version: "0.0.9-fixture" }),
+  );
+  writeFile(
+    root,
+    "apps/cli/package.json",
+    JSON.stringify({ name: "@deepseek-ai/dsh-cli", version: "0.0.9-fixture" }),
+  );
   sh(root, "init", "-b", "main");
   sh(root, "add", "-A");
   sh(root, "commit", "-m", "v1");
@@ -227,7 +268,12 @@ function greenStatus(): CoreStatus {
     sourceRoot: "G:\\fixture",
     discoveredBy: "env",
     version: "0.0.9-fixture",
-    git: { head: "abcdef1234567890abcdef1234567890abcdef12", headShort: "abcdef1", branch: "main", dirtyTracked: 0 },
+    git: {
+      head: "abcdef1234567890abcdef1234567890abcdef12",
+      headShort: "abcdef1",
+      branch: "main",
+      dirtyTracked: 0,
+    },
     build: {
       path: "G:\\fixture\\.dsh-build\\client-build-environment.json",
       formatVersion: 1,
@@ -249,7 +295,14 @@ function greenStatus(): CoreStatus {
 }
 
 function greenLibs(): LibResidueReport {
-  return { patterns: ["apps/*"], candidates: 1, headPackages: 1, zombieLibs: [], missingPackages: [], untrackedPackages: [] };
+  return {
+    patterns: ["apps/*"],
+    candidates: 1,
+    headPackages: 1,
+    zombieLibs: [],
+    missingPackages: [],
+    untrackedPackages: [],
+  };
 }
 
 function errFinding(id: string): CoreStatus["findings"][number] {
@@ -269,9 +322,16 @@ Deno.test("AC-C3：失败更新后 core.rollback 恢复到操作前状态，恢�
         withDshWebDir(sc.root, async () => {
           // 操作前：双 error 现场成立（否则测不出「恢复」）
           const before = await collectCoreStatus();
-          assert(before.needsFinishUpdate, "回滚前必须处于「需要完成更新」状态（构建记录 c1 ≠ HEAD c2）");
+          assert(
+            before.needsFinishUpdate,
+            "回滚前必须处于「需要完成更新」状态（构建记录 c1 ≠ HEAD c2）",
+          );
           const beforeLibs = await collectLibResidue(sc.root);
-          assertEq(beforeLibs?.zombieLibs.length ?? -1, 1, "回滚前必须有 1 处僵尸 lib（上游删包现场）");
+          assertEq(
+            beforeLibs?.zombieLibs.length ?? -1,
+            1,
+            "回滚前必须有 1 处僵尸 lib（上游删包现场）",
+          );
 
           return await coreRollbackAction.run(fakeCtx(), {} as Record<string, never>);
         })
@@ -289,7 +349,11 @@ Deno.test("AC-C3：失败更新后 core.rollback 恢复到操作前状态，恢�
       const record = JSON.parse(Deno.readTextFileSync(sc.buildRecord)) as {
         environment: { DSH_CLIENT_COMMIT_HASH: string };
       };
-      assertEq(record.environment.DSH_CLIENT_COMMIT_HASH, sc.c1, "构建记录副本必须还原为操作前的提交");
+      assertEq(
+        record.environment.DSH_CLIENT_COMMIT_HASH,
+        sc.c1,
+        "构建记录副本必须还原为操作前的提交",
+      );
       assertEq(
         Deno.readTextFileSync(p(sc.root, "stray.txt")),
         "被隔离的残留",
@@ -300,17 +364,32 @@ Deno.test("AC-C3：失败更新后 core.rollback 恢复到操作前状态，恢�
 
       // ── ② 恢复后全绿（AC-C3 的后半句） ────────────────────────────
       assertEq(report.green, true, "最终复核必须全绿");
-      assertEq(report.problems.length, 0, `全绿时 problems 必须为空，实际：${report.problems.join("；")}`);
+      assertEq(
+        report.problems.length,
+        0,
+        `全绿时 problems 必须为空，实际：${report.problems.join("；")}`,
+      );
       assertEq(report.rebuild, "skipped-no-script", "fixture 无 build 脚本，重建应跳过而不是硬跑");
       assertEq(report.serviceWasRunning, false, "隔离模式下不停任何服务");
       assertEq(report.serviceRestarted, false, "没停过就不该重启");
       assert(report.lines.some((l) => l.includes("复核通过")), "汇报必须包含复核结论");
 
       // 用 core.verify 动作本体独立复核（AC-C3 字面口径：恢复后 core.verify 全绿）
-      const vr = await withDshWebDir(sc.root, () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>));
-      const profileIds = ["core.plugin-declared-but-inactive", "core.plugin-bundled-but-undeclared", "core.pnpm-residue"];
+      const vr = await withDshWebDir(
+        sc.root,
+        () => coreVerifyAction.run(fakeCtx(), {} as Record<string, never>),
+      );
+      const profileIds = [
+        "core.plugin-declared-but-inactive",
+        "core.plugin-bundled-but-undeclared",
+        "core.pnpm-residue",
+      ];
       const errs = vr.findings.filter((f) => f.severity === "error" && !profileIds.includes(f.id));
-      assertEq(errs.length, 0, `core.verify 不许残留 error 级问题：${errs.map((f) => f.id).join(",")}`);
+      assertEq(
+        errs.length,
+        0,
+        `core.verify 不许残留 error 级问题：${errs.map((f) => f.id).join(",")}`,
+      );
       assert(!vr.status?.needsFinishUpdate, "core.verify 不许再报需要完成更新");
       assertEq(vr.libs?.zombieLibs.length, 0, "core.verify 不许再报僵尸 lib");
       assertEq(vr.libs?.missingPackages.length, 0, "core.verify 不许报缺失包");
@@ -322,11 +401,14 @@ Deno.test("AC-C3：失败更新后 core.rollback 恢复到操作前状态，恢�
 
       // 本次清理没造出任何隔离区垃圾（fixture 无编译缓存、无孤儿包）
       assertEq(report.quarantineDir, null, "无过期缓存与孤儿包时不该建隔离区");
-        assert(!isFile(p(sc.root, ".dsh-build", "client-build-environment.tsbuildinfo")), "不该有编译缓存残留断言对象");
-      } finally {
-        removeAll(sc.root, sc.qParent, quarantineStampDir(sc.root));
-      }
-    });
+      assert(
+        !isFile(p(sc.root, ".dsh-build", "client-build-environment.tsbuildinfo")),
+        "不该有编译缓存残留断言对象",
+      );
+    } finally {
+      removeAll(sc.root, sc.qParent, quarantineStampDir(sc.root));
+    }
+  });
 });
 
 Deno.test("run 防御：没有回滚点时直接拒绝，一个文件都不许动", async () => {
@@ -344,8 +426,7 @@ Deno.test("run 防御：没有回滚点时直接拒绝，一个文件都不许�
         } catch (e) {
           thrownMsg = (e as Error).message;
         }
-      })
-    );
+      }));
     assert(thrownMsg !== null, "没有回滚点时 run 必须抛错");
     assertIncludes(thrownMsg ?? "", "没有可回滚", "报错必须说清没有可回滚的点");
     assert(isFile(p(root, "canary.txt")), "防御失败时绝不许动任何文件");
@@ -414,7 +495,11 @@ Deno.test("preflight：指定的回滚点类型不对 → bad-kind；不存在 �
 
 Deno.test("rollbackGreen：绿样本两阶段都过；profile 污染与 mismatch 按 phase 区分", () => {
   // ① 纯绿样本
-  assertEq(rollbackGreen(greenStatus(), greenLibs(), "pre-rebuild").ok, true, "绿样本 pre-rebuild 应通过");
+  assertEq(
+    rollbackGreen(greenStatus(), greenLibs(), "pre-rebuild").ok,
+    true,
+    "绿样本 pre-rebuild 应通过",
+  );
   assertEq(rollbackGreen(greenStatus(), greenLibs(), "final").ok, true, "绿样本 final 应通过");
 
   // ② profile 维度的三条（含 error 级 bundled-undeclared）两个阶段都不许进 problems ——
@@ -425,28 +510,52 @@ Deno.test("rollbackGreen：绿样本两阶段都过；profile 污染与 mismatch
     errFinding("core.plugin-bundled-but-undeclared"),
     errFinding("core.pnpm-residue"),
   ];
-  assertEq(rollbackGreen(polluted, greenLibs(), "pre-rebuild").ok, true, "profile 维度必须被排除（pre-rebuild）");
-  assertEq(rollbackGreen(polluted, greenLibs(), "final").ok, true, "profile 维度必须被排除（final）");
+  assertEq(
+    rollbackGreen(polluted, greenLibs(), "pre-rebuild").ok,
+    true,
+    "profile 维度必须被排除（pre-rebuild）",
+  );
+  assertEq(
+    rollbackGreen(polluted, greenLibs(), "final").ok,
+    true,
+    "profile 维度必须被排除（final）",
+  );
 
   // ③ artifacts-mismatch：pre-rebuild 排除（重建前 dist 是新的，属预期），final 必须报
   const mismatch = greenStatus();
   mismatch.findings = [errFinding("core.artifacts-mismatch")];
-  assertEq(rollbackGreen(mismatch, greenLibs(), "pre-rebuild").ok, true, "重建前的产物不一致是预期状态，不许判失败");
+  assertEq(
+    rollbackGreen(mismatch, greenLibs(), "pre-rebuild").ok,
+    true,
+    "重建前的产物不一致是预期状态，不许判失败",
+  );
   const finalVerdict = rollbackGreen(mismatch, greenLibs(), "final");
   assertEq(finalVerdict.ok, false, "重建后仍不一致 = 真没修好，final 必须判失败");
-  assertIncludes(finalVerdict.problems.join("\n"), "core.artifacts-mismatch", "problems 必须点名是哪条");
+  assertIncludes(
+    finalVerdict.problems.join("\n"),
+    "core.artifacts-mismatch",
+    "problems 必须点名是哪条",
+  );
 
   // ④ 其它 error 两个阶段都拦（随便挑一条非排除集的）
   const other = greenStatus();
   other.findings = [errFinding("core.needs-finish-update")];
-  assertEq(rollbackGreen(other, greenLibs(), "pre-rebuild").ok, false, "非排除集的 error 一律不许过");
+  assertEq(
+    rollbackGreen(other, greenLibs(), "pre-rebuild").ok,
+    false,
+    "非排除集的 error 一律不许过",
+  );
 });
 
 Deno.test("rollbackGreen：结构性缺陷逐条拦下（僵尸 / 脏树 / 提交号分叉 / 缺记录）", () => {
   // 僵尸 lib：经 libResidueFindings 进 findings，error 级 → 两阶段都 fail
   const zombie = greenLibs();
   zombie.zombieLibs = [{ pkgDir: "apps/ghost", libPath: "apps/ghost/lib" }];
-  assertEq(rollbackGreen(greenStatus(), zombie, "pre-rebuild").ok, false, "僵尸 lib 必须拦下（pre-rebuild）");
+  assertEq(
+    rollbackGreen(greenStatus(), zombie, "pre-rebuild").ok,
+    false,
+    "僵尸 lib 必须拦下（pre-rebuild）",
+  );
   assertEq(rollbackGreen(greenStatus(), zombie, "final").ok, false, "僵尸 lib 必须拦下（final）");
 
   // 缺失包
@@ -455,7 +564,11 @@ Deno.test("rollbackGreen：结构性缺陷逐条拦下（僵尸 / 脏树 / 提�
   assertEq(rollbackGreen(greenStatus(), missing, "final").ok, false, "缺失包必须拦下");
 
   // 读不到 git 记录（libs=null）
-  assertEq(rollbackGreen(greenStatus(), null, "final").ok, false, "残留检测不可用时必须判失败，不许装绿");
+  assertEq(
+    rollbackGreen(greenStatus(), null, "final").ok,
+    false,
+    "残留检测不可用时必须判失败，不许装绿",
+  );
 
   // 脏树：reset --hard 后不该有 tracked 改动，出现即还原不完整
   const dirty = greenStatus();
@@ -466,7 +579,12 @@ Deno.test("rollbackGreen：结构性缺陷逐条拦下（僵尸 / 脏树 / 提�
 
   // 提交号分叉：自己按 head 前缀算，不依赖 needsFinishUpdate（后者会被 mismatch 置真）
   const fork = greenStatus();
-  fork.git = { head: "0000000000000000000000000000000000000000", headShort: "0000000", branch: "main", dirtyTracked: 0 };
+  fork.git = {
+    head: "0000000000000000000000000000000000000000",
+    headShort: "0000000",
+    branch: "main",
+    dirtyTracked: 0,
+  };
   const forkVerdict = rollbackGreen(fork, greenLibs(), "pre-rebuild");
   assertEq(forkVerdict.ok, false, "构建记录与 HEAD 分叉必须拦下");
   assertIncludes(forkVerdict.problems.join("\n"), "不一致", "必须说清是提交号不一致");
@@ -488,7 +606,14 @@ Deno.test("写动作准入：core.rollback 带齐 preflight + steps，防呆零�
   assertEq(coreRollbackAction.readonly, false, "这是写动作");
   assert(typeof coreRollbackAction.preflight === "function", "写动作必须有 preflight（写前检查）");
   assertEq(coreRollbackAction.steps?.length, ROLLBACK_STEPS.length, "动作步骤必须与清单一致");
-  assertEq(coreRollbackAction.steps?.[0], ROLLBACK_STEPS[0], "步骤必须直接引用清单（单一事实来源）");
-  assert((coreRollbackAction.timeoutMs ?? 0) >= 3_600_000, "回滚含 install + 全量重建，预算必须宽于默认 1 小时");
+  assertEq(
+    coreRollbackAction.steps?.[0],
+    ROLLBACK_STEPS[0],
+    "步骤必须直接引用清单（单一事实来源）",
+  );
+  assert(
+    (coreRollbackAction.timeoutMs ?? 0) >= 3_600_000,
+    "回滚含 install + 全量重建，预算必须宽于默认 1 小时",
+  );
   assertEq(stageSafetyProblems([coreRollbackAction as never]).length, 0, "阶段安全防呆必须零问题");
 });

@@ -12,11 +12,11 @@
 
 import { p } from "../util/paths.ts";
 import {
+  readWriteLock,
   releaseWriteLock,
   tryAcquireWriteLock,
-  readWriteLock,
-  WRITE_LOCK_STALE_MS,
   WRITE_LOCK_HOLDER,
+  WRITE_LOCK_STALE_MS,
 } from "./write-lock.ts";
 
 function assert(cond: unknown, msg: string): void {
@@ -25,7 +25,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -52,7 +54,13 @@ Deno.test("写锁：拿锁 → 拒绝第二个 → 释放自己的后可再拿",
     assert(a.ok, `第一次拿锁应成功，实际：${JSON.stringify(a)}`);
     // 若 env 覆盖失效，锁会写去真实的 ~/.dsh —— 这条必须是临时路径
     assert(
-      (() => { try { return Deno.statSync(lockPath).isFile; } catch { return false; } })(),
+      (() => {
+        try {
+          return Deno.statSync(lockPath).isFile;
+        } catch {
+          return false;
+        }
+      })(),
       "锁必须写在临时覆盖路径上（env override 失效会污染真实锁）",
     );
 
@@ -111,9 +119,12 @@ Deno.test("写锁：陈旧锁（超 24h）必须自动回收并留证据，不�
     for (const e of Deno.readDirSync(dir)) {
       if (e.name.startsWith("write.lock.stale-")) staleBackups.push(e.name);
     }
-    assert(staleBackups.length >= 1, `陈旧锁必须备份为 write.lock.stale-*，实际目录：${
-      [...Deno.readDirSync(dir)].map((x) => x.name).join(", ")
-    }`);
+    assert(
+      staleBackups.length >= 1,
+      `陈旧锁必须备份为 write.lock.stale-*，实际目录：${
+        [...Deno.readDirSync(dir)].map((x) => x.name).join(", ")
+      }`,
+    );
     releaseWriteLock("job-fresh");
   });
 });

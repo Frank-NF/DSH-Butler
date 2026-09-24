@@ -49,7 +49,7 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { run } from "../../host/shell.ts";
 import { isFile, moveSafe, pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
 import { butlerRoot, dshProfileDir, p, resolveDshSourceRoot, stampOf } from "../../util/paths.ts";
@@ -60,7 +60,7 @@ import { startDshServer, stopDshServer, type StopOutcome } from "../core/finish_
 import { applyRollbackPoint, createRollbackPoint } from "../backup/rollback.ts";
 import { collectPluginFacts, judgeLayer, locateBundleDir } from "./facts.ts";
 import { repairBlockers } from "./rules.ts";
-import { readPluginLists, type PluginListCheck } from "../core/status.ts";
+import { type PluginListCheck, readPluginLists } from "../core/status.ts";
 
 // ── 测试隔离旋钮 ──────────────────────────────────────────────────
 
@@ -138,7 +138,9 @@ export function readActiveTxn(): PluginTxnJournal | null {
   } catch (e) {
     throw new Error(`插件事务日志损坏（无法解析）：${file} — ${(e as Error).message}`);
   }
-  if (parsed.kind !== "plugin-txn" || parsed.version !== 1 || !parsed.op || !parsed.rollbackPointId) {
+  if (
+    parsed.kind !== "plugin-txn" || parsed.version !== 1 || !parsed.op || !parsed.rollbackPointId
+  ) {
     throw new Error(`插件事务日志内容不合法：${file}`);
   }
   return parsed;
@@ -281,11 +283,24 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
   if (pmSkipped()) return;
   const r = await run(
     "cmd",
-    ["/c", "npm", "install", spec, "--prefix", profileDir, "--no-audit", "--no-fund", "--loglevel", "error"],
+    [
+      "/c",
+      "npm",
+      "install",
+      spec,
+      "--prefix",
+      profileDir,
+      "--no-audit",
+      "--no-fund",
+      "--loglevel",
+      "error",
+    ],
     { timeoutMs: TIMEOUTS.install, allowNonZero: true, scope: "plugin", signal },
   );
   if (r.code !== 0 || r.timedOut) {
-    const why = r.timedOut ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟未结束` : `退出码 ${r.code}`;
+    const why = r.timedOut
+      ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟未结束`
+      : `退出码 ${r.code}`;
     throw new Error(`npm 安装失败（${why}）：${tail3(r.stderr || r.stdout)}`);
   }
 }
@@ -296,11 +311,23 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
   if (pmSkipped()) return;
   const r = await run(
     "cmd",
-    ["/c", "npm", "install", "--prefix", profileDir, "--no-audit", "--no-fund", "--loglevel", "error"],
+    [
+      "/c",
+      "npm",
+      "install",
+      "--prefix",
+      profileDir,
+      "--no-audit",
+      "--no-fund",
+      "--loglevel",
+      "error",
+    ],
     { timeoutMs: TIMEOUTS.install, allowNonZero: true, scope: "plugin", signal },
   );
   if (r.code !== 0 || r.timedOut) {
-    const why = r.timedOut ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟未结束` : `退出码 ${r.code}`;
+    const why = r.timedOut
+      ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟未结束`
+      : `退出码 ${r.code}`;
     throw new Error(`依赖锁同步失败（${why}）：${tail3(r.stderr || r.stdout)}`);
   }
 }
@@ -376,7 +403,9 @@ export async function recoverPluginTxn(): Promise<RecoverResult> {
   const out = await rollbackActiveTxn(j);
   if (!out.ok) {
     throw new Error(
-      `上次未完成的插件事务（${j.op} ${j.name}）恢复未完全成功：${out.warnings.join("；")}（事务日志已保留，下次启动会再试）`,
+      `上次未完成的插件事务（${j.op} ${j.name}）恢复未完全成功：${
+        out.warnings.join("；")
+      }（事务日志已保留，下次启动会再试）`,
     );
   }
   return { recovered: true, op: j.op, name: j.name, warnings: out.warnings };
@@ -587,12 +616,17 @@ async function repairPreflight(params: PluginRepairParams): Promise<Finding[]> {
       cause = "没有「装了但没生效且可作层」的插件 —— 双名单当前无需修复";
     }
     out.push(
-      finding("plugin.nothing-to-repair", "error", name ? `没有可修复的插件：${name}` : "没有可修复的插件", {
-        cause,
-        impact: "没有需要补登记的目标，执行无意义",
-        action: name ? "用 plugin diagnose 查这个插件的真实状态" : "双名单健康，无需此操作",
-        fixAction: "plugin.diagnose",
-      }),
+      finding(
+        "plugin.nothing-to-repair",
+        "error",
+        name ? `没有可修复的插件：${name}` : "没有可修复的插件",
+        {
+          cause,
+          impact: "没有需要补登记的目标，执行无意义",
+          action: name ? "用 plugin diagnose 查这个插件的真实状态" : "双名单健康，无需此操作",
+          fixAction: "plugin.diagnose",
+        },
+      ),
     );
   }
   return out;
@@ -634,12 +668,20 @@ export interface PluginRepairReport {
 /** 停过的服务拉回来（失败路径与成功路径共用；root 找不到时降级为 warning）。 */
 async function restartPhase(
   _ctx: ActionContext,
-  report: { serviceWasRunning: boolean; serviceRestarted: boolean; op: "install" | "uninstall" | "repair" },
+  report: {
+    serviceWasRunning: boolean;
+    serviceRestarted: boolean;
+    op: "install" | "uninstall" | "repair";
+  },
   line: (s: string) => void,
   restartPort: number,
   softFailWarnings: string[] | null,
 ): Promise<void> {
-  const doneText = report.op === "install" ? "插件已安装" : report.op === "uninstall" ? "插件已卸载" : "插件已修复";
+  const doneText = report.op === "install"
+    ? "插件已安装"
+    : report.op === "uninstall"
+    ? "插件已卸载"
+    : "插件已修复";
   if (!report.serviceWasRunning) {
     line("重启 DSH 服务：无需重启");
     return;
@@ -665,7 +707,11 @@ async function restartPhase(
 }
 
 /** 写前回滚点：清单 + （存在的）锁文件，逆操作 = 还原文件。 */
-async function createManifestPoint(manifestPath: string, profileDir: string, trigger: string): Promise<string> {
+async function createManifestPoint(
+  manifestPath: string,
+  profileDir: string,
+  trigger: string,
+): Promise<string> {
   const artifacts: Array<{ path: string; mode: "copy" }> = [{ path: manifestPath, mode: "copy" }];
   const lockPath = p(profileDir, "package-lock.json");
   if (isFile(lockPath)) artifacts.push({ path: lockPath, mode: "copy" });
@@ -680,10 +726,15 @@ async function createManifestPoint(manifestPath: string, profileDir: string, tri
 
 // ── install ─────────────────────────────────────────────────────────
 
-async function runInstall(ctx: ActionContext, params: PluginInstallParams): Promise<PluginOpReport> {
+async function runInstall(
+  ctx: ActionContext,
+  params: PluginInstallParams,
+): Promise<PluginOpReport> {
   const t0 = Date.now();
   const name = (params.name ?? "").trim();
-  const version = typeof params.version === "string" && params.version.trim() ? params.version.trim() : "*";
+  const version = typeof params.version === "string" && params.version.trim()
+    ? params.version.trim()
+    : "*";
   const spec = version === "*" ? name : `${name}@${version}`;
 
   const profileDir = dshProfileDir();
@@ -723,7 +774,11 @@ async function runInstall(ctx: ActionContext, params: PluginInstallParams): Prom
   } else {
     stop = await stopDshServer();
     report.serviceWasRunning = stop.wasRunning;
-    line(stop.wasRunning ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程` : "停止 DSH 服务：服务未运行，跳过");
+    line(
+      stop.wasRunning
+        ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程`
+        : "停止 DSH 服务：服务未运行，跳过",
+    );
   }
   const restartPort = stop.port ?? (await findDshPort(DSH_PORT_CANDIDATES)) ?? DSH_PORT_DEFAULT;
   ctx.throwIfCancelled();
@@ -733,7 +788,11 @@ async function runInstall(ctx: ActionContext, params: PluginInstallParams): Prom
     // ── s2 写前回滚点 + 事务日志 ──
     ctx.step("s2", INSTALL_STEPS[1]);
     ctx.progress(0.1);
-    const rollbackId = await createManifestPoint(manifestPath, profileDir, `plugin.install ${name}`);
+    const rollbackId = await createManifestPoint(
+      manifestPath,
+      profileDir,
+      `plugin.install ${name}`,
+    );
     journal = {
       kind: "plugin-txn",
       version: 1,
@@ -770,7 +829,11 @@ async function runInstall(ctx: ActionContext, params: PluginInstallParams): Prom
     if (reg.activated) {
       line("登记双名单：依赖清单 ✓ · 生效名单 ✓（下次启动即生效）");
     } else {
-      line(`登记双名单：依赖清单 ✓ · 未进生效名单（${reg.layerReason ?? "不可作层"}）—— 已安装但不激活，属于合法状态`);
+      line(
+        `登记双名单：依赖清单 ✓ · 未进生效名单（${
+          reg.layerReason ?? "不可作层"
+        }）—— 已安装但不激活，属于合法状态`,
+      );
     }
 
     // ── s5 校验 ──
@@ -779,7 +842,9 @@ async function runInstall(ctx: ActionContext, params: PluginInstallParams): Prom
     const lists = readPluginLists(manifestPath, { installRoot: installRoot ?? "", profileDir });
     if (!lists) throw new Error(`登记后读不回清单：${manifestPath}`);
     if (!lists.dependencies.includes(name)) throw new Error(`校验失败：依赖清单里没有 ${name}`);
-    if (reg.activated && !lists.bundles.includes(name)) throw new Error(`校验失败：生效名单里没有 ${name}`);
+    if (reg.activated && !lists.bundles.includes(name)) {
+      throw new Error(`校验失败：生效名单里没有 ${name}`);
+    }
     if (!locateBundleDir(name, installRoot, profileDir)) {
       throw new Error(`校验失败：装完却找不到 ${name} 的包目录（node_modules 缺实体）`);
     }
@@ -814,7 +879,10 @@ async function runInstall(ctx: ActionContext, params: PluginInstallParams): Prom
 
 // ── uninstall ────────────────────────────────────────────────────────
 
-async function runUninstall(ctx: ActionContext, params: PluginUninstallParams): Promise<PluginOpReport> {
+async function runUninstall(
+  ctx: ActionContext,
+  params: PluginUninstallParams,
+): Promise<PluginOpReport> {
   const t0 = Date.now();
   const name = (params.name ?? "").trim();
 
@@ -853,7 +921,11 @@ async function runUninstall(ctx: ActionContext, params: PluginUninstallParams): 
   } else {
     stop = await stopDshServer();
     report.serviceWasRunning = stop.wasRunning;
-    line(stop.wasRunning ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程` : "停止 DSH 服务：服务未运行，跳过");
+    line(
+      stop.wasRunning
+        ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程`
+        : "停止 DSH 服务：服务未运行，跳过",
+    );
   }
   const restartPort = stop.port ?? (await findDshPort(DSH_PORT_CANDIDATES)) ?? DSH_PORT_DEFAULT;
   ctx.throwIfCancelled();
@@ -863,7 +935,11 @@ async function runUninstall(ctx: ActionContext, params: PluginUninstallParams): 
     // ── s2 写前回滚点 + 事务日志（隔离区路径【移动前】预写，见头注释 1） ──
     ctx.step("s2", UNINSTALL_STEPS[1]);
     ctx.progress(0.1);
-    const rollbackId = await createManifestPoint(manifestPath, profileDir, `plugin.uninstall ${name}`);
+    const rollbackId = await createManifestPoint(
+      manifestPath,
+      profileDir,
+      `plugin.uninstall ${name}`,
+    );
     const originalDir = p(profileDir, "node_modules", ...name.split("/"));
     const quarantinedDir = p(txnDir(), "quarantine", stampOf(), ...name.split("/"));
     journal = {
@@ -955,7 +1031,10 @@ async function runUninstall(ctx: ActionContext, params: PluginUninstallParams): 
 
 // ── repair ────────────────────────────────────────────────────────────
 
-async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promise<PluginRepairReport> {
+async function runRepair(
+  ctx: ActionContext,
+  params: PluginRepairParams,
+): Promise<PluginRepairReport> {
   const t0 = Date.now();
   const name = (params.name ?? "").trim();
 
@@ -993,7 +1072,11 @@ async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promis
   } else {
     stop = await stopDshServer();
     report.serviceWasRunning = stop.wasRunning;
-    line(stop.wasRunning ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程` : "停止 DSH 服务：服务未运行，跳过");
+    line(
+      stop.wasRunning
+        ? `停止 DSH 服务：已停止 ${stop.stopped} 个进程`
+        : "停止 DSH 服务：服务未运行，跳过",
+    );
   }
   const restartPort = stop.port ?? (await findDshPort(DSH_PORT_CANDIDATES)) ?? DSH_PORT_DEFAULT;
   ctx.throwIfCancelled();
@@ -1003,7 +1086,11 @@ async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promis
     // ── s2 写前回滚点 + 事务日志（repair 只改 manifest，不动目录） ──
     ctx.step("s2", REPAIR_STEPS[1]);
     ctx.progress(0.1);
-    const rollbackId = await createManifestPoint(manifestPath, profileDir, `plugin.repair ${name || "(全部)"}`);
+    const rollbackId = await createManifestPoint(
+      manifestPath,
+      profileDir,
+      `plugin.repair ${name || "(全部)"}`,
+    );
     journal = {
       kind: "plugin-txn",
       version: 1,
@@ -1030,7 +1117,9 @@ async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promis
     }
     const targets = facts.inactiveLayers.filter((l) => l.canLayer && (!name || l.name === name));
     if (targets.length === 0) {
-      throw new Error(name ? `没有可修复的插件：${name}` : "没有可修复的插件（双名单当前无需修复）");
+      throw new Error(
+        name ? `没有可修复的插件：${name}` : "没有可修复的插件（双名单当前无需修复）",
+      );
     }
     for (const t of targets) {
       ctx.throwIfCancelled();
@@ -1041,7 +1130,9 @@ async function runRepair(ctx: ActionContext, params: PluginRepairParams): Promis
         line(`补登记 ${t.name}：依赖清单 ✓ · 生效名单 ✓（下次启动即生效）`);
       } else {
         // 理论不可达（targets 已按 canLayer 过滤）；真到了这一步说明守卫口径漂移，如实报
-        report.warnings.push(`${t.name} 补登记后仍未进生效名单（${reg.layerReason ?? "不可作层"}）`);
+        report.warnings.push(
+          `${t.name} 补登记后仍未进生效名单（${reg.layerReason ?? "不可作层"}）`,
+        );
       }
     }
 
@@ -1106,7 +1197,9 @@ export interface PluginScanReport {
 /** 采集插件事实并压成稳定可比的报告（AC-P3「操作前后一致」就比它）。 */
 export async function collectScanReport(params: PluginScanParams = {}): Promise<PluginScanReport> {
   const profileDir = params.profileDir ?? dshProfileDir();
-  const installRoot = params.installRoot !== undefined ? params.installRoot : resolveDshSourceRoot()?.path ?? null;
+  const installRoot = params.installRoot !== undefined
+    ? params.installRoot
+    : resolveDshSourceRoot()?.path ?? null;
   const facts = await collectPluginFacts({ profileDir, installRoot });
   const entities: Record<string, boolean> = {};
   for (const n of facts.lists.dependencies) {
@@ -1123,7 +1216,11 @@ export async function collectScanReport(params: PluginScanParams = {}): Promise<
     },
     lists: facts.lists,
     layers: facts.layers.map((l) => ({ name: l.name, canLayer: l.canLayer, reason: l.reason })),
-    inactiveLayers: facts.inactiveLayers.map((l) => ({ name: l.name, canLayer: l.canLayer, reason: l.reason })),
+    inactiveLayers: facts.inactiveLayers.map((l) => ({
+      name: l.name,
+      canLayer: l.canLayer,
+      reason: l.reason,
+    })),
     entities,
     checkedAt: facts.checkedAt,
   };

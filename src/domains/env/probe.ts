@@ -6,9 +6,9 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding, ok } from "../../util/result.ts";
+import { type Finding, finding, ok } from "../../util/result.ts";
 import { diskSpace, platformLabel, systemInfo } from "../../host/mod.ts";
-import { versionAt, locate } from "../../host/shell.ts";
+import { locate, versionAt } from "../../host/shell.ts";
 import { fsx } from "../../host/mod.ts";
 import { checkWritable, elevationStatus } from "../../host/privileges.ts";
 import { describePort } from "../../host/port.ts";
@@ -20,10 +20,10 @@ import {
   dshRoot,
   dshSessionsDir,
   legacyConfigPath,
-  resolveDshSourceRoot,
-  rememberDshRoot,
-  sameVolume,
   quarantineRootFor,
+  rememberDshRoot,
+  resolveDshSourceRoot,
+  sameVolume,
 } from "../../util/paths.ts";
 import { DSH_PORT_CANDIDATES } from "../../version.ts";
 
@@ -85,13 +85,15 @@ const RUNTIMES: Array<Omit<RuntimeProbe, "found" | "path" | "version">> = [
     name: "node",
     label: "Node.js",
     required: true,
-    hint: "DSH 本体需要 Node.js 运行。可到 nodejs.org 下载 LTS 版本，或用 winget install OpenJS.NodeJS.LTS 安装。",
+    hint:
+      "DSH 本体需要 Node.js 运行。可到 nodejs.org 下载 LTS 版本，或用 winget install OpenJS.NodeJS.LTS 安装。",
   },
   {
     name: "pnpm",
     label: "pnpm",
     required: true,
-    hint: "DSH 源码版用 pnpm 管理依赖。安装命令：npm install -g pnpm（或用 corepack enable pnpm）。",
+    hint:
+      "DSH 源码版用 pnpm 管理依赖。安装命令：npm install -g pnpm（或用 corepack enable pnpm）。",
   },
   {
     name: "git",
@@ -265,7 +267,9 @@ export async function collectEnv(): Promise<EnvReport> {
   }
 
   // 8) 磁盘（已在上面并行取好）
-  const disk = diskRaw ? { path: diskPath, freeBytes: diskRaw.freeBytes, totalBytes: diskRaw.totalBytes } : null;
+  const disk = diskRaw
+    ? { path: diskPath, freeBytes: diskRaw.freeBytes, totalBytes: diskRaw.totalBytes }
+    : null;
   if (disk && disk.freeBytes < 5 * 1024 ** 3) {
     findings.push(
       finding("env.low-disk", "warn", "可用磁盘空间不足 5 GB", {
@@ -341,7 +345,8 @@ export const envProbeAction: ActionDef<Record<string, never>, EnvReport> = {
   name: "env.probe",
   domain: "env",
   title: "环境体检",
-  description: "检测系统、运行时、DSH 目录、权限、端口与磁盘状况，并汇总问题清单。只读，不修改任何东西。",
+  description:
+    "检测系统、运行时、DSH 目录、权限、端口与磁盘状况，并汇总问题清单。只读，不修改任何东西。",
   readonly: true,
   steps: [
     "采集系统信息",
@@ -355,7 +360,11 @@ export const envProbeAction: ActionDef<Record<string, never>, EnvReport> = {
     ctx.step("s1", "采集系统信息");
     ctx.progress(0.1);
     const sys = await systemInfo();
-    ctx.detail(`${platformLabel()} ${sys.arch} · ${sys.cpuCount} 核 · ${(sys.memTotalBytes / 1024 ** 3).toFixed(1)} GB 内存`);
+    ctx.detail(
+      `${platformLabel()} ${sys.arch} · ${sys.cpuCount} 核 · ${
+        (sys.memTotalBytes / 1024 ** 3).toFixed(1)
+      } GB 内存`,
+    );
     ctx.throwIfCancelled();
 
     ctx.step("s2", "检查运行时");
@@ -373,12 +382,18 @@ export const envProbeAction: ActionDef<Record<string, never>, EnvReport> = {
     ctx.step("s4", "检查权限与提权状态");
     ctx.progress(0.65);
     const unwritable = report.writable.filter((w) => !w.writable);
-    ctx.detail(unwritable.length === 0 ? "所有关键目录均可写" : `${unwritable.length} 个目录不可写`);
+    ctx.detail(
+      unwritable.length === 0 ? "所有关键目录均可写" : `${unwritable.length} 个目录不可写`,
+    );
     ctx.throwIfCancelled();
 
     ctx.step("s5", "检查端口占用");
     ctx.progress(0.8);
-    ctx.detail(report.ports.map((p) => `${p.port}${p.free ? "空闲" : p.isDsh ? "(DSH)" : "(占用)"}`).join(" · "));
+    ctx.detail(
+      report.ports.map((p) => `${p.port}${p.free ? "空闲" : p.isDsh ? "(DSH)" : "(占用)"}`).join(
+        " · ",
+      ),
+    );
     ctx.throwIfCancelled();
 
     ctx.step("s6", "汇总问题清单");

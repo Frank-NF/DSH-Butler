@@ -19,7 +19,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -59,7 +61,10 @@ Deno.test("防呆：写动作缺 steps 必须报；两条都缺报两条", () =>
   ]);
   assertEq(noSteps.length, 1, `应只报 steps 一条，实际：${noSteps.join("；")}`);
   const noStepsFirst = noSteps[0] ?? "";
-  assert(noStepsFirst.includes("core.nosteps") && noStepsFirst.includes("步骤"), "报错须点名动作并说明缺步骤");
+  assert(
+    noStepsFirst.includes("core.nosteps") && noStepsFirst.includes("步骤"),
+    "报错须点名动作并说明缺步骤",
+  );
 
   const neither = stageSafetyProblems([
     def({ name: "core.bare", readonly: false }),
@@ -69,7 +74,11 @@ Deno.test("防呆：写动作缺 steps 必须报；两条都缺报两条", () =>
   const emptySteps = stageSafetyProblems([
     def({ name: "core.empty", readonly: false, preflight: async () => [], steps: [] }),
   ]);
-  assertEq(emptySteps.length, 1, `steps 为空数组等同于没声明，应报，实际：${emptySteps.join("；")}`);
+  assertEq(
+    emptySteps.length,
+    1,
+    `steps 为空数组等同于没声明，应报，实际：${emptySteps.join("；")}`,
+  );
 });
 
 Deno.test("防呆：装备齐全的写动作放行（阴性总闸，不许误报）", () => {

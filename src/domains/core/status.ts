@@ -7,11 +7,11 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { run } from "../../host/shell.ts";
 import { isDir, isFile, readJson } from "../../host/fs.ts";
 import { dshProfileDir, p, resolveDshSourceRoot } from "../../util/paths.ts";
-import { verifyBuildIntegrity, type BuildIntegrity } from "./official.ts";
+import { type BuildIntegrity, verifyBuildIntegrity } from "./official.ts";
 
 export interface GitInfo {
   head: string | null;
@@ -193,7 +193,8 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
     findings.push(
       finding("core.artifacts-mismatch", "error", "界面产物与构建记录不一致", {
         cause: integrity.error ?? "官方校验判定不一致",
-        impact: "DSH 启动时会加载到不完整或过期的产物，典型症状是界面能开但某些面板永久卡住、或报某个文件不存在",
+        impact:
+          "DSH 启动时会加载到不完整或过期的产物，典型症状是界面能开但某些面板永久卡住、或报某个文件不存在",
         action: "点「完成更新」重建一次（必须走官方 pnpm run build）",
         fixAction: "core.finishUpdate",
         evidence: [`官方脚本：${integrity.modulePath ?? "?"}`, integrity.error ?? ""],
@@ -217,8 +218,10 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
     if (!git.head.startsWith(build.commit)) {
       needsFinishUpdate = true;
       finishReason =
-        `源码已更新到 ${git.headShort ?? git.head.slice(0, 7)}，但界面产物仍是 ${build.commit} 构建的（`
-        + `版本 ${build.version ?? "未知"}）。`;
+        `源码已更新到 ${
+          git.headShort ?? git.head.slice(0, 7)
+        }，但界面产物仍是 ${build.commit} 构建的（` +
+        `版本 ${build.version ?? "未知"}）。`;
       findings.push(
         finding("core.needs-finish-update", "error", "需要「完成更新」", {
           cause: finishReason,
@@ -226,7 +229,11 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
             "只执行了拉取源码却没重建，会留下新旧产物混跑的烂摊子（典型症状：界面报某函数不存在、插件面板永久卡住）",
           action: "点「完成更新」：清理残留 → 装依赖 → 全量重建 → 重启（共 6 步）",
           fixAction: "core.finishUpdate",
-          evidence: [`HEAD=${git.head}`, `构建记录=${build.commit}`, `记录版本=${build.version ?? "?"}`],
+          evidence: [
+            `HEAD=${git.head}`,
+            `构建记录=${build.commit}`,
+            `记录版本=${build.version ?? "?"}`,
+          ],
         }),
       );
     }
@@ -244,7 +251,8 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
     findings.push(
       finding("core.built-from-dirty-tree", "info", "本次产物是在工作区不干净时构建的", {
         cause: "构建记录里带 DSH_CLIENT_GIT_DIRTY=true（该标记把未跟踪文件也算在内）",
-        impact: "提交号虽然一致，但无法从提交号反推产物内容；若当时确有改过源码又没提交，产物就与源码不符",
+        impact:
+          "提交号虽然一致，但无法从提交号反推产物内容；若当时确有改过源码又没提交，产物就与源码不符",
         action: "在意的话重建一次即可消除疑虑；日常使用可忽略",
         evidence: [`HEAD=${git.headShort ?? "?"}`, `构建记录提交=${build.commit}`],
       }),
@@ -258,24 +266,35 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
   if (plugins) {
     if (plugins.declaredButInactive.length > 0) {
       findings.push(
-        finding("core.plugin-declared-but-inactive", "warn", `${plugins.declaredButInactive.length} 个插件装了但没生效`, {
-          cause: "这些包写在 dependencies 里，但没出现在 profile 的 bundles 名单中，DSH 不会加载它们",
-          impact: "插件看起来装了，实际完全不起作用",
-          action: "把它们补进 profile 的 bundles 名单（用「修复」动作）",
-          fixAction: "plugin.repair",
-          evidence: plugins.declaredButInactive,
-        }),
+        finding(
+          "core.plugin-declared-but-inactive",
+          "warn",
+          `${plugins.declaredButInactive.length} 个插件装了但没生效`,
+          {
+            cause:
+              "这些包写在 dependencies 里，但没出现在 profile 的 bundles 名单中，DSH 不会加载它们",
+            impact: "插件看起来装了，实际完全不起作用",
+            action: "把它们补进 profile 的 bundles 名单（用「修复」动作）",
+            fixAction: "plugin.repair",
+            evidence: plugins.declaredButInactive,
+          },
+        ),
       );
     }
     if (plugins.bundledButUndeclared.length > 0) {
       findings.push(
-        finding("core.plugin-bundled-but-undeclared", "error", `${plugins.bundledButUndeclared.length} 个插件在名单里但装不上`, {
-          cause: "这些包写在 bundles 名单里，但本体安装目录与 profile 目录都解析不到它们",
-          impact: "DSH 启动时会去加载不存在的包，直接终止启动",
-          action: "把它们从 bundles 名单里移除，或重新安装这些包",
-          fixAction: "plugin.repair",
-          evidence: plugins.bundledButUndeclared,
-        }),
+        finding(
+          "core.plugin-bundled-but-undeclared",
+          "error",
+          `${plugins.bundledButUndeclared.length} 个插件在名单里但装不上`,
+          {
+            cause: "这些包写在 bundles 名单里，但本体安装目录与 profile 目录都解析不到它们",
+            impact: "DSH 启动时会去加载不存在的包，直接终止启动",
+            action: "把它们从 bundles 名单里移除，或重新安装这些包",
+            fixAction: "plugin.repair",
+            evidence: plugins.bundledButUndeclared,
+          },
+        ),
       );
     }
   }
@@ -288,7 +307,8 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
   if (suspectedOrphans.length > 0) {
     findings.push(
       finding("core.pnpm-residue", "warn", `发现 ${suspectedOrphans.length} 处安装中断残留`, {
-        cause: "这些目录带 pnpm 临时暂存特征（隐藏前缀 / _tmp_<pid> / 日期戳），是上次装插件或换版本被中断时留下的整包副本，正式的那份已经在原位",
+        cause:
+          "这些目录带 pnpm 临时暂存特征（隐藏前缀 / _tmp_<pid> / 日期戳），是上次装插件或换版本被中断时留下的整包副本，正式的那份已经在原位",
         impact: "多数无害，但会被当成模块参与打包，导致构建失败或插件加载到旧版本",
         action: "一键清理（只移动到隔离区，不删除，可整体还原）",
         fixAction: "plugin.cleanResidue",
@@ -389,7 +409,10 @@ export function readPluginLists(
  * 所以安装侧要同时看仓库根与 apps/cli 两处 node_modules（pnpm workspace 会把
  * 工作区包链接到根，而 apps/cli 下也有一份）。
  */
-function resolvesBundle(name: string, locate: { installRoot: string; profileDir: string }): boolean {
+function resolvesBundle(
+  name: string,
+  locate: { installRoot: string; profileDir: string },
+): boolean {
   const roots = [
     p(locate.installRoot, "node_modules"),
     p(locate.installRoot, "apps", "cli", "node_modules"),
@@ -522,9 +545,7 @@ export const coreStatusAction: ActionDef<Record<string, never>, CoreStatus> = {
     ctx.progress(0.65);
     ctx.detail(
       status.build
-        ? status.needsFinishUpdate
-          ? "结论：需要「完成更新」"
-          : "结论：源码与产物一致"
+        ? status.needsFinishUpdate ? "结论：需要「完成更新」" : "结论：源码与产物一致"
         : "无构建记录",
     );
     ctx.throwIfCancelled();

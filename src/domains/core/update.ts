@@ -34,7 +34,7 @@
  */
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { run } from "../../host/shell.ts";
 import { isFile } from "../../host/fs.ts";
 import { findDshPort } from "../../host/port.ts";
@@ -44,10 +44,10 @@ import { createRollbackPoint } from "../backup/rollback.ts";
 import {
   detectPnpm,
   finishPreflightBase,
+  type FinishUpdateReport,
   runFinishTail,
   startDshServer,
   stopDshServer,
-  type FinishUpdateReport,
 } from "./finish_update.ts";
 
 /** 八步清单（单一事实来源：步骤表、进度、汇报共用一份）。 */
@@ -74,14 +74,20 @@ export interface CoreUpdateReport extends FinishUpdateReport {
 // ── preflight（写前检查，error 级直接拦截） ──────────────────────────
 
 /** 工作区脏检查的判据（与 run 内 pull 前的复查同一口径，只看已跟踪文件）。 */
-async function dirtyTrackedFiles(root: string): Promise<{ ok: boolean; files: string[]; error?: string }> {
+async function dirtyTrackedFiles(
+  root: string,
+): Promise<{ ok: boolean; files: string[]; error?: string }> {
   const st = await run("git", ["-C", root, "status", "--porcelain", "--untracked-files=no"], {
     timeoutMs: 30_000,
     allowNonZero: true,
     scope: "git",
   });
   if (st.code !== 0) {
-    return { ok: false, files: [], error: `git status 退出码 ${st.code}：${st.stderr.trim() || "无输出"}` };
+    return {
+      ok: false,
+      files: [],
+      error: `git status 退出码 ${st.code}：${st.stderr.trim() || "无输出"}`,
+    };
   }
   const files = st.stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   return { ok: files.length === 0, files };
@@ -99,17 +105,24 @@ async function updatePreflight(): Promise<Finding[]> {
     out.push(
       dirty.error
         ? finding("core.update.status-failed", "error", "无法确认工作区状态，拒绝更新", {
-            cause: `执行 git status --porcelain -uno 失败：${dirty.error}`,
-            impact: "不知道工作区干不干净就不敢拉取 —— 万一带着本地改动重建，产物会与提交号对不上",
-            action: "在本体目录手动跑一次 git status 排查（仓库损坏或磁盘问题）后重试",
-            evidence: [probe.path],
-          })
-        : finding("core.update.dirty-tree", "error", `工作区有 ${dirty.files.length} 个未提交改动，拒绝直接更新`, {
-            cause: `这些已跟踪文件被改动过：${dirty.files.slice(0, 10).join("、")}${dirty.files.length > 10 ? " …" : ""}`,
+          cause: `执行 git status --porcelain -uno 失败：${dirty.error}`,
+          impact: "不知道工作区干不干净就不敢拉取 —— 万一带着本地改动重建，产物会与提交号对不上",
+          action: "在本体目录手动跑一次 git status 排查（仓库损坏或磁盘问题）后重试",
+          evidence: [probe.path],
+        })
+        : finding(
+          "core.update.dirty-tree",
+          "error",
+          `工作区有 ${dirty.files.length} 个未提交改动，拒绝直接更新`,
+          {
+            cause: `这些已跟踪文件被改动过：${dirty.files.slice(0, 10).join("、")}${
+              dirty.files.length > 10 ? " …" : ""
+            }`,
             impact: "带着本地改动拉取/重建，产物会与提交号对不上，回滚语义也随之混乱",
             action: "先把改动提交（git add + commit），或丢弃（git checkout -- <文件>），再更新",
             evidence: dirty.files.slice(0, 20),
-          }),
+          },
+        ),
     );
   }
   return out;
@@ -207,7 +220,9 @@ async function runCoreUpdate(ctx: ActionContext): Promise<CoreUpdateReport> {
     throw new Error(
       dirty.error
         ? `无法确认工作区状态（${dirty.error}），拒绝拉取（服务将自动恢复）`
-        : `工作区有 ${dirty.files.length} 个已跟踪文件被改动（如 ${dirty.files.slice(0, 5).join("、")}），` +
+        : `工作区有 ${dirty.files.length} 个已跟踪文件被改动（如 ${
+          dirty.files.slice(0, 5).join("、")
+        }），` +
           "拒绝拉取 —— 先提交或丢弃改动（服务将自动恢复）",
     );
   }
@@ -219,7 +234,9 @@ async function runCoreUpdate(ctx: ActionContext): Promise<CoreUpdateReport> {
   });
   if (pull.code !== 0 || pull.timedOut) {
     throw new Error(
-      `拉取最新源码失败（${pull.timedOut ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟` : `退出码 ${pull.code}`}）：${
+      `拉取最新源码失败（${
+        pull.timedOut ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟` : `退出码 ${pull.code}`
+      }）：${
         tailOf(pull.stderr || pull.stdout)
       }\n（工作区未被改动，服务将自动恢复；检查网络后重试）`,
     );
@@ -247,7 +264,13 @@ async function runCoreUpdate(ctx: ActionContext): Promise<CoreUpdateReport> {
     report,
     line,
     stepIds: ["s4", "s5", "s6", "s7", "s8"],
-    stepTitles: [UPDATE_STEPS[3], UPDATE_STEPS[4], UPDATE_STEPS[5], UPDATE_STEPS[6], UPDATE_STEPS[7]],
+    stepTitles: [
+      UPDATE_STEPS[3],
+      UPDATE_STEPS[4],
+      UPDATE_STEPS[5],
+      UPDATE_STEPS[6],
+      UPDATE_STEPS[7],
+    ],
     // 尾段内部进度（finish 口径 0..1）线性映射到 0.3..1.0 —— 防止 pull 完
     // 进度条从尾段起点倒退回更小的值（progress 不强制单调，倒退难看）。
     mapProgress: (v) => 0.3 + v * 0.7,

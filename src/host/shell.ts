@@ -52,7 +52,11 @@ function hideArgs(cmd: string, args: string[]): { cmd: string; args: string[] } 
  * 执行命令并等待结束。
  * 默认不抛异常：调用方拿 RunResult 自行判断（很多系统命令非 0 退出是正常情况）。
  */
-export async function run(cmd: string, args: string[] = [], options: RunOptions = {}): Promise<RunResult> {
+export async function run(
+  cmd: string,
+  args: string[] = [],
+  options: RunOptions = {},
+): Promise<RunResult> {
   const started = Date.now();
   const scope = options.scope ?? "shell";
   const wrapped = hideArgs(cmd, args);
@@ -145,7 +149,11 @@ export async function run(cmd: string, args: string[] = [], options: RunOptions 
 }
 
 /** 执行并返回是否成功 + stdout（用于"只关心成不成、结果是什么"的场景）。 */
-export async function runOk(cmd: string, args: string[] = [], options: RunOptions = {}): Promise<string | null> {
+export async function runOk(
+  cmd: string,
+  args: string[] = [],
+  options: RunOptions = {},
+): Promise<string | null> {
   const r = await run(cmd, args, { ...options, allowNonZero: true });
   return r.code === 0 ? r.stdout : null;
 }
@@ -228,14 +236,20 @@ export async function which(name: string): Promise<string | null> {
  * versionOf 内部会自己 locate，调用方若已经 locate 过就会白起一个子进程 ——
  * 环境体检里每个运行时都要多花一次 where 的时间（实测四个运行时合计多等 1 秒以上）。
  */
-export async function versionAt(path: string, args: string[] = ["--version"]): Promise<string | null> {
+export async function versionAt(
+  path: string,
+  args: string[] = ["--version"],
+): Promise<string | null> {
   const r = await run(path, args, { timeoutMs: 15_000, allowNonZero: true, scope: "version" });
   const text = (r.stdout || r.stderr).trim().split(/\r?\n/)[0]?.trim();
   return text && text.length > 0 ? extractVersion(text) : null;
 }
 
 /** 执行可执行文件并取版本号（先定位真实路径，避免 Windows 的 .cmd 问题）。 */
-export async function versionOf(name: string, args: string[] = ["--version"]): Promise<string | null> {
+export async function versionOf(
+  name: string,
+  args: string[] = ["--version"],
+): Promise<string | null> {
   const path = await locate(name);
   if (!path) return null;
   return await versionAt(path, args);
@@ -263,7 +277,8 @@ export async function powershell(script: string, options: RunOptions = {}): Prom
   if (Deno.build.os !== "windows") {
     return { code: -1, stdout: "", stderr: "非 Windows 平台", timedOut: false, durationMs: 0 };
   }
-  const prelude = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;";
+  const prelude =
+    "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;$OutputEncoding=[System.Text.Encoding]::UTF8;";
   return await run(
     "powershell.exe",
     ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", prelude + script],
@@ -272,7 +287,10 @@ export async function powershell(script: string, options: RunOptions = {}): Prom
 }
 
 /** 执行 PowerShell 并把输出按 JSON 解析（失败返回 null）。 */
-export async function powershellJson<T>(script: string, options: RunOptions = {}): Promise<T | null> {
+export async function powershellJson<T>(
+  script: string,
+  options: RunOptions = {},
+): Promise<T | null> {
   const r = await powershell(script, options);
   const text = r.stdout.trim();
   if (!text) return null;

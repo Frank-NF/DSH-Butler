@@ -189,7 +189,9 @@ export function quarantine(
 }
 
 /** 递归列举目录（只返回文件与目录名，不跟随符号链接）。 */
-export function listDir(path: string): Array<{ name: string; dir: boolean; size: number; mtime: Date | null }> {
+export function listDir(
+  path: string,
+): Array<{ name: string; dir: boolean; size: number; mtime: Date | null }> {
   const out: Array<{ name: string; dir: boolean; size: number; mtime: Date | null }> = [];
   try {
     for (const e of Deno.readDirSync(path)) {
@@ -299,7 +301,9 @@ function warmDirSize(path: string): void {
       try {
         const r = await walkFullCount(path);
         if (r.complete) sizeCache.set(path, { at: Date.now(), r });
-      } catch { /* 缓存失败不影响主流程 */ } finally {
+      } catch {
+        /* 缓存失败不影响主流程 */
+      } finally {
         warming.delete(path);
       }
     })();

@@ -12,7 +12,7 @@
  */
 
 import type { ActionDef } from "../../jobs/types.ts";
-import { finding, type Finding } from "../../util/result.ts";
+import { type Finding, finding } from "../../util/result.ts";
 import { isFile } from "../../host/fs.ts";
 import {
   applyRollbackPoint,
@@ -20,12 +20,12 @@ import {
   createRollbackPoint,
   deleteRollbackPoint,
   getRollbackPoint,
+  type IntegrityReport,
   listRollbackPoints,
   ROLLBACK_KINDS,
-  rollbackRoot,
-  type IntegrityReport,
   type RollbackKind,
   type RollbackPoint,
+  rollbackRoot,
 } from "./rollback.ts";
 
 export interface BackupListReport {
@@ -35,7 +35,9 @@ export interface BackupListReport {
 
 /** 允许的 kind 字符串 → 类型收窄（CLI 进来的都是字符串）。 */
 function asKind(v: unknown): RollbackKind | null {
-  return typeof v === "string" && (ROLLBACK_KINDS as string[]).includes(v) ? v as RollbackKind : null;
+  return typeof v === "string" && (ROLLBACK_KINDS as string[]).includes(v)
+    ? v as RollbackKind
+    : null;
 }
 
 function asStringArray(v: unknown): string[] {
@@ -158,7 +160,8 @@ export const backupCreateAction: ActionDef<BackupCreateParams, RollbackPoint> = 
   name: "backup.create",
   domain: "backup",
   title: "创建回滚点",
-  description: "把指定文件备份下来（写前落盘：内容先复制校验，索引后写）。任何写操作动手前都该先有它。",
+  description:
+    "把指定文件备份下来（写前落盘：内容先复制校验，索引后写）。任何写操作动手前都该先有它。",
   readonly: false,
   steps: ["写前检查（类型与备份源）", "复制备份内容并回读校验", "写入回滚点索引"],
   preflight: async (params) => createPreflight(params),
@@ -166,7 +169,11 @@ export const backupCreateAction: ActionDef<BackupCreateParams, RollbackPoint> = 
     ctx.step("s1", "写前检查（类型与备份源）");
     const problems = createPreflight(params);
     if (problems.some((f) => f.severity === "error")) {
-      throw new Error(`写前检查未通过：${problems.filter((f) => f.severity === "error").map((f) => f.title).join("；")}`);
+      throw new Error(
+        `写前检查未通过：${
+          problems.filter((f) => f.severity === "error").map((f) => f.title).join("；")
+        }`,
+      );
     }
     const kind = asKind(params.kind);
     if (!kind) throw new Error("回滚点类型无效"); // preflight 已拦，防御性收窄
@@ -233,7 +240,8 @@ export const backupApplyAction: ActionDef<BackupApplyParams, { id: string; resul
   name: "backup.apply",
   domain: "backup",
   title: "回滚到指定回滚点",
-  description: "校验备份完整性 → 执行逆操作还原 → 应用后验证。验证不通过会保留回滚点并告警，绝不静默成功。",
+  description:
+    "校验备份完整性 → 执行逆操作还原 → 应用后验证。验证不通过会保留回滚点并告警，绝不静默成功。",
   readonly: false,
   steps: ["确认回滚点存在", "校验备份完整性", "执行逆操作还原", "应用后验证"],
   preflight: async (params) => applyPreflight(params),
@@ -241,7 +249,11 @@ export const backupApplyAction: ActionDef<BackupApplyParams, { id: string; resul
     ctx.step("s1", "确认回滚点存在");
     const problems = applyPreflight(params);
     if (problems.some((f) => f.severity === "error")) {
-      throw new Error(`写前检查未通过：${problems.filter((f) => f.severity === "error").map((f) => f.title).join("；")}`);
+      throw new Error(
+        `写前检查未通过：${
+          problems.filter((f) => f.severity === "error").map((f) => f.title).join("；")
+        }`,
+      );
     }
     const id = params.id as string;
     ctx.progress(0.1);

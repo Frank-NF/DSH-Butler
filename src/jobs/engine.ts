@@ -12,10 +12,17 @@
  * 否则界面点一下要等好几秒才有反应 —— 那和旧版体验没有任何区别。
  */
 
-import { CancelledError, type ActionContext, type AnyActionDef, type Job, type JobEvent, type JobStep } from "./types.ts";
+import {
+  type ActionContext,
+  type AnyActionDef,
+  CancelledError,
+  type Job,
+  type JobEvent,
+  type JobStep,
+} from "./types.ts";
 import { butlerJobsDir, p } from "../util/paths.ts";
 import { listDir, readJson, removeRecursive, writeJsonAtomic } from "../host/fs.ts";
-import { healthOf, type Finding } from "../util/result.ts";
+import { type Finding, healthOf } from "../util/result.ts";
 import { log } from "../util/log.ts";
 import { APP_VERSION, TIMEOUTS } from "../version.ts";
 import { releaseWriteLock, tryAcquireWriteLock } from "./write-lock.ts";
@@ -112,7 +119,9 @@ export class JobEngine {
       const acq = await tryAcquireWriteLock(def.domain, job.id, { version: APP_VERSION });
       if (!acq.ok) {
         const who = acq.heldBy
-          ? `另一写操作正在进行（${acq.heldBy.holder} ${acq.heldBy.holder === acq.heldBy.version ? "" : acq.heldBy.version}，任务 ${acq.heldBy.jobId}，域 ${acq.heldBy.domain}）`
+          ? `另一写操作正在进行（${acq.heldBy.holder} ${
+            acq.heldBy.holder === acq.heldBy.version ? "" : acq.heldBy.version
+          }，任务 ${acq.heldBy.jobId}，域 ${acq.heldBy.domain}）`
           : acq.reason;
         return { ok: false, error: `${def.title}无法执行：${who}` };
       }
@@ -174,7 +183,12 @@ export class JobEngine {
         if (cursor && cursor.status === "running") {
           cursor.status = "done";
           cursor.endedAt = new Date().toISOString();
-          this.#emit({ type: "step-done", jobId: job.id, stepId: cursor.id, message: cursor.title });
+          this.#emit({
+            type: "step-done",
+            jobId: job.id,
+            stepId: cursor.id,
+            message: cursor.title,
+          });
         }
         let s = job.steps.find((x) => x.id === id);
         if (!s) {
@@ -214,7 +228,9 @@ export class JobEngine {
       },
       throwIfCancelled: () => {
         if (userCtrl.signal.aborted) throw new CancelledError();
-        if (timeoutSignal.aborted) throw new Error(`任务超时（${Math.round(totalTimeout / 1000)} 秒）`);
+        if (timeoutSignal.aborted) {
+          throw new Error(`任务超时（${Math.round(totalTimeout / 1000)} 秒）`);
+        }
       },
     };
 

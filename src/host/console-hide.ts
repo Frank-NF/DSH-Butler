@@ -64,8 +64,12 @@ export function hideOwnConsole(): string {
     return `隐藏控制台失败（不影响功能）：${(e as Error).message}`;
   } finally {
     // 句柄用完即关：控制台的存活与库句柄无关，这里只关 FFI 库。
-    try { kernel?.close(); } catch { /* ignore */ }
-    try { user32?.close(); } catch { /* ignore */ }
+    try {
+      kernel?.close();
+    } catch { /* ignore */ }
+    try {
+      user32?.close();
+    } catch { /* ignore */ }
   }
 }
 

@@ -9,7 +9,7 @@
  * 真实故障报错原文（13 类历史故障回归集的证据面）。
  */
 
-import { LOG_PATTERNS, collectRuntimeFacts } from "./facts.ts";
+import { collectRuntimeFacts, LOG_PATTERNS } from "./facts.ts";
 import { isDir } from "../../host/fs.ts";
 import { dshProfileDir, p } from "../../util/paths.ts";
 
@@ -19,7 +19,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -57,7 +59,10 @@ Deno.test("AC-R4：fixture 上跑 100 次采集，不产生任何文件变更", 
   const dir = Deno.makeTempDirSync();
   try {
     // 造一个最小 profile（含一把锁，确保锁扫描路径也被跑到）
-    Deno.writeTextFileSync(p(dir, "package.json"), JSON.stringify({ dependencies: {}, dsh: { profile: { bundles: [] } } }));
+    Deno.writeTextFileSync(
+      p(dir, "package.json"),
+      JSON.stringify({ dependencies: {}, dsh: { profile: { bundles: [] } } }),
+    );
     Deno.writeTextFileSync(p(dir, "config.lock"), "424242");
 
     const before = snapshot(dir);
@@ -65,7 +70,11 @@ Deno.test("AC-R4：fixture 上跑 100 次采集，不产生任何文件变更", 
       await collectRuntimeFacts({ profileDir: dir, skipProbes: true });
     }
     const after = snapshot(dir);
-    assertEq(after.join("\n"), before.join("\n"), "跑 100 次后 fixture 目录变了 —— 诊断必须零副作用");
+    assertEq(
+      after.join("\n"),
+      before.join("\n"),
+      "跑 100 次后 fixture 目录变了 —— 诊断必须零副作用",
+    );
   } finally {
     Deno.removeSync(dir, { recursive: true });
   }
@@ -89,9 +98,13 @@ Deno.test("LOG_PATTERNS：13 类历史故障的真实报错原文必须全部命
     // 类型 X（#36）
     ["remoteHang", "pending (waiting for service: remote.market)", "类型 X"],
     // 类型 S / aigc-canvas（#31，真机 cordis.patch.yml 注释原文）
-    ["doubleReg", 'service aigcCanvas has been registered at <dsh-aigc-canvas>', "类型 S"],
+    ["doubleReg", "service aigcCanvas has been registered at <dsh-aigc-canvas>", "类型 S"],
     // 类型 E（#21 连坐）/ AG（#45）原文形态
-    ["depUnresolved", "Error: Cannot find package 'undici' imported from G:\\profile\\node_modules\\x", "类型 AG"],
+    [
+      "depUnresolved",
+      "Error: Cannot find package 'undici' imported from G:\\profile\\node_modules\\x",
+      "类型 AG",
+    ],
     ["depUnresolved", "Cannot find module '/profile/node_modules/ghost/index.js'", "类型 E/A1"],
     // 类型 W（#35）
     ["moduleTable", 'client-modules: require("dsh-foo") missed the module table', "类型 W"],

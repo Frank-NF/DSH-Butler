@@ -230,5 +230,7 @@ export function quarantineStampDir(dshSourceRoot: string, stamp = stampOf()): st
 /** 形如 20260924-115030 的时间戳，用于各类归档目录命名。 */
 export function stampOf(d: Date = new Date()): string {
   const z = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+  return `${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${
+    z(d.getMinutes())
+  }${z(d.getSeconds())}`;
 }

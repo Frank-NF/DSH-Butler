@@ -14,7 +14,9 @@ function assert(cond: unknown, msg: string): void {
 
 function assertEq<T>(actual: T, expected: T, msg: string): void {
   if (actual !== expected) {
-    throw new Error(`断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`);
+    throw new Error(
+      `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
+    );
   }
 }
 
@@ -24,9 +26,12 @@ Deno.test("AC-R2：10 万行日志检索 < 500ms 且命中正确", async () => {
     const file = await Deno.open(path, { write: true, create: true });
     try {
       const enc = new TextEncoder();
-      const line = "2026-09-24T12:00:00.000Z INFO  plugin-loader composed 42 entries in 312ms id=entry-";
+      const line =
+        "2026-09-24T12:00:00.000Z INFO  plugin-loader composed 42 entries in 312ms id=entry-";
       for (let i = 0; i < 100_000; i++) await file.write(enc.encode(line + i + "\n"));
-      await file.write(enc.encode("2026-09-24T12:05:00.000Z ERROR waiting for service: remote.market\n"));
+      await file.write(
+        enc.encode("2026-09-24T12:05:00.000Z ERROR waiting for service: remote.market\n"),
+      );
     } finally {
       file.close();
     }

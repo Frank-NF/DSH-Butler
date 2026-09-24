@@ -10,7 +10,7 @@
     "headless": "deno run -A src/main.ts --headless",
     "check": "deno check src/main.ts",
     "lint": "deno lint src",
-    "fmt": "deno fmt src web",
+    "fmt": "deno fmt src",
     "test": "deno test -A",
     "build": "deno desktop -A --compress --output ./dist/dsh-butler src/main.ts",
     "build:plain": "deno desktop -A --output ./dist/dsh-butler src/main.ts"
