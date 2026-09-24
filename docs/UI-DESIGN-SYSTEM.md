@@ -127,7 +127,7 @@ emoji、不用图标字体。本仓只保留一套最小图标集（导航 + 动
 | 官网资产           | `site/assets/`                                                 | logo / favicon / apple-touch-icon / og-cover             |
 
 位图由 `python icons/build-icons.py` 生成（母版裁剪、各尺寸、base64 注入、官网资产一次出）；
-抠图逻辑在 `tmp/extract-mark.py`：橙色 = D 身，D 内部被包住的区域 = 鲸鱼。 **要换标志：换 VI 板 →
+抠图逻辑在 `icons/extract-mark.py`：橙色 = D 身，D 内部被包住的区域 = 鲸鱼。 **要换标志：换 VI 板 →
 重跑抠图 → 重跑生产线，不要手改 PNG。**
 
 **使用规矩**：

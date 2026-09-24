@@ -44,7 +44,7 @@ DSH Desktop（DeepSeek 桌面 AI 助手）的增强外壳。用一个本地桌�
 调色：主橙红 `#F06A3D`、深橙红 `#E55A2E`、浅橙 `#F0894E`、墨黑 `#222122`、米白 `#FAF8F5`。
 界面里的语义令牌与可访问性取舍见 `docs/UI-DESIGN-SYSTEM.md` §5.5。
 
-**生产线**：`python tmp/extract-mark.py`（从 VI 板抠图）→ `python icons/build-icons.py`（出全部尺寸
+**生产线**：`python icons/extract-mark.py`（从 VI 板抠图）→ `python icons/build-icons.py`（出全部尺寸
 + 官网资产 + 内嵌 base64）。**换标志就换源文件重跑这两步，不要手改 PNG。**
 
 ---
