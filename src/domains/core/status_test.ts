@@ -8,7 +8,14 @@
  *   用 2026-09-24 本机真实观察到的目录名做样本，钉住"该报的报、不该报的绝不报"。
  */
 
-import { isWindows, normalize, quarantineRootFor, sameVolume, volumeOf } from "../../util/paths.ts";
+import {
+  isWindows,
+  normalize,
+  p,
+  quarantineRootFor,
+  sameVolume,
+  volumeOf,
+} from "../../util/paths.ts";
 import { readPluginLists, residueKindOf, scanResidue } from "./status.ts";
 
 // ── 极简断言（不引外部依赖，保证测试在任何网络环境下都能跑） ──────
@@ -147,12 +154,46 @@ Deno.test("scanResidue：真实 node_modules 上跑一遍，确认零误报", ()
   }
   // 拿 scoped 名字再核一遍（scanResidue 对 scoped 是拆开成 @scope/sub 的）
   assertExcludes(names, "@liustack/modlens", "第三方插件本体被误报");
+});
 
-  // 已知确实存在的残留至少要抓到：藏在 @codemirror 下的那批 _tmp_ 目录
-  assert(
-    names.some((n) => n.startsWith("@codemirror/") && n.includes("_tmp_")),
-    "藏在 scope 目录里的残留没有被扫到",
-  );
+/**
+ * 「必须抓到残留」这条断言【不能】拿本机真实 node_modules 当依据。
+ *
+ * 2026-09-24 实测教训：用户在界面上点了一次「清理残留」，27 处残留被移进隔离区，
+ * 于是上面那条基于机器现状的断言立刻变红 —— 那是"测试跟着环境漂"，不是真回归。
+ * 改为自建样本目录：既是确定性回归，也不会被用户的一次正常操作影响。
+ */
+Deno.test("scanResidue：自建样本 —— scope 里的 _tmp_ 残留必抓，正常包绝不误报", () => {
+  const dir = Deno.makeTempDirSync({ prefix: "butler-residue-" });
+  try {
+    const mk = (rel: string) => Deno.mkdirSync(p(dir, rel), { recursive: true });
+    // 该抓的：scope 下的 pnpm 暂存目录、纯大写随机后缀
+    mk("@codemirror/.autocomplete_tmp_15580_31-2kwZ2ZfMh");
+    mk("@codemirror/ansi-regex-AFJM5CM4");
+    // 不该抓的：正常包、正常 scope 包、DSH 自带包
+    mk("rolldown");
+    mk("typescript");
+    mk("@liustack/modlens");
+    mk("@deepseek-ai/dsh-subprocess");
+
+    const names = scanResidue(dir).map((r) => r.name);
+    assert(
+      names.some((n) => n.startsWith("@codemirror/") && n.includes("_tmp_")),
+      "藏在 scope 目录里的 pnpm 暂存残留没有被扫到",
+    );
+    assert(
+      names.some((n) => n.includes("ansi-regex-AFJM5CM4")),
+      "纯大写随机后缀的残留没有被扫到",
+    );
+    assertExcludes(names, "rolldown", "正常依赖被误报为残留");
+    assertExcludes(names, "typescript", "正常依赖被误报为残留");
+    assertExcludes(names, "@liustack/modlens", "第三方插件本体被误报");
+    assertExcludes(names, "@deepseek-ai/dsh-subprocess", "DSH 自带包被误报");
+  } finally {
+    try {
+      Deno.removeSync(dir, { recursive: true });
+    } catch { /* 清理失败不影响结论 */ }
+  }
 });
 
 // ══ 路径归一化（这里曾出过一个静默大坑） ══════════════════════════

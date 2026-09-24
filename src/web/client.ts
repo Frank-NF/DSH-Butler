@@ -112,7 +112,8 @@ export const CLIENT_JS = `(function () {
     play: SVG_OPEN + '<path d="M7 4.5 19 12 7 19.5z"/></svg>',
     upload: SVG_OPEN + '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
     check: SVG_OPEN + '<path d="M5 13l4 4L19 7"/></svg>',
-    chevron: SVG_OPEN + '<path d="M9 6l6 6-6 6"/></svg>'
+    chevron: SVG_OPEN + '<path d="M9 6l6 6-6 6"/></svg>',
+    deploy: SVG_OPEN + '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>'
   };
   function icon(name) { return ICON[name] || ''; }
 
@@ -425,6 +426,7 @@ export const CLIENT_JS = `(function () {
   // 写操作：plan → 确认 → apply
   function startWrite(action, el) {
     if (action === 'backup.create') { openBackupForm(); return; }
+    if (action === 'bootstrap.apply') { openBootstrapForm(); return; }
     if (action === 'plugin.install') { openInstallForm(); return; }
     var params = paramsFor(action, el);
     var label = ACT_TITLE[action] || action;
@@ -484,6 +486,12 @@ export const CLIENT_JS = `(function () {
       }
       openModal({ title: esc(ACT_TITLE[action] || action), sub: '校验时间 ' + fmtTime(result.checkedAt), body: body || emptyBox('没有可校验的回滚点', ''), foot: '<span class="spacer"></span><button class="btn primary" id="modal-close">完成</button>' });
       $('modal-close').addEventListener('click', closeModal);
+      return;
+    }
+    if (action === 'bootstrap.verify') {
+      state.extra.bootstrapVerify = result;
+      toast(result.ok ? '三连验证：全部通过' : '三连验证：有未通过项', result.ok ? '' : 'err');
+      go(state.page, true);
       return;
     }
     if (action === 'core.verify') { state.extra.coreVerify = result; toast('本体校验：' + healthText(result.health), result.health === 'ok' ? '' : result.health === 'warn' ? 'warn' : 'err'); }
@@ -1030,10 +1038,152 @@ export const CLIENT_JS = `(function () {
     return html;
   }
 
+  // ── 页面：一键部署 ───────────────────────────────────────────────
+
+  function verifyChecksCard(title, v) {
+    var passed = (v.checks || []).filter(function (c) { return c.ok; }).length;
+    var html = '<div class="card hero ' + (v.ok ? 'ok' : 'err') + '"><div class="card-title">' + esc(title)
+      + '<span class="sub">' + passed + '/' + (v.checks || []).length + ' 项通过 · ' + fmtTime(v.checkedAt) + '</span></div>';
+    html += '<div class="rows">';
+    for (var i = 0; i < (v.checks || []).length; i++) {
+      var c = v.checks[i];
+      html += '<div class="row"><div class="row-main"><div class="row-name">' + esc(c.label) + '</div>'
+        + '<div class="row-meta">' + esc(c.detail) + '</div></div>'
+        + badge(c.ok ? 'ok' : 'err', c.ok ? '通过' : '未通过') + '</div>';
+    }
+    html += '</div>';
+    if (v.findings && v.findings.length) {
+      html += '<div style="height:12px"></div>' + renderFindings(v.findings);
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderBootstrap(plan) {
+    var tools = actBtn('shield', '校验当前部署', 'bootstrap.verify');
+    var html = pageHead('一键部署', '从零装一台 DSH：先出计划、你确认之后才动手。', tools);
+
+    if (plan.interrupted) {
+      html += '<div class="card hero warn"><div class="hero-title">上次部署没跑完</div>'
+        + '<div class="hero-desc">停在「' + esc(plan.interrupted.step) + '」（开始于 ' + fmtTime(plan.interrupted.startedAt) + '）。'
+        + '可以继续 —— 每一步都会先看现场再动手，不会把已经做完的事重做一遍；也可以放弃回滚，半成品会被移进隔离区。</div>'
+        + '<div class="btn-row" style="margin-top:12px">'
+        + writeBtn('play', '继续部署', 'bootstrap.apply', {}, 'primary')
+        + writeBtn('trash', '放弃并回滚', 'bootstrap.discard', {}, 'sm danger')
+        + '</div></div>';
+    }
+
+    if (plan.verdict === 'already-installed') {
+      html += '<div class="card hero warn"><div class="hero-title">这台机器已经装过 DSH</div>'
+        + '<div class="hero-desc">本体在 ' + esc(plan.installed ? plan.installed.path : plan.targetRoot)
+        + '。日常更新请用「DSH 本体 → 更新本体」；确实要从零重装，可以强制重装 —— 旧目录会先移进隔离区（不删除，可还原）。</div>'
+        + '<div class="btn-row" style="margin-top:12px">' + navBtn('box', '去 DSH 本体页', 'core')
+        + '<button class="btn" id="btn-bootstrap-form">' + icon('deploy') + '<span>强制重装…</span></button></div></div>';
+    } else if (plan.blockers && plan.blockers.length) {
+      html += '<div class="card hero err"><div class="hero-title">现在还不能开始</div>'
+        + '<div class="hero-desc">有 ' + plan.blockers.length
+        + ' 项阻碍需要先解决，见下面「阻碍项」。处理完点右上角刷新重新出计划。</div></div>';
+    } else {
+      html += '<div class="card hero ' + (plan.verdict === 'ready' ? 'ok' : 'warn') + '">'
+        + '<div class="hero-title">可以开始部署</div>'
+        + '<div class="hero-desc">预计下载 ' + humanSize(plan.estimates.downloadBytes) + ' · 占盘 '
+        + humanSize(plan.estimates.diskBytes) + ' · 约 ' + plan.estimates.minutesMin + '-' + plan.estimates.minutesMax + ' 分钟。'
+        + (plan.verdict === 'needs-setup' ? '（会顺带把 pnpm 装上）' : '') + '</div>'
+        + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-bootstrap-form">'
+        + icon('deploy') + '<span>开始部署…</span></button></div></div>';
+    }
+
+    html += '<div class="card"><div class="stats">'
+      + stat('安装目录', plan.targetRoot, plan.targetExists ? '目录已存在' : '将新建', true)
+      + stat('预计下载', humanSize(plan.estimates.downloadBytes))
+      + stat('预计占盘', humanSize(plan.estimates.diskBytes))
+      + stat('预计耗时', plan.estimates.minutesMin + '-' + plan.estimates.minutesMax + ' 分钟')
+      + '</div></div>';
+
+    html += '<div class="card"><div class="card-title">这台机器</div>'
+      + kv('系统', plan.system.platform + ' ' + plan.system.arch + ' · ' + plan.system.osVersion)
+      + kv('处理器', plan.system.cpuModel + ' · ' + plan.system.cpuCount + ' 核')
+      + kv('内存', humanSize(plan.system.memFreeBytes) + ' 可用 / ' + humanSize(plan.system.memTotalBytes) + ' 总')
+      + (plan.disk
+        ? kv('目标盘可用', humanSize(plan.disk.freeBytes) + ' / ' + humanSize(plan.disk.totalBytes) + '（' + plan.disk.path + '）')
+        : '')
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">运行时</div>';
+    for (var i = 0; i < plan.runtime.length; i++) {
+      var t = plan.runtime[i];
+      html += kv(t.label + (t.required ? '（必需）' : '（可选）'), t.found ? (t.version || '已安装') : '缺失', true);
+    }
+    html += '</div>';
+
+    html += '<div class="card"><div class="card-title">部署步骤<span class="sub">共 ' + plan.steps.length
+      + ' 步 · 点「开始部署」之前可以先逐条看</span></div><div class="rows">';
+    for (var j = 0; j < plan.steps.length; j++) {
+      var s = plan.steps[j];
+      var kind = s.status === 'ready' ? 'ok' : s.status === 'action' ? 'warn' : 'err';
+      var label = s.status === 'ready' ? '可执行' : s.status === 'action' ? '需动作' : '被挡住';
+      html += '<div class="row"><div class="row-main"><div class="row-name">' + (j + 1) + '. ' + esc(s.title) + '</div>'
+        + '<div class="row-meta"><span>' + esc(s.detail) + '</span>'
+        + (s.downloadBytes ? '<span>下载 ' + humanSize(s.downloadBytes) + '</span>' : '')
+        + (s.estimateMs ? '<span>约 ' + fmtDur(s.estimateMs) + '</span>' : '')
+        + '</div></div>' + badge(kind, label) + '</div>';
+    }
+    html += '</div></div>';
+
+    if (plan.blockers && plan.blockers.length) {
+      html += '<div class="card"><div class="card-title">阻碍项<span class="sub">共 ' + plan.blockers.length
+        + ' 项</span></div>' + renderFindings(plan.blockers) + '</div>';
+    }
+
+    if (state.extra.bootstrapVerify) html += verifyChecksCard('部署后三连验证', state.extra.bootstrapVerify);
+    return html;
+  }
+
+  function openBootstrapForm() {
+    var plan = state.cache.bootstrap;
+    var root = plan ? plan.targetRoot : '';
+    var url = 'https://github.com/deepseek-ai/deepseek-harness.git';
+    var installed = Boolean(plan && plan.verdict === 'already-installed');
+    openModal({
+      title: esc(installed ? '强制重装 DSH' : '开始部署 DSH'),
+      sub: '下面是这次部署会用到的东西。点「查看计划」后还会再摊一次步骤表，勾选确认才真正动手。',
+      body: '<div class="field"><label class="field-label" for="bs-root">安装目录</label>'
+        + '<input class="input" id="bs-root" value="' + esc(root) + '" spellcheck="false">'
+        + '<div class="field-help">源码会 clone 到这里，磁盘占用约 3.5 GB。</div></div>'
+        + '<div class="field"><label class="field-label" for="bs-url">仓库地址</label>'
+        + '<input class="input" id="bs-url" value="' + esc(url) + '" spellcheck="false">'
+        + '<div class="field-help">默认走官方 GitHub；网络不通时可以换成内网镜像。</div></div>'
+        + '<div class="field"><label class="field-label" for="bs-depth">克隆深度</label>'
+        + '<input class="input" id="bs-depth" value="1" spellcheck="false">'
+        + '<div class="field-help">1 = 浅克隆，只取最新一次提交，首次快很多。</div></div>'
+        + (installed
+          ? '<label class="check"><input type="checkbox" id="bs-force"><span>我确认要强制重装：现有安装会先被移进隔离区（不删除，可还原）。</span></label>'
+          : ''),
+      foot: '<button class="btn" id="modal-cancel">取消</button><span class="spacer"></span>'
+        + '<button class="btn primary" id="bs-go">查看计划</button>',
+    });
+    $('modal-cancel').addEventListener('click', closeModal);
+    $('bs-go').addEventListener('click', function () {
+      var r = ($('bs-root') ? $('bs-root').value : '').trim();
+      var u = ($('bs-url') ? $('bs-url').value : '').trim();
+      var d = parseInt($('bs-depth') ? $('bs-depth').value : '1', 10);
+      var forceEl = $('bs-force');
+      var params = {};
+      if (r) params.root = r;
+      if (u) params.url = u;
+      if (d > 0) params.depth = d;
+      if (forceEl && forceEl.checked) params.force = true;
+      if (installed && !params.force) { toast('强制重装必须先勾选确认', 'warn'); return; }
+      closeModal();
+      runWriteFlow('bootstrap.apply', params);
+    });
+  }
+
   // ── 路由 ─────────────────────────────────────────────────────────
 
   var PAGES = [
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
+    { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
     { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
     { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
     { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
@@ -1123,6 +1273,7 @@ export const CLIENT_JS = `(function () {
     if (hit('#btn-theme')) { toggleTheme(); return; }
     if (hit('#btn-cancel')) { cancelJob(); return; }
     if (hit('#btn-copy-report')) { copyReport(); return; }
+    if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
     if (hit('#modal-cancel') || hit('#modal-close')) { closeModal(); return; }
   });
 

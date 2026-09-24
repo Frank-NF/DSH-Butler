@@ -35,6 +35,9 @@ import {
   backupListAction,
   backupVerifyAction,
 } from "../domains/backup/actions.ts";
+import { bootstrapPlanAction } from "../domains/bootstrap/plan.ts";
+import { bootstrapApplyAction, bootstrapDiscardAction } from "../domains/bootstrap/apply.ts";
+import { bootstrapVerifyAction } from "../domains/bootstrap/verify.ts";
 import { log } from "../util/log.ts";
 
 export function registerAllActions(): void {
@@ -61,6 +64,10 @@ export function registerAllActions(): void {
     coreFinishUpdateAction,
     coreUpdateAction,
     coreRollbackAction,
+    bootstrapPlanAction,
+    bootstrapApplyAction,
+    bootstrapDiscardAction,
+    bootstrapVerifyAction,
   ];
   for (const def of defs) engine.register(def);
   log.info("registry", `已注册 ${defs.length} 个动作`);

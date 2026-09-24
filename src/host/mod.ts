@@ -61,7 +61,8 @@ export async function systemInfo(): Promise<SystemInfo> {
     cpuModel: facts.cpuModel ?? await cpuModelFallback(),
     cpuCount: cpuCount(),
     memTotalBytes: mem.total,
-    memFreeBytes: mem.available,
+    // Deno 的 available 在 Windows 上实测恒为 0 —— 用系统查询带回来的那份兜底
+    memFreeBytes: mem.available > 0 ? mem.available : facts.freeMemBytes,
     denoVersion: Deno.version.deno,
     v8Version: Deno.version.v8,
     user: Deno.env.get(isWindows ? "USERNAME" : "USER") ?? "(未知)",

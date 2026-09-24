@@ -26,6 +26,14 @@ export interface HostFacts {
   disks: Map<string, DiskFact>;
   /** 当前进程是否以管理员身份运行。 */
   elevated: boolean;
+  /**
+   * 可用物理内存（字节）。
+   *
+   * 【为什么要有它】Deno.systemMemoryInfo().available 在 Windows 上实测恒为 0，
+   * 于是界面上一直显示"可用内存 0 B"。这项事实本来就在同一次 PowerShell 查询里
+   * （$os.FreePhysicalMemory，单位 KB），顺手带回来即可，不额外起进程。
+   */
+  freeMemBytes: number;
 }
 
 const EMPTY: HostFacts = {
@@ -34,6 +42,7 @@ const EMPTY: HostFacts = {
   osBuild: null,
   disks: new Map(),
   elevated: false,
+  freeMemBytes: 0,
 };
 
 let cache: { at: number; facts: HostFacts } | null = null;
@@ -77,13 +86,14 @@ async function queryHostFacts(): Promise<HostFacts> {
     `$disks=@(Get-CimInstance Win32_LogicalDisk | Where-Object { $_.DriveType -eq 3 } | ` +
     `ForEach-Object { @{ id=$_.DeviceID; size=[int64]$_.Size; free=[int64]$_.FreeSpace } }); ` +
     `ConvertTo-Json -Compress -Depth 4 -InputObject ` +
-    `@{ cpu=$cpu; caption=$os.Caption; build=$os.BuildNumber; adm=$adm; disks=$disks }`;
+    `@{ cpu=$cpu; caption=$os.Caption; build=$os.BuildNumber; adm=$adm; freeMem=[int64]$os.FreePhysicalMemory; disks=$disks }`;
 
   const j = await powershellJson<{
     cpu?: string;
     caption?: string;
     build?: string;
     adm?: boolean | string;
+    freeMem?: number;
     disks?: RawDisk | RawDisk[];
   }>(script, { timeoutMs: 25_000 });
 
@@ -107,6 +117,8 @@ async function queryHostFacts(): Promise<HostFacts> {
     osBuild: j.build?.trim() || null,
     disks,
     elevated: j.adm === true || j.adm === "True" || j.adm === "true",
+    // FreePhysicalMemory 是 KB
+    freeMemBytes: typeof j.freeMem === "number" && j.freeMem > 0 ? j.freeMem * 1024 : 0,
   };
   cache = { at: Date.now(), facts };
   return facts;

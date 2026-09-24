@@ -482,6 +482,63 @@ interface FinishTailOptions {
 }
 
 /**
+ * 全量重建（致命步骤，三处共用：finishUpdate / update / bootstrap.apply）。
+ *
+ * 只对 Windows 并发写的「瞬时拒绝」重试，最多 BUILD_ATTEMPTS 次；超时与非瞬时失败立即放弃。
+ * 抽成函数是为了让「一键部署」用上与本体更新一模一样的构建口径 —— 各写一份必然漂移。
+ */
+export async function runBuildWithRetry(
+  ctx: ActionContext,
+  root: string,
+  tc: PnpmToolchain,
+  line: (s: string) => void,
+): Promise<void> {
+  let outcome: RunResult | null = null;
+  let attempt = 0;
+  let lineCount = 0;
+  for (;;) {
+    attempt++;
+    ctx.detail(
+      `第 ${attempt}/${BUILD_ATTEMPTS} 次构建，通常需要 5-20 分钟${
+        attempt > 1 ? "（瞬时拒绝，重试中）" : ""
+      }`,
+    );
+    outcome = await run(tc.node, [tc.pnpmCjs, "run", "build"], {
+      cwd: root,
+      timeoutMs: TIMEOUTS.build,
+      allowNonZero: true,
+      scope: "build",
+      signal: ctx.signal,
+      onLine: () => {
+        lineCount++;
+        if (lineCount % 200 === 0) ctx.detail(`构建输出 ${lineCount} 行…`);
+      },
+    });
+    if (outcome.code === 0 && !outcome.timedOut) break;
+    if (outcome.timedOut) break;
+    if (
+      attempt >= BUILD_ATTEMPTS || !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)
+    ) break;
+    ctx.log(`第 ${attempt} 次撞上 Windows 并发写的瞬时拒绝（换个包再来一次通常就过），正在重试…`);
+  }
+  // 用户中途取消时 run 返回的也是非 0 —— 先按「已取消」走，别报成构建失败
+  ctx.throwIfCancelled();
+  if (!outcome || outcome.timedOut || outcome.code !== 0) {
+    const text = (outcome?.stdout ?? "") + "\n" + (outcome?.stderr ?? "");
+    const errs = pickBuildErrors(text);
+    const brief = errs.length > 0 ? errs.slice(0, 12) : tailLines(text, 12);
+    const why = outcome?.timedOut
+      ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束`
+      : `退出码 ${outcome?.code ?? -1}`;
+    throw new Error(
+      `全量重建失败（${why}）。从构建日志里定位到的报错：\n${brief.join("\n")}\n\n` +
+        `产物可能仍处于新旧混合状态——服务已尝试恢复，建议把上面的报错发给知行排查。`,
+    );
+  }
+  line("全量重建：完成");
+}
+
+/**
  * 「清理 → 装依赖 → 重建 → 核对 → 重启 → 收尾复核」尾段。
  *
  * core.finishUpdate 与 core.update 共用这一份实现 —— 铁律 9 要求本体更新
@@ -544,49 +601,7 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
   // ── ④ 全量重建（致命；只对纯瞬断重试，最多 3 次） ───────────────────
   beginStep(2);
   pg(0.4);
-  let outcome: RunResult | null = null;
-  let attempt = 0;
-  let lineCount = 0;
-  for (;;) {
-    attempt++;
-    ctx.detail(
-      `第 ${attempt}/${BUILD_ATTEMPTS} 次构建，通常需要 5-20 分钟${
-        attempt > 1 ? "（瞬时拒绝，重试中）" : ""
-      }`,
-    );
-    outcome = await run(tc.node, [tc.pnpmCjs, "run", "build"], {
-      cwd: root,
-      timeoutMs: TIMEOUTS.build,
-      allowNonZero: true,
-      scope: "build",
-      signal: ctx.signal,
-      onLine: () => {
-        lineCount++;
-        if (lineCount % 200 === 0) ctx.detail(`构建输出 ${lineCount} 行…`);
-      },
-    });
-    if (outcome.code === 0 && !outcome.timedOut) break;
-    if (outcome.timedOut) break;
-    if (
-      attempt >= BUILD_ATTEMPTS || !isTransientBuildFailure(outcome.stdout + "\n" + outcome.stderr)
-    ) break;
-    ctx.log(`第 ${attempt} 次撞上 Windows 并发写的瞬时拒绝（换个包再来一次通常就过），正在重试…`);
-  }
-  // 用户中途取消时 run 返回的也是非 0 —— 先按「已取消」走，别报成构建失败
-  ctx.throwIfCancelled();
-  if (!outcome || outcome.timedOut || outcome.code !== 0) {
-    const text = (outcome?.stdout ?? "") + "\n" + (outcome?.stderr ?? "");
-    const errs = pickBuildErrors(text);
-    const brief = errs.length > 0 ? errs.slice(0, 12) : tailLines(text, 12);
-    const why = outcome?.timedOut
-      ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束`
-      : `退出码 ${outcome?.code ?? -1}`;
-    throw new Error(
-      `全量重建失败（${why}）。从构建日志里定位到的报错：\n${brief.join("\n")}\n\n` +
-        `产物可能仍处于新旧混合状态——服务已尝试恢复，建议把上面的报错发给知行排查。`,
-    );
-  }
-  line("全量重建：完成");
+  await runBuildWithRetry(ctx, root, tc, line);
   pg(0.85);
   ctx.throwIfCancelled();
 

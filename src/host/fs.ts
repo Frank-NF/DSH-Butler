@@ -43,6 +43,19 @@ export function isDir(path: string): boolean {
   }
 }
 
+/**
+ * 确保目录存在（递归创建）。
+ *
+ * 并发下 mkdir 可能因"别人刚建好"而失败，此时按成功处理 —— 判据是结果存在，不是调用不报错。
+ */
+export function ensureDir(path: string): void {
+  try {
+    Deno.mkdirSync(path, { recursive: true });
+  } catch (e) {
+    if (!isDir(path)) throw e;
+  }
+}
+
 export function isFile(path: string): boolean {
   try {
     return Deno.statSync(path).isFile;

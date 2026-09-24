@@ -331,7 +331,8 @@ export async function collectEnv(): Promise<EnvReport> {
  * 这里 locate 一次、再用 versionAt 直接在已知路径上取版本，省掉一半。
  * 四个运行时再并行，总耗时≈最慢的那一个。
  */
-async function probeRuntimes(): Promise<RuntimeProbe[]> {
+/** 运行时探测（node / pnpm / git / npm）。bootstrap 复用它，保证两处口径一致。 */
+export async function probeRuntimes(): Promise<RuntimeProbe[]> {
   return await Promise.all(
     RUNTIMES.map(async (r): Promise<RuntimeProbe> => {
       const path = await locate(r.name);

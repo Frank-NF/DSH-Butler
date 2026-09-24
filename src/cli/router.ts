@@ -67,6 +67,12 @@ DSH Butler · 命令行
   plugin cleanResidue                 清理 pnpm 安装残留（移入隔离区并留清单；不碰 package.json，垃圾移动无害）
   runtime repair                      清理僵尸/失效写锁（改名留证，不动正常锁，无需停服）
 
+从零安装（一键部署）：
+  bootstrap plan                      出部署计划（系统/运行时/磁盘/步骤表/体积耗时预估），零副作用
+  bootstrap apply [--yes]             按计划从零装：拉源码 → 装依赖 → 全量构建 → 起服务 → 三连验证
+                                      可选 --root <目录>（装到哪）--url <仓库>（换镜像）--depth <n> --force
+  bootstrap verify                    部署后三连验证（构建记录一致 / 插件名单无异常 / 健康检查通过）
+
 其它：
   actions                             列出所有可用动作
   job ls [--limit 20]                 查看任务历史
@@ -92,7 +98,18 @@ export function parseCli(argv: string[]): CliOptions {
 export function isCliInvocation(argv: string[]): boolean {
   const first = argv.find((a) => !a.startsWith("-"));
   if (!first) return false;
-  return ["doctor", "env", "core", "runtime", "plugin", "backup", "actions", "job", "help"]
+  return [
+    "doctor",
+    "env",
+    "core",
+    "runtime",
+    "plugin",
+    "backup",
+    "bootstrap",
+    "actions",
+    "job",
+    "help",
+  ]
     .includes(first);
 }
 
@@ -158,6 +175,33 @@ export async function runCli(argv: string[]): Promise<number> {
       return usage(
         `plugin 的可用子命令：diagnose / scan / install / uninstall / repair / cleanResidue`,
       );
+    case "bootstrap": {
+      // 一键部署：plan 永远零副作用；apply 走 plan → --yes → apply 三段式。
+      const root = stringArg(args, "--root");
+      const url = stringArg(args, "--url");
+      if (sub === "plan") {
+        return await runOne(
+          "bootstrap.plan",
+          { ...(root ? { root } : {}), ...(url ? { url } : {}) },
+          json,
+        );
+      }
+      if (sub === "verify") return await runOne("bootstrap.verify", {}, json);
+      if (sub === "apply") {
+        const params: Record<string, unknown> = {};
+        if (root) params.root = root;
+        if (url) params.url = url;
+        const depth = numberArg(args, "--depth");
+        if (depth) params.depth = depth;
+        const port = numberArg(args, "--port");
+        if (port) params.port = port;
+        if (args.includes("--force")) params.force = true;
+        return await runWrite("bootstrap.apply", params, args, json);
+      }
+      return usage(
+        `bootstrap 的可用子命令：plan / apply [--yes] / verify（可选 --root <目录> --url <仓库>）`,
+      );
+    }
     case "backup": {
       if (sub === "list") return await runOne("backup.list", {}, json);
       if (sub === "verify") {
@@ -735,6 +779,69 @@ function printHuman(action: string, result: unknown): void {
     case "backup.delete": {
       const r = result as { deleted: string };
       console.log(`回滚点已删除：${r.deleted}`);
+      return;
+    }
+    case "bootstrap.plan": {
+      const p = result as {
+        targetRoot: string;
+        verdict: string;
+        installed: { path: string } | null;
+        steps: Array<{ title: string; detail: string; status: string; estimateMs?: number }>;
+        estimates: {
+          downloadBytes: number;
+          diskBytes: number;
+          minutesMin: number;
+          minutesMax: number;
+        };
+        blockers: Array<{ severity: string; title: string; action?: string }>;
+      };
+      console.log(`安装目标：${p.targetRoot}`);
+      if (p.installed) console.log(`本机已有本体：${p.installed.path}`);
+      console.log(
+        `预计：下载 ${humanSize(p.estimates.downloadBytes)} · 占盘 ${
+          humanSize(p.estimates.diskBytes)
+        } · ${p.estimates.minutesMin}-${p.estimates.minutesMax} 分钟`,
+      );
+      console.log("步骤：");
+      p.steps.forEach((s, i) => {
+        const mark = s.status === "ready" ? "✓" : s.status === "action" ? "!" : "✗";
+        console.log(`  ${i + 1}. [${mark}] ${s.title}`);
+        console.log(`        ${s.detail}`);
+      });
+      printFindings(p.blockers);
+      console.log("");
+      console.log(`裁决：${p.verdict}`);
+      return;
+    }
+    case "bootstrap.verify": {
+      const r = result as {
+        ok: boolean;
+        checks: Array<{ label: string; ok: boolean; detail: string }>;
+      };
+      console.log(`三连验证：${r.ok ? "全部通过" : "未全过"}`);
+      for (const c of r.checks) console.log(`  ${c.ok ? "✓" : "✗"} ${c.label}：${c.detail}`);
+      return;
+    }
+    case "bootstrap.apply": {
+      const r = result as {
+        root: string;
+        cloned: boolean;
+        lines: string[];
+        warnings: string[];
+        verify: { ok: boolean; checks: Array<{ label: string; ok: boolean }> } | null;
+      };
+      console.log(`${r.cloned ? "已安装" : "已就地更新"}：${r.root}`);
+      for (const l of r.lines) console.log(`  ${l}`);
+      for (const w of r.warnings) console.log(`  ⚠ ${w}`);
+      if (r.verify) {
+        console.log(
+          `三连验证：${
+            r.verify.ok
+              ? "全部通过"
+              : r.verify.checks.filter((c) => !c.ok).map((c) => c.label).join("、") + " 未通过"
+          }`,
+        );
+      }
       return;
     }
     default:
