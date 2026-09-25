@@ -25,6 +25,13 @@ import {
   WINDOW_TITLE,
 } from "./version.ts";
 import { isDir } from "./host/fs.ts";
+import {
+  claimSingleInstance,
+  consumeShowRequest,
+  releaseSingleInstance,
+  requestShow,
+} from "./host/single-instance.ts";
+import { focusWindowOfProcess } from "./host/focus-window.ts";
 import { applyDesktopWorkarounds, hasDesktopRuntime } from "./util/runtime-kind.ts";
 import { hideOwnConsole } from "./host/console-hide.ts";
 import {
@@ -67,6 +74,29 @@ async function main(): Promise<void> {
   log.info("main", `桌面适配：${workaround}`);
   log.info("main", `静默执行：${consoleHidden}`);
 
+  // ── 单实例保护 ───────────────────────────────────────────────────
+  // 【2026-09-25 实测事故】管家已经在跑时再启动一次，第二个实例会和第一个共用同一份
+  // WebView2 用户数据目录 —— 窗口在、画面全白（日志：悬浮条注入超时，探测结果 null），
+  // 两个实例还会互相抢窗口。用户看到的就是「白屏起不来」。这里直接挡掉第二个实例：
+  // 把已在运行的那个叫到前台，然后自己退出。
+  // headless 与 CLI 模式不参与（脚本本来就可能同时起多个，测试也依赖这一点）。
+  const cliMode = isCliInvocation(argv);
+  const headlessMode = wantsHeadless(argv);
+  if (!cliMode && !headlessMode) {
+    const claim = await claimSingleInstance();
+    if (!claim.ok) {
+      const focused = focusWindowOfProcess(claim.holderPid ?? 0);
+      // 光找窗口不够：对方可能已经把窗口关了（进程靠锚窗口留着）。留个请求，
+      // 让它在保活定时器里把窗口重建/前置出来。
+      requestShow();
+      log.warn(
+        "main",
+        `已经有一个管家在运行（PID ${claim.holderPid}）—— ${focused ? "已把它的窗口拿到前台" : "没能把它拿到前台（可能收进了托盘，点托盘图标即可）"}；本次启动退出，避免两个实例抢窗口/白屏`,
+      );
+      Deno.exit(0);
+    }
+  }
+
   registerAllActions();
   assertStageSafety();
 
@@ -99,7 +129,7 @@ async function main(): Promise<void> {
 
   // 服务模式
   const token = generateToken();
-  const headless = wantsHeadless(argv);
+  const headless = headlessMode; // 上面已经算过（单实例保护要用它）
   const server = createApiServer({
     token,
     // 桌面态不指定端口：deno desktop 运行时会把 webview 指到它实际绑定的地址。
@@ -123,6 +153,7 @@ async function main(): Promise<void> {
   const shutdown = () => {
     log.info("main", "收到退出信号，正在关闭…");
     stopHousekeeping();
+    releaseSingleInstance();
     server.shutdown();
     try {
       Deno.exit(0);
@@ -532,7 +563,7 @@ function setupDesktopTray(
   }
 
   // 把"叫窗口"的能力交给接口层（/api/shell/show）与托盘共用：存在就显示，被关掉过就重建
-  setShowHandler(() => {
+  const bringUp = () => {
     const cur = getMainWindow();
     if (cur && !cur.isClosed?.()) {
       hiddenToTray = false;
@@ -544,7 +575,10 @@ function setupDesktopTray(
       return true;
     }
     return ensureMainWindow(shellButlerUrl, "butler");
-  });
+  };
+  // 保活定时器也要能叫窗口（第二个实例的「请把窗口叫出来」请求走这条路）
+  bringToFront = bringUp;
+  setShowHandler(bringUp);
 
   shellTray = tray.ok ? tray : null;
   return shellTray;
@@ -555,6 +589,9 @@ function setupDesktopTray(
 /** 窗口是否正收在托盘里（隐藏时不要拿服务状态覆盖"已收进托盘"的提示）。 */
 let hiddenToTray = false;
 let housekeepingTimer: ReturnType<typeof setInterval> | null = null;
+let showRequestTimer: ReturnType<typeof setInterval> | null = null;
+/** 由 initShell 装上的「把窗口叫到前台（必要时重建）」回调，保活定时器要用。 */
+let bringToFront: (() => boolean) | null = null;
 
 /**
  * 每 30 秒做一次后台整理，同时充当「保活」。
@@ -579,12 +616,28 @@ function startHousekeeping(tray: TrayHandle | null): void {
   housekeepingTimer = setInterval(() => {
     void tick();
   }, 30_000);
+
+  // 「请把窗口叫出来」的请求单独用一个 3 秒的轻量定时器（只 statSync 一个文件）。
+  // 不能塞进 30 秒那条：用户重复启动管家时，窗口 30 秒后才出来太久，体验像卡死。
+  showRequestTimer = setInterval(() => {
+    if (!consumeShowRequest()) return;
+    log.info("main", "收到「把窗口叫出来」请求（重复启动了管家）—— 正在把窗口叫到前台");
+    try {
+      bringToFront?.();
+    } catch (e) {
+      log.warn("main", `叫窗口失败：${(e as Error).message}`);
+    }
+  }, 3_000);
 }
 
 function stopHousekeeping(): void {
   if (housekeepingTimer !== null) {
     clearInterval(housekeepingTimer);
     housekeepingTimer = null;
+  }
+  if (showRequestTimer !== null) {
+    clearInterval(showRequestTimer);
+    showRequestTimer = null;
   }
 }
 
