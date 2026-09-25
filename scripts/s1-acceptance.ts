@@ -141,7 +141,13 @@ try {
 }
 if (stageOk) check("只读阶段不允许注册写操作", true, "全部 5 个动作均为 readonly");
 
-const RO_ACTIONS = ["env.probe", "core.status", "runtime.status", "runtime.logs", "diag.healthCheck"];
+const RO_ACTIONS = [
+  "env.probe",
+  "core.status",
+  "runtime.status",
+  "runtime.logs",
+  "diag.healthCheck",
+];
 for (const name of RO_ACTIONS) {
   const d = engine.definition(name);
   check(`动作 ${name} 已注册且为只读`, d !== undefined && d.readonly === true);
@@ -151,66 +157,111 @@ for (const name of RO_ACTIONS) {
 section("2. 零副作用基线");
 const before = await fingerprint();
 const beforeGitLines = before.git.split("\n").filter(Boolean).length;
-console.log(`  基线：源码树工作区状态 ${beforeGitLines} 行；关键文件指纹 ${before.files.split("\n").length} 项`);
+console.log(
+  `  基线：源码树工作区状态 ${beforeGitLines} 行；关键文件指纹 ${
+    before.files.split("\n").length
+  } 项`,
+);
 check("基线快照成功", before.files.length > 0);
 
 // ── 3. 四个只读领域模块（AC-E3）──
 section("3. 只读领域模块（AC-E3）");
 
 const env = await collectEnv();
-check("env.probe 能给出系统信息", env.system.cpuCount > 0 && env.system.memTotalBytes > 0,
-  `${env.system.cpuModel} · ${env.system.cpuCount} 核 · ${(env.system.memTotalBytes / 1024 ** 3).toFixed(1)} GB`);
+check(
+  "env.probe 能给出系统信息",
+  env.system.cpuCount > 0 && env.system.memTotalBytes > 0,
+  `${env.system.cpuModel} · ${env.system.cpuCount} 核 · ${
+    (env.system.memTotalBytes / 1024 ** 3).toFixed(1)
+  } GB`,
+);
 check("env.probe 定位到 DSH 本体", env.dsh.sourceRoot !== null, env.dsh.sourceRoot ?? "");
-check("env.probe 运行时探测（Node/pnpm/git）",
+check(
+  "env.probe 运行时探测（Node/pnpm/git）",
   env.runtime.filter((r) => r.required).every((r) => r.found),
-  env.runtime.map((r) => `${r.label}=${r.version ?? "缺失"}`).join(" · "));
+  env.runtime.map((r) => `${r.label}=${r.version ?? "缺失"}`).join(" · "),
+);
 check("隔离区与本体同盘", env.dsh.quarantineSameVolume, env.dsh.quarantineDir ?? "");
 
 const core = await collectCoreStatus();
-check("core.status 读到 git 提交", core.git?.headShort != null,
-  `${core.git?.branch} @ ${core.git?.headShort}`);
-check("core.status 给出「是否需要完成更新」结论",
+check(
+  "core.status 读到 git 提交",
+  core.git?.headShort != null,
+  `${core.git?.branch} @ ${core.git?.headShort}`,
+);
+check(
+  "core.status 给出「是否需要完成更新」结论",
   typeof core.needsFinishUpdate === "boolean",
-  core.needsFinishUpdate ? `需要 —— ${core.finishReason}` : "不需要");
-check("core.status 调用官方算法校验产物完整性",
+  core.needsFinishUpdate ? `需要 —— ${core.finishReason}` : "不需要",
+);
+check(
+  "core.status 调用官方算法校验产物完整性",
   core.integrity?.official === true,
   core.integrity?.verified
     ? `通过（${core.integrity.fileCount} 个文件）`
-    : `未通过：${core.integrity?.error ?? "?"}`);
-check("core.status 插件双名单可读",
+    : `未通过：${core.integrity?.error ?? "?"}`,
+);
+check(
+  "core.status 插件双名单可读",
   core.plugins !== null,
   core.plugins
     ? `依赖 ${core.plugins.dependencies.length} · 名单 ${core.plugins.bundles.length} · 生效 ${core.plugins.active.length} · 基座 ${core.plugins.inBox.length}`
-    : "无 profile 清单");
+    : "无 profile 清单",
+);
 
 const runtime = await collectRuntimeStatus();
-check("runtime.status 识别服务进程", runtime.running, `PID ${runtime.pid} · 端口 ${runtime.port ?? "?"}`);
-check("runtime.status 健康检查可达", runtime.health?.reachable === true,
-  runtime.health ? `HTTP ${runtime.health.status} / ${runtime.health.latencyMs}ms` : "未执行");
-check("runtime.status 锁扫描使用真实进程表（不是发信号）",
+check(
+  "runtime.status 识别服务进程",
+  runtime.running,
+  `PID ${runtime.pid} · 端口 ${runtime.port ?? "?"}`,
+);
+check(
+  "runtime.status 健康检查可达",
+  runtime.health?.reachable === true,
+  runtime.health ? `HTTP ${runtime.health.status} / ${runtime.health.latencyMs}ms` : "未执行",
+);
+check(
+  "runtime.status 锁扫描使用真实进程表（不是发信号）",
   runtime.locks.every((l) => ["keep", "stale", "recycled", "unreadable"].includes(l.verdict)),
-  `${runtime.locks.length} 个锁文件`);
+  `${runtime.locks.length} 个锁文件`,
+);
 check("runtime.status 残留台账可读", runtime.residue.length >= 0, `${runtime.residue.length} 类`);
 
 const logs = await collectLogs();
-check("runtime.logs 枚举到日志源", logs.sources.length > 0,
-  `${logs.sources.length} 份，共 ${(logs.totalBytes / 1024).toFixed(1)} KB`);
+check(
+  "runtime.logs 枚举到日志源",
+  logs.sources.length > 0,
+  `${logs.sources.length} 份，共 ${(logs.totalBytes / 1024).toFixed(1)} KB`,
+);
 
 const health = await runHealthCheck();
-check("diag.healthCheck 产出报告", health.sections.length === 4,
-  `结论=${health.verdict}，错误 ${health.summary.errors} / 警告 ${health.summary.warns} / 提示 ${health.summary.infos}`);
+check(
+  "diag.healthCheck 产出报告",
+  health.sections.length === 4,
+  `结论=${health.verdict}，错误 ${health.summary.errors} / 警告 ${health.summary.warns} / 提示 ${health.summary.infos}`,
+);
 check("体检耗时被真实测量（不是固定的 0）", health.durationMs > 0, `${health.durationMs} ms`);
 
 // ── 4. 零副作用校验（AC-R4）──
 section("4. 零副作用校验（AC-R4）");
 const after = await fingerprint();
-check("DSH 源码树工作区状态未被改动", before.git === after.git,
-  before.git === after.git ? `${beforeGitLines} 行，前后一致` : "前后不一致！");
-check("本体与 profile 关键文件指纹未变（AC-R4）", before.files === after.files,
+check(
+  "DSH 源码树工作区状态未被改动",
+  before.git === after.git,
+  before.git === after.git ? `${beforeGitLines} 行，前后一致` : "前后不一致！",
+);
+check(
+  "本体与 profile 关键文件指纹未变（AC-R4）",
+  before.files === after.files,
   before.files === after.files
     ? "大小与修改时间全部一致"
-    : `有文件被改动了！\n      前：${before.files.replace(/\n/g, "\n          ")}\n      后：${after.files.replace(/\n/g, "\n          ")}`);
-console.log(`  （管家自身数据：${before.self === after.self ? "无刷新" : "有刷新（允许，属自身缓存）"}）`);
+    : `有文件被改动了！\n      前：${before.files.replace(/\n/g, "\n          ")}\n      后：${
+      after.files.replace(/\n/g, "\n          ")
+    }`,
+);
+console.log(
+  `  （管家自身数据：${before.self === after.self ? "无刷新" : "有刷新（允许，属自身缓存）"}）`,
+);
 
 // ── 5. 接口层（AC-L3）──
 section("5. 接口层（AC-L3）");
@@ -225,20 +276,36 @@ const get = (path: string, headers: Record<string, string> = {}) =>
 try {
   const hz = await get("/healthz");
   const hzBody = await hz.json() as { ok?: boolean; app?: string; version?: string };
-  check("GET /healthz 免鉴权可用", hz.status === 200 && hzBody.ok === true,
-    `${hzBody.app} ${hzBody.version}`);
+  check(
+    "GET /healthz 免鉴权可用",
+    hz.status === 200 && hzBody.ok === true,
+    `${hzBody.app} ${hzBody.version}`,
+  );
 
   const html = await get("/");
   const htmlText = await html.text();
-  check("GET / 返回界面 HTML", html.status === 200 && /<!doctype html>/i.test(htmlText),
-    `${htmlText.length} 字节`);
-  check("界面 HTML 含防 XSS 必需的 CSP 头", html.headers.get("content-security-policy") !== null ||
-    true, "（webview 本地加载，未单独下发 CSP）");
+  check(
+    "GET / 返回界面 HTML",
+    html.status === 200 && /<!doctype html>/i.test(htmlText),
+    `${htmlText.length} 字节`,
+  );
+  check(
+    "界面 HTML 含防 XSS 必需的 CSP 头",
+    html.headers.get("content-security-policy") !== null ||
+      true,
+    "（webview 本地加载，未单独下发 CSP）",
+  );
 
   const css = await get("/style.css");
-  check("GET /style.css 可用", css.status === 200 && (css.headers.get("content-type") ?? "").includes("text/css"));
+  check(
+    "GET /style.css 可用",
+    css.status === 200 && (css.headers.get("content-type") ?? "").includes("text/css"),
+  );
   const js = await get("/app.js");
-  check("GET /app.js 可用", js.status === 200 && (js.headers.get("content-type") ?? "").includes("javascript"));
+  check(
+    "GET /app.js 可用",
+    js.status === 200 && (js.headers.get("content-type") ?? "").includes("javascript"),
+  );
 
   // 鉴权四条通道
   check("无令牌访问 API 被拒绝", (await get("/api/actions")).status === 401);
@@ -248,8 +315,11 @@ try {
   const viaQuery = await get(`/api/actions?t=${token}`);
   check("正确令牌（查询串，供 EventSource 用）通过", viaQuery.status === 200);
   const actions = await viaQuery.json() as Array<{ name: string; readonly: boolean }>;
-  check("API 返回的动作全部标记为只读", actions.every((a) => a.readonly === true),
-    actions.map((a) => a.name).join(", "));
+  check(
+    "API 返回的动作全部标记为只读",
+    actions.every((a) => a.readonly === true),
+    actions.map((a) => a.name).join(", "),
+  );
 
   // 未知路由
   check("未知路由返回 404", (await get("/api/nope", { "x-butler-token": token })).status === 404);
@@ -261,8 +331,11 @@ try {
     body: JSON.stringify({ action: "core.status", params: {} }),
   });
   const createdBody = await created.json() as { ok?: boolean; jobId?: string };
-  check("POST /api/jobs 创建任务成功", created.status === 200 && createdBody.ok === true,
-    createdBody.jobId ?? "");
+  check(
+    "POST /api/jobs 创建任务成功",
+    created.status === 200 && createdBody.ok === true,
+    createdBody.jobId ?? "",
+  );
 
   const jobId = createdBody.jobId ?? "";
   let final: { status?: string; steps?: unknown[] } = {};
@@ -273,8 +346,11 @@ try {
     await new Promise((r2) => setTimeout(r2, 150));
   }
   check("任务执行完成且成功", final.status === "succeeded", `状态=${final.status}`);
-  check("任务步骤表被填充", Array.isArray(final.steps) && final.steps.length > 0,
-    `${final.steps?.length ?? 0} 步`);
+  check(
+    "任务步骤表被填充",
+    Array.isArray(final.steps) && final.steps.length > 0,
+    `${final.steps?.length ?? 0} 步`,
+  );
 
   // SSE 事件流
   const ctrl = new AbortController();
@@ -295,9 +371,11 @@ try {
     }
     ctrl.abort();
   }
-  check("SSE 单任务事件流可订阅（且先补快照）",
+  check(
+    "SSE 单任务事件流可订阅（且先补快照）",
     sse.status === 200 && sseText.includes("data:"),
-    sseText.slice(0, 80).replace(/\n/g, " "));
+    sseText.slice(0, 80).replace(/\n/g, " "),
+  );
 
   // 全局事件流
   const gctrl = new AbortController();
@@ -310,8 +388,11 @@ try {
     gText = value ? dec.decode(value) : "";
     gctrl.abort();
   }
-  check("SSE 全局事件流可订阅（首个事件为 hello）",
-    gsse.status === 200 && gText.includes("hello"), gText.slice(0, 60).replace(/\n/g, " "));
+  check(
+    "SSE 全局事件流可订阅（首个事件为 hello）",
+    gsse.status === 200 && gText.includes("hello"),
+    gText.slice(0, 60).replace(/\n/g, " "),
+  );
 
   // 只读快照接口
   const ov = await get("/api/state/overview", { "x-butler-token": token });
@@ -332,14 +413,21 @@ try {
 // ── 6. 零副作用复核（接口层跑完再看一次）──
 section("6. 零副作用复核（含接口层）");
 const after2 = await fingerprint();
-check("跑完接口层后本体仍未被改动", before.git === after2.git && before.files === after2.files,
-  before.files === after2.files ? "源码树与关键文件均一致" : "有文件被改动了！");
-console.log(`  （管家自身数据：${before.self === after2.self ? "无刷新" : "有刷新（允许，属自身缓存）"}）`);
+check(
+  "跑完接口层后本体仍未被改动",
+  before.git === after2.git && before.files === after2.files,
+  before.files === after2.files ? "源码树与关键文件均一致" : "有文件被改动了！",
+);
+console.log(
+  `  （管家自身数据：${before.self === after2.self ? "无刷新" : "有刷新（允许，属自身缓存）"}）`,
+);
 
 // ── 汇总 ──
 section("汇总");
 const failed = checks.filter((c) => !c.ok);
-console.log(`  共 ${checks.length} 项，通过 ${checks.length - failed.length}，失败 ${failed.length}`);
+console.log(
+  `  共 ${checks.length} 项，通过 ${checks.length - failed.length}，失败 ${failed.length}`,
+);
 if (failed.length > 0) {
   console.log("");
   for (const f of failed) console.log(`  ✗ ${f.name}${f.detail ? " —— " + f.detail : ""}`);

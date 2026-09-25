@@ -12,7 +12,7 @@ import { collectOverview } from "./overview.ts";
 import { INDEX_HTML } from "../web/markup.ts";
 import { STYLE_CSS } from "../web/styles.ts";
 import { CLIENT_JS } from "../web/client.ts";
-import { APP_NAME, APP_VERSION } from "../version.ts";
+import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
 import {
   desktopAvailable,
@@ -30,7 +30,10 @@ import {
 } from "../net/market.ts";
 import { checkUpdates } from "../net/npm-registry.ts";
 import { collectLogs, readTail } from "../domains/runtime/logs.ts";
-import { downloadsDir, p } from "../util/paths.ts";
+import { butlerConfigPath, downloadsDir, p } from "../util/paths.ts";
+import { loadConfig, saveConfig } from "../domains/state/config.ts";
+import { checkButlerUpdate } from "../net/butler-update.ts";
+import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
 import { log } from "../util/log.ts";
 
 const nextTick = (fn: () => void) => {
@@ -308,9 +311,94 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     }
     // 插件市场目录：目录拉取与缓存、搜索/筛选/分页、"本机已装"标注全在服务端做，
     // 界面只负责画 —— 目录有 2000+ 条，不能让浏览器端着。
+    // ── 设置 ──────────────────────────────────────────────────────────
+    //
+    // 设置项一律落 ~/.dsh-butler/config.json（管家自己的文件，绝不碰 DSH）。
+    // 只有"开机自启"这一项有系统副作用（写用户级 Run 注册表项），所以它单独处理并回报结果。
+
+    if (req.method === "GET" && path === "/api/settings") {
+      const cfg = loadConfig();
+      const auto = await autostartEnabled().catch(() => false);
+      const cmd = auto ? await autostartCommand().catch(() => null) : null;
+      return json({
+        ok: true,
+        config: cfg,
+        // 注册表里的真实状态（配置里那个 autostart 只是用户的意愿，这里给的是事实）
+        autostartActual: auto,
+        autostartCommand: cmd,
+        exePath: Deno.execPath(),
+        appName: APP_NAME,
+        appVersion: APP_VERSION,
+        configPath: butlerConfigPath(),
+        defaultPort: BUTLER_PORT_HEADLESS,
+      });
+    }
+    if (req.method === "POST" && path === "/api/settings") {
+      let body: Record<string, unknown>;
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const patch: Record<string, unknown> = {};
+      const bools = [
+        "closeToTray",
+        "dockEnabled",
+        "autoCheckCoreUpdate",
+        "autoCheckButlerUpdate",
+        "autoCheckUpdates",
+        "backupBeforeUpdate",
+        "autostart",
+      ] as const;
+      for (const k of bools) {
+        if (typeof body[k] === "boolean") patch[k] = body[k];
+      }
+      if (typeof body.theme === "string" && ["light", "dark", "auto"].includes(body.theme)) {
+        patch.theme = body.theme;
+      }
+      if (
+        typeof body.logLevel === "string" &&
+        ["debug", "info", "warn", "error"].includes(body.logLevel)
+      ) {
+        patch.logLevel = body.logLevel;
+      }
+      if (typeof body.dockIdleMs === "number" && Number.isFinite(body.dockIdleMs)) {
+        patch.dockIdleMs = Math.min(Math.max(Math.round(body.dockIdleMs), 1000), 60_000);
+      }
+      if (typeof body.marketCatalogTtlMs === "number" && Number.isFinite(body.marketCatalogTtlMs)) {
+        patch.marketCatalogTtlMs = Math.min(
+          Math.max(Math.round(body.marketCatalogTtlMs), 5 * 60_000),
+          7 * 24 * 60 * 60_000,
+        );
+      }
+      if (typeof body.dshPort === "number" && Number.isFinite(body.dshPort)) {
+        patch.dshPort = Math.min(Math.max(Math.round(body.dshPort), 1), 65535);
+      }
+      if (typeof body.npmRegistry === "string") patch.npmRegistry = body.npmRegistry.trim();
+      if (typeof body.proxyUrl === "string") patch.proxyUrl = body.proxyUrl.trim();
+      if (Object.keys(patch).length === 0) {
+        return json({ ok: false, error: "没有任何可识别的设置项" }, 400);
+      }
+      const saved = saveConfig(patch as Parameters<typeof saveConfig>[0]);
+      const notes: string[] = [];
+      if (typeof patch.autostart === "boolean") {
+        const res = await setAutostart(patch.autostart);
+        notes.push(res.message);
+        if (!res.ok) {
+          // 系统侧没成功就把意愿回滚，别让配置骗人
+          saveConfig({ autostart: !patch.autostart } as Parameters<typeof saveConfig>[0]);
+        }
+      }
+      log.info("api", `设置已更新：${Object.keys(patch).join("、")}`);
+      return json({ ok: true, config: saveConfig({}), notes });
+    }
+
     if (req.method === "GET" && path === "/api/market/catalog") {
       const sp = url.searchParams;
-      const loaded = await loadCatalog({ force: sp.get("refresh") === "1" });
+      const loaded = await loadCatalog({
+        force: sp.get("refresh") === "1",
+        ttlMs: loadConfig().marketCatalogTtlMs,
+      });
       if (!loaded.ok) return json({ ok: false, error: loaded.error }, 502);
 
       let installed: Record<string, string> = {};
@@ -460,6 +548,14 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     //
     // 【产品形态】一个窗口：管家界面 ↔ DSH 界面，切换就是一次 navigate。
     // 这里只负责"该不该进、进哪去"，导航交给 host 层的 navigateMain。
+
+    if (req.method === "GET" && path === "/api/update/butler") {
+      const info = await checkButlerUpdate({
+        current: APP_VERSION,
+        force: url.searchParams.get("force") === "1",
+      });
+      return json(info);
+    }
     if (req.method === "GET" && path === "/api/shell/state") {
       const state = await collectShellState().catch(() => null);
       return json({ ok: true, desktop: desktopAvailable(), state });

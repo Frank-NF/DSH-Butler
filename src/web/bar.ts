@@ -50,6 +50,9 @@ export const BUTLER_BAR_JS = `(function () {
   style.textContent = CSS;
   document.head.appendChild(style);
 
+  // 自动收起的时长由管家注入（设置里可调）；没有就用 3 秒
+  var DBB_IDLE_MS = (typeof window.__DSH_BUTLER_IDLE_MS__ === 'number' && window.__DSH_BUTLER_IDLE_MS__ > 0)
+    ? window.__DSH_BUTLER_IDLE_MS__ : 3000;
   var host = document.createElement('div');
   host.id = 'dsh-butler-dock';
   host.setAttribute('data-state', 'expanded');
@@ -159,7 +162,7 @@ export const BUTLER_BAR_JS = `(function () {
       if (host.getAttribute('data-state') !== 'expanded') return;
       if (hovering) return;
       setCollapsed(true);
-    }, 3000);
+    }, DBB_IDLE_MS);
   }
   host.addEventListener('mouseenter', function () {
     hovering = true;

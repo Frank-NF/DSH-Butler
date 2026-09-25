@@ -722,6 +722,8 @@ export const CLIENT_JS = `(function () {
       html += shellCard();
       html += '<div class="card"><div class="stats">'
         + stat('本体', ov.dsh.installed ? (ov.dsh.version || '已安装') : '未安装', ov.dsh.headShort ? '提交 ' + ov.dsh.headShort : '', true)
+        + stat('上游最新版', ov.dsh.latestVersion || '未查到',
+          ov.dsh.latestChannel ? ('来自 ' + ov.dsh.latestChannel + ' 通道') : '网络不通或还没查', true)
         + stat('待完成更新', ov.dsh.needsFinishUpdate ? '是' : '否')
         + stat('服务', ov.runtime.running ? '运行中' : '未运行', ov.runtime.port ? '端口 ' + ov.runtime.port : '')
         + stat('插件（生效 / 已装）', ov.plugins.active + ' / ' + ov.plugins.declared)
@@ -733,12 +735,30 @@ export const CLIENT_JS = `(function () {
         + navBtn('activity', '运行状态', 'runtime')
         + navBtn('puzzle', '插件', 'plugins')
         + '</div></div>';
+      if (ov.dsh.updateAvailable) {
+        html += '<div class="card">'
+          + '<div class="finding warn"><div class="finding-title"><span class="tag warn">可更新</span>'
+          + '本体有新版本：' + esc(ov.dsh.latestVersion || '') + '（本机 ' + esc(ov.dsh.version || '未知') + '）</div>'
+          + '<div class="finding-cause">上游 ' + esc(ov.dsh.latestChannel || '') + ' 通道已经发到 '
+          + esc(ov.dsh.latestVersion || '') + '，本机还是 ' + esc(ov.dsh.version || '未知')
+          + '。更新会先停服、拉取新版本、重建产物；动手前会把步骤摊给你确认，你也可以先建个回滚点。</div>'
+          + '<div class="btn-row" style="margin-top:10px">'
+          + '<button class="btn primary" data-write="core.update">' + icon('upload') + '<span>去更新本体</span></button>'
+          + '<button class="btn" data-page="core">' + icon('box') + '<span>先看本体状态</span></button>'
+          + '</div></div></div>';
+      }
       html += '<div class="card"><div class="card-title">问题概览<span class="sub">来自最近一次体检</span></div><div id="overview-findings">'
         + (state.cache.report && state.cache.report.findings ? renderFindings(state.cache.report.findings) : emptyBox('还没有体检结果', '点上面的「运行全面体检」开始检查。'))
         + '</div></div>';
       setMain(html);
-      setBadge('badge-dsh', ov.dsh.installed ? (ov.dsh.needsFinishUpdate ? 'warn' : 'ok') : 'err',
-        ov.dsh.installed ? (ov.dsh.needsFinishUpdate ? '本体待完成更新' : '本体正常') : '未安装本体');
+      var dshBadge = !ov.dsh.installed
+        ? { kind: 'err', text: '未安装本体' }
+        : (ov.dsh.updateAvailable
+          ? { kind: 'warn', text: '本体有新版本 ' + (ov.dsh.latestVersion || '') }
+          : (ov.dsh.needsFinishUpdate
+            ? { kind: 'warn', text: '本体待完成更新' }
+            : { kind: 'ok', text: '本体正常' }));
+      setBadge('badge-dsh', dshBadge.kind, dshBadge.text);
       setBadge('badge-service', ov.runtime.running ? 'ok' : '', ov.runtime.running ? '服务运行中' : '服务未运行');
       setNavCount('plugins', ov.plugins.declared);
     });
@@ -1044,6 +1064,119 @@ export const CLIENT_JS = `(function () {
 
   // ── 页面：任务 ───────────────────────────────────────────────────
 
+  // ── 设置 ─────────────────────────────────────────────────────────
+  //
+  // 只写管家自己的 config.json；唯一有系统副作用的是"开机自启"（写用户级 Run 注册表项），
+  // 那一项由服务端执行并把结果回给界面，失败会把配置里的意愿回滚，不让设置骗人。
+
+  function loadSettings() {
+    return api('/api/settings');
+  }
+
+  function setRow(label, control, help) {
+    return '<div class="set-row"><div class="set-label">' + esc(label) + '</div>'
+      + '<div class="set-control">' + control + (help ? '<div class="field-help">' + esc(help) + '</div>' : '') + '</div></div>';
+  }
+
+  function checkBox(id, checked, label) {
+    return '<label class="check"><input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + '><span>' + esc(label) + '</span></label>';
+  }
+
+  function renderSettings(res) {
+    if (!res || res.ok === false) {
+      return pageHead('设置', '管家自己的偏好都在这儿。', '')
+        + '<div class="card">' + emptyBox('读不到设置', (res && res.error) || '服务没有返回内容') + '</div>';
+    }
+    var c = res.config || {};
+    var upd = state.extra.butlerUpdate;
+    var tools = '<button class="btn sm" id="btn-check-butler-update">' + icon('refresh') + '<span>检查管家更新</span></button>';
+    var html = pageHead('设置', '每一项都写在 ' + esc(res.configPath || '配置文件') + '，改完点最下面的保存。', tools);
+
+    html += '<div class="card"><div class="card-title">外观与窗口</div>'
+      + setRow('主题', '<select class="select" id="set-theme">'
+        + '<option value="light"' + (c.theme === 'light' ? ' selected' : '') + '>浅色</option>'
+        + '<option value="dark"' + (c.theme === 'dark' ? ' selected' : '') + '>深色</option>'
+        + '<option value="auto"' + (c.theme === 'auto' ? ' selected' : '') + '>跟随系统</option>'
+        + '</select>', '顶栏那个月亮按钮和这里是一回事，改哪边都生效。')
+      + setRow('点关闭按钮时', checkBox('set-close-to-tray', c.closeToTray, '收进托盘继续跑（不勾就直接退出管家）'),
+        '收进托盘时 DSH 服务照常运行，点托盘图标就能把窗口叫回来。')
+      + setRow('开机自启', checkBox('set-autostart', c.autostart, '登录后自动启动管家'),
+        res.autostartActual ? '注册表里已经有自启项' + (res.autostartCommand ? '：' + res.autostartCommand : '') : '注册表里还没有自启项')
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">DSH 页面里的浮动工具条</div>'
+      + setRow('启用', checkBox('set-dock-enabled', c.dockEnabled, '在 DSH 页面右下角显示管家工具条'),
+        '关掉之后 DSH 页面就干净了，回管家只能靠托盘图标或 Ctrl+Shift+B。')
+      + setRow('自动收起', '<input class="input set-num" id="set-dock-idle" type="number" min="1" max="60" value="'
+        + Math.round((c.dockIdleMs || 3000) / 1000) + '">', '展开后多少秒没动作就自动收起（秒）')
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">插件市场</div>'
+      + setRow('目录缓存', '<select class="select" id="set-market-ttl">'
+        + [['3600000','1 小时'],['21600000','6 小时'],['86400000','1 天'],['604800000','7 天']].map(function (o) {
+            return '<option value="' + o[0] + '"' + (String(c.marketCatalogTtlMs) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+          }).join('')
+        + '</select>', '市场目录 2000 多条，缓存久一点更省流量；点「刷新目录」可以强制重拉。')
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">更新</div>'
+      + setRow('自动检查本体更新', checkBox('set-auto-core', c.autoCheckCoreUpdate, '总览页自动显示"本体有新版本"'),
+        '官方 npm 的 latest 通道可能落后于 next，管家会把三个通道都读回来取最新那个。')
+      + setRow('自动检查管家更新', checkBox('set-auto-butler', c.autoCheckButlerUpdate, '启动时读一次官网版本清单'),
+        '只提示、不自动替换：这是未签名程序，换自己比让用户下载一步要险得多。')
+      + setRow('当前版本', '<span class="mono">' + esc(res.appName || '') + ' ' + esc(res.appVersion || '') + '</span>'
+        + (upd
+          ? '<div class="field-help">' + (upd.available
+              ? '官网最新版是 ' + esc(upd.latest || '') + (upd.release && upd.release.notes ? '：' + esc(upd.release.notes) : '')
+              : (upd.error ? '这次没查到（' + esc(upd.error) + '）' : '已是最新'))
+          + (upd.available && upd.release && upd.release.url
+              ? '　<a class="btn sm" href="' + esc(upd.release.url) + '" data-open-url="' + esc(upd.release.url) + '">' + icon('external') + '<span>下载新版</span></a>'
+              : '')
+          + '</div>'
+          : ''))
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">网络与高级</div>'
+      + setRow('npm 安装源', '<input class="input" id="set-npm-registry" value="' + esc(c.npmRegistry || '') + '" spellcheck="false">',
+        '装插件时用哪个源；留空走官方源。')
+      + setRow('网络代理', '<input class="input" id="set-proxy" value="' + esc(c.proxyUrl || '') + '" placeholder="留空 = 直连" spellcheck="false">')
+      + setRow('DSH 服务端口', '<input class="input set-num" id="set-dsh-port" type="number" min="1" max="65535" value="'
+        + esc(String(c.dshPort || '')) + '">', '改完要重启 DSH 服务才生效。')
+      + '</div>';
+
+    html += '<div class="card"><div class="card-title">关于</div>'
+      + kv('管家版本', (res.appName || '') + ' ' + (res.appVersion || ''), true)
+      + kv('可执行文件', res.exePath || '', true)
+      + kv('配置文件', res.configPath || '', true)
+      + '</div>';
+
+    html += '<div class="btn-row" style="margin-top:4px"><button class="btn primary" id="btn-save-settings">保存设置</button>'
+      + '<button class="btn" id="btn-refresh-page">放弃修改</button></div>';
+    return html;
+  }
+
+  function saveSettings() {
+    var body = {
+      theme: $('set-theme').value,
+      closeToTray: $('set-close-to-tray').checked,
+      autostart: $('set-autostart').checked,
+      dockEnabled: $('set-dock-enabled').checked,
+      dockIdleMs: (Number($('set-dock-idle').value) || 3) * 1000,
+      marketCatalogTtlMs: Number($('set-market-ttl').value),
+      autoCheckCoreUpdate: $('set-auto-core').checked,
+      autoCheckButlerUpdate: $('set-auto-butler').checked,
+      npmRegistry: $('set-npm-registry').value,
+      proxyUrl: $('set-proxy').value,
+      dshPort: Number($('set-dsh-port').value)
+    };
+    api('/api/settings', { method: 'POST', body: body }).then(function (r) {
+      if (!r || r.ok === false) { toast((r && r.error) || '保存失败', 'err'); return; }
+      toast('设置已保存' + (r.notes && r.notes.length ? '；' + r.notes.join('；') : ''), '');
+      state.extra.settings = null;
+      go('settings', true);
+    }).catch(function (e) { toast('保存失败：' + (e && e.message ? e.message : e), 'err'); });
+  }
+
   // ── 插件市场 ─────────────────────────────────────────────────────
   //
   // 目录来自线上（/api/market/catalog，服务端带缓存），本机已装状态由服务端
@@ -1143,29 +1276,47 @@ export const CLIENT_JS = `(function () {
     var queue = names.slice();
     var okCount = 0;
     var total = queue.length;
-    function next() {
-      if (!queue.length) {
-        toast('批量安装完成：成功 ' + okCount + ' / ' + total + ' 个', okCount === total ? '' : 'warn');
+    var wasRunning = false;
+
+    // 批量装的时候每个插件都"停服→装→重启"会白等 N-1 次启动，
+    // 所以每个都带 deferRestart，最后按"开始时服务在不在跑"决定要不要统一重启一次。
+    function finish(ok, msg) {
+      function afterRestart() {
+        toast(msg, ok ? '' : 'warn');
         state.market.picked = [];
         state.cache = {};
         go('market', true);
+      }
+      if (!wasRunning) {
+        afterRestart();
+        return;
+      }
+      toast('正在重启 DSH 服务…', '');
+      runAction('runtime.restart', {}, '重启 DSH 服务').then(afterRestart, afterRestart);
+    }
+
+    api('/api/state/overview').then(function (ov) {
+      wasRunning = Boolean(ov && ov.runtime && ov.runtime.running);
+      next();
+    }).catch(function () { next(); });
+
+    function next() {
+      if (!queue.length) {
+        finish(true, '批量安装完成：成功 ' + okCount + ' / ' + total + ' 个');
         return;
       }
       var one = queue.shift();
       toast('正在安装 ' + one + '（还剩 ' + queue.length + ' 个）', '');
-      runAction('plugin.install', { name: one }, '安装 ' + one)
+      runAction('plugin.install', { name: one, deferRestart: true }, '安装 ' + one)
         .then(function () {
           okCount++;
           state.market.picked = state.market.picked.filter(function (n) { return n !== one; });
           next();
         })
         .catch(function (e) {
-          toast(one + ' 安装失败，已停下（成功 ' + okCount + ' 个）：' + (e && e.message ? e.message : e), 'err');
-          state.cache = {};
-          go('market', true);
+          finish(false, one + ' 安装失败，已停下（成功 ' + okCount + ' 个）：' + (e && e.message ? e.message : e));
         });
     }
-    next();
   }
 
   // 卡片视图：一屏能扫更多，适合"逛"；列表视图信息更全，适合"挑"。
@@ -1519,6 +1670,7 @@ export const CLIENT_JS = `(function () {
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
     { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
     { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场' },
+    { id: 'settings', label: '设置', group: '记录', icon: 'sliders', load: loadSettings, render: renderSettings, title: '设置' },
     { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
     { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
     { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
@@ -1640,6 +1792,16 @@ export const CLIENT_JS = `(function () {
     var mpg = hit('[data-market-page]');
     if (mpg) { state.market.page = parseInt(mpg.getAttribute('data-market-page'), 10) || 1; go('market', true); return; }
     if (hit('#btn-cancel')) { cancelJob(); return; }
+    if (hit('#btn-save-settings')) { saveSettings(); return; }
+    if (hit('#btn-check-butler-update')) {
+      toast('正在检查管家更新…', '');
+      api('/api/update/butler?force=1').then(function (r) {
+        state.extra.butlerUpdate = r;
+        toast(r && r.available ? ('管家有新版本 ' + r.latest) : (r && r.error ? ('没查到：' + r.error) : '已是最新'), r && r.available ? 'warn' : '');
+        go('settings', true);
+      }).catch(function (e) { toast('检查失败：' + (e && e.message ? e.message : e), 'err'); });
+      return;
+    }
     if (hit('#btn-export-logs')) {
       toast('正在打包日志…', '');
       api('/api/logs/export', { method: 'POST' }).then(function (r) {

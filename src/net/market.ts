@@ -215,6 +215,8 @@ export async function fetchCatalog(
 
 export interface LoadCatalogOptions {
   force?: boolean;
+  /** 缓存有效期；不传用默认 6 小时（界面里可调）。 */
+  ttlMs?: number;
   fetcher?: typeof fetch;
   cachePath?: string;
   now?: () => number;
@@ -228,7 +230,8 @@ export async function loadCatalog(opts: LoadCatalogOptions = {}): Promise<Catalo
   const path = opts.cachePath ?? catalogCachePath();
   const nowMs = (opts.now ?? Date.now)();
   const cached = readCache(path);
-  const fresh = cached ? nowMs - Date.parse(cached.fetchedAt) < CATALOG_TTL_MS : false;
+  const ttl = opts.ttlMs && opts.ttlMs > 0 ? opts.ttlMs : CATALOG_TTL_MS;
+  const fresh = cached ? nowMs - Date.parse(cached.fetchedAt) < ttl : false;
   if (cached && fresh && !opts.force) {
     return { ok: true, catalog: cached, cached: true, cachedAt: cached.fetchedAt };
   }

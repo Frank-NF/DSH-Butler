@@ -41,7 +41,12 @@ function patchExeToGui(path: string): { changed: boolean; detail: string } {
 
   if (data.length < 0x40) throw new Error(`${path}: 文件太小，不是有效 PE`);
   const e_lfanew = dv.getUint32(0x3c, true);
-  const sig = String.fromCharCode(data[e_lfanew], data[e_lfanew + 1], data[e_lfanew + 2], data[e_lfanew + 3]);
+  const sig = String.fromCharCode(
+    data[e_lfanew],
+    data[e_lfanew + 1],
+    data[e_lfanew + 2],
+    data[e_lfanew + 3],
+  );
   if (sig !== "PE\0\0") throw new Error(`${path}: PE 签名不存在（读到 ${JSON.stringify(sig)}）`);
 
   const optStart = e_lfanew + 4 + 20; // 签名 + COFF 头

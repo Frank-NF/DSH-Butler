@@ -38,6 +38,20 @@ export interface AppConfig {
   installId: string | null;
   /** 首次部署引导是否已完成。 */
   onboardingDone: boolean;
+  /** 点窗口关闭按钮时：true = 收进托盘继续跑，false = 真退出。 */
+  closeToTray: boolean;
+  /** 是否在 DSH 页面右下角注入管家悬浮条。 */
+  dockEnabled: boolean;
+  /** 悬浮条展开后多久没动作就自动收起（毫秒）。 */
+  dockIdleMs: number;
+  /** 市场目录缓存多久（毫秒）。 */
+  marketCatalogTtlMs: number;
+  /** 是否自动检查本体（DSH）有没有新版本。 */
+  autoCheckCoreUpdate: boolean;
+  /** 是否自动检查管家自己有没有新版本。 */
+  autoCheckButlerUpdate: boolean;
+  /** 开机自动启动管家（写用户级 Run 注册表项）。 */
+  autostart: boolean;
   /** 迁移痕迹。 */
   migratedFrom: string | null;
   migratedAt: string | null;
@@ -60,6 +74,13 @@ function defaults(): AppConfig {
     retention: { maxBackups: 10, maxBackupBytes: 2 * 1024 ** 3 },
     installId: null,
     onboardingDone: false,
+    closeToTray: true,
+    dockEnabled: true,
+    dockIdleMs: 3000,
+    marketCatalogTtlMs: 6 * 60 * 60 * 1000,
+    autoCheckCoreUpdate: true,
+    autoCheckButlerUpdate: true,
+    autostart: false,
     migratedFrom: null,
     migratedAt: null,
   };

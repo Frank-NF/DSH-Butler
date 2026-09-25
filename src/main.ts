@@ -256,10 +256,19 @@ async function runJobAndWait(
  * 一眼看得到。悬浮条里的每个按钮都走和界面一致的通道（见 runJobAndWait）。
  */
 function setupButlerOverlay(butlerUrl: string): void {
+  const cfg = loadConfig();
+  // 设置里关掉就别注入：DSH 页面保持干净
+  if (!cfg.dockEnabled) {
+    log.info("main", "设置里关掉了浮动工具条，跳过注入");
+    return;
+  }
   const back = () => navigateMain(butlerUrl, { title: WINDOW_TITLE, injectOverlay: false });
   const butlerOrigin = butlerUrl.split("?")[0]!;
+  // 自动收起的秒数随设置走：注入前先把这个数塞给页面脚本
+  const barScript = "window.__DSH_BUTLER_IDLE_MS__ = " + Math.max(1000, cfg.dockIdleMs) + ";" +
+    BUTLER_BAR_JS;
   installOverlay({
-    script: BUTLER_BAR_JS,
+    script: barScript,
     probeId: "dsh-butler-dock",
     bindingName: "butlerCmd",
     // 管家自己的界面不需要悬浮条（那上面本来就有这些按钮），只有 DSH 页面才注入
@@ -343,6 +352,8 @@ async function autoEnterDsh(): Promise<void> {
  */
 
 let shellTray: TrayHandle | null = null;
+/** 真正的退出函数（由 setupDesktopTray 拿到，关窗即退出时要用）。 */
+let shellShutdown: (() => void) | null = null;
 let shellButlerUrl = "";
 /** 窗口当前显示的是哪个界面（重建窗口时要开回原来那个）。 */
 let shellView: "butler" | "dsh" = "butler";
@@ -419,6 +430,13 @@ function attachMainWindowHandlers(win: DesktopWindow): void {
 
   // ① 点 X：窗口会被销毁（这个运行时拦不住），但锚窗口让进程与托盘活着
   win.addEventListener("close", () => {
+    if (!loadConfig().closeToTray) {
+      log.info("main", "设置里选了关闭即退出，正在退出管家");
+      try {
+        shellShutdown?.();
+      } catch { /* 忽略 */ }
+      return;
+    }
     hiddenToTray = true;
     shellTray?.setTooltip(`${APP_NAME}：窗口已关闭，DSH 仍在后台（点图标可重新打开）`);
     log.info(
@@ -458,6 +476,7 @@ function setupDesktopTray(
   butlerUrl: string,
   shutdown: () => void,
 ): TrayHandle | null {
+  shellShutdown = shutdown;
   let trayOk = false;
   shellButlerUrl = butlerUrl;
 

@@ -292,6 +292,8 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
       profileDir,
       "--no-audit",
       "--no-fund",
+      // 优先用本地 npm 缓存：重复安装/更新时能省掉大部分网络等待（实测最明显的一档）
+      "--prefer-offline",
       "--loglevel",
       "error",
     ],
@@ -319,6 +321,8 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
       profileDir,
       "--no-audit",
       "--no-fund",
+      // 优先用本地 npm 缓存：重复安装/更新时能省掉大部分网络等待（实测最明显的一档）
+      "--prefer-offline",
       "--loglevel",
       "error",
     ],
@@ -445,6 +449,12 @@ export const REPAIR_STEPS = [
 interface PluginInstallParams {
   name: string;
   version?: string;
+  /**
+   * 本次先不重启 DSH 服务（批量安装用）。
+   * 批量装 N 个插件时，每个都"停服→装→重启"会白等 N-1 次启动；
+   * 前面几个带上它，最后统一重启一次即可 —— 服务全程本来就是停着的，不会更差。
+   */
+  deferRestart?: boolean;
 }
 
 interface PluginUninstallParams {
@@ -871,7 +881,11 @@ async function runInstall(
     throw new Error(`${orig}${extra}（已回滚到操作前状态）`);
   }
 
-  await restartPhase(ctx, report, line, restartPort, null);
+  if (params.deferRestart && report.serviceWasRunning) {
+    line("重启 DSH 服务：本次不重启（批量安装最后统一重启一次）");
+  } else {
+    await restartPhase(ctx, report, line, restartPort, null);
+  }
   ctx.progress(1);
   report.elapsedMs = Date.now() - t0;
   return report;

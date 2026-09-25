@@ -451,4 +451,14 @@ button { cursor: pointer; }
 }
 .mkt-batch strong { font-weight: 600; }
 .mkt-batch-list { margin: 0; padding-left: 18px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.9; }
+
+/* ── 设置页 ─────────────────────────────────────────────────────── */
+
+.set-row { display: flex; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.set-row:last-child { border-bottom: 0; }
+.set-label { flex: 0 0 150px; font-size: 13px; color: var(--text-2); padding-top: 5px; }
+.set-control { flex: 1 1 auto; min-width: 0; max-width: 520px; }
+.set-num { width: 110px; }
+.check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.check input { width: 15px; height: 15px; accent-color: var(--brand-fill); }
 `.trim();
