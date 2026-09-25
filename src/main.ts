@@ -364,15 +364,17 @@ async function autoEnterDsh(): Promise<void> {
 /**
  * 托盘常驻 + 窗口生命周期（方案 §6.5）。
  *
- * 用户要的行为：点 X 不退出、最小化收进托盘。这个运行时给了一部分、拦了一部分，
- * 实测结论（2026-09-24，deno 2.9.7 + WebView2，四个探针逐个验证过）：
- *   - **最小化能拦**：最小化时 getPosition() 变 [-32000,-32000]，我们据此 hide() 收进托盘；
- *   - **关闭拦不住**：close 事件的 cancelable=false，preventDefault() 无效，窗口真被销毁；
- *   - **只要最后一个窗口被销毁，运行时立刻退出** —— 在 close 里临时补窗口也来不及；
- *   - **但启动时留一个隐藏的"锚窗口"就有效**：主窗口关掉后进程照旧活着（探针实测 >24 秒）。
- * 所以最终形态是：
- *   点 X → 窗口消失、进程与托盘还在（锚窗口撑着）→ 点托盘图标把窗口**重新建出来**；
- *   点最小化 → 窗口只是隐藏 → 点托盘图标直接显示回来。
+ * 【2026-09-25 修正：最小化就只是最小化】窗口两个按钮各归各的：
+ *   - **点最小化（−）**：走系统正常最小化 —— 窗口进任务栏，任务栏图标**必须留着**，点一下就能还原。
+ *     以前这里把 [-32000,-32000] 当成"要收托盘"的信号直接 hide() 掉窗口，于是任务栏图标消失、
+ *     用户只能跑去托盘里找（用户实测反馈：「我怎么老是任务栏图标没了」）。
+ *     实际上 [-32000,-32000] 是 Windows 表示"窗口已最小化"的标准哨兵，不是"该隐藏"。
+ *   - **点 X**：按设置走 —— closeToTray=true 收进托盘（窗口被销毁，进程与托盘还在，点托盘图标重建）；
+ *     false 就真退出。**只有这一个入口会去托盘**。
+ * 其余实测结论（2026-09-24，deno 2.9.7 + WebView2，四个探针逐个验证过）：
+ *   - close 事件的 cancelable=false，preventDefault() 无效，窗口真被销毁；
+ *   - 只要最后一个窗口被销毁，运行时立刻退出 —— 在 close 里临时补窗口也来不及；
+ *   - 但启动时留一个隐藏的"锚窗口"就有效：主窗口关掉后进程照旧活着（探针实测 >24 秒）。
  */
 
 let shellTray: TrayHandle | null = null;
@@ -384,17 +386,6 @@ let shellView: "butler" | "dsh" = "butler";
 /** 锚窗口：唯一作用是别让运行时因为主窗口被关掉而退出。 */
 let anchorWindow: DesktopWindow | null = null;
 
-/** 收进托盘（最小化走这条路）。没托盘就不许拦 —— 否则用户关不掉也找不回。 */
-function hideToTray(why: string): void {
-  const win = getMainWindow();
-  if (!shellTray) return;
-  hiddenToTray = true;
-  try {
-    win?.hide?.();
-  } catch { /* 忽略 */ }
-  shellTray.setTooltip(`${APP_NAME}：已收进托盘（点托盘图标即可回来）`);
-  log.info("main", `已收进托盘（${why}）—— 点托盘图标或菜单「回到管家」可再打开`);
-}
 
 /**
  * 建立（或重建）主窗口。
@@ -469,14 +460,10 @@ function attachMainWindowHandlers(win: DesktopWindow): void {
     );
   });
 
-  // ② 点最小化（−）：收进托盘
-  //    实测：最小化时 move/resize 依次触发，getPosition() 变 [-32000,-32000]，拿它当判据最稳
-  win.addEventListener("resize", () => {
-    try {
-      const pos = win.getPosition?.();
-      if (pos && pos[0] <= -30000 && pos[1] <= -30000) hideToTray("点最小化按钮");
-    } catch { /* 取不到位置就什么都不做 */ }
-  });
+  // ② 点最小化（−）：**什么都不做，交给系统**。
+  // 【2026-09-25 修正】这里以前监听 resize、看到位置变成 [-32000,-32000] 就 hide() 收进托盘 ——
+  // 于是最小化把任务栏图标也弄没了，用户以为程序关了（实测反馈）。
+  // [-32000,-32000] 只是 Windows 对"已最小化窗口"的坐标表示，最小化就该留在任务栏。
 
   // ③ 回到前台：复位提示
   win.addEventListener("focus", () => {
@@ -487,7 +474,7 @@ function attachMainWindowHandlers(win: DesktopWindow): void {
   // ④ 回程快捷键（DSH 界面里没有我们的按钮，托盘图标也可能被折叠进隐藏区）
   bindBackHotkey(backToButler);
 
-  // ⑤ 窗口图标：打包器不往 exe 里嵌图标，只能开窗后自己设一遍
+  // ④ 窗口图标：打包器不往 exe 里嵌图标，只能开窗后自己设一遍
   applyWindowIcon();
 
   // ⑤ 悬浮条的绑定是"每扇窗口一份"的：窗口重建之后必须重新绑定并重新注入，
