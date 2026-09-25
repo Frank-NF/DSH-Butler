@@ -479,9 +479,14 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       let updates: Record<string, { current: string; latest: string; outdated: boolean }> = {};
       if (sp.get("updates") !== "0") {
         try {
+          // 【2026-09-25 修】候选名单必须包含**所有已装插件**，不能只用目录里的 npm 名：
+          // 实测本机 15 个插件里有 6 个不在目录里（dsh-sidebar-qa、dsh-sidenote、dsh-server-deck、
+          // dsh-docs-panel、dsh-github-workbench，以及目录把它写成 dsh-web-ui#packages/dsh-skill-explorer
+          // 的那个）—— 而恰恰这 6 个里有真的有更新的。以前只查目录里能对上的 9 个，
+          // 于是「可更新」永远是 0，而 DSH 官方市场同时显示「有 3 个可更新」。
           updates = (await checkUpdates(
             installed,
-            loaded.catalog.plugins.map((x) => x.npm),
+            [...loaded.catalog.plugins.map((x) => x.npm), ...Object.keys(installed)],
           )).updates;
         } catch (e) {
           log.warn("api", `市场：查更新失败（不影响浏览）：${(e as Error).message}`);

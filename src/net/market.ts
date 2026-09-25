@@ -113,6 +113,9 @@ export interface MarketPage {
   stats: { total: number; matched: number; installed: number; outdated: number };
 }
 
+/** 目录未收录、但本机装了的插件，统一归到这个分类下（界面 chips 用）。 */
+export const LOCAL_CATEGORY = "local";
+
 /** 缓存文件路径。 */
 export function catalogCachePath(root: string = butlerRoot()): string {
   return p(root, "cache", "market-catalog.json");
@@ -278,6 +281,38 @@ export function queryCatalog(
     };
   });
 
+  // 【2026-09-25 修】目录不收录的已装插件也要出现在这里。
+  // 为什么必须补：更新检查是按「已装清单」做的，但界面上能显示更新的地方只有市场条目 ——
+  // 目录里没有这个插件，就算查出了新版本也没地方显示，用户看到的就是「可更新 0」
+  // （实测：本机 15 个装插件里 6 个不在目录里，其中有真的有新版本）。
+  const covered = new Set<string>();
+  for (const p of catalog.plugins) {
+    if (installed[p.npm] !== undefined) covered.add(p.npm);
+    if (installed[p.name] !== undefined) covered.add(p.name);
+  }
+  for (const key of Object.keys(installed)) {
+    if (covered.has(key)) continue;
+    const up = updates[key] ?? null;
+    entries.push({
+      name: key,
+      owner: "",
+      url: "",
+      page: "",
+      // 单独一类：界面 chips 里显示「本机已装（目录未收录）」，避免和目录分类混在一起
+      category: LOCAL_CATEGORY,
+      npm: key,
+      stars: 0,
+      downloads: 0,
+      install: "",
+      added: "",
+      description: { en: "", zh: "本机已装的插件，市场目录里没有收录" },
+      installedVersion: installed[key] ?? null,
+      installed: true,
+      latestVersion: up?.latest ?? null,
+      outdated: up?.outdated ?? false,
+    });
+  }
+
   // 分类维度：不管当前筛了哪个分类，都把整个目录的分类计数算出来（界面上的 chips 要用）
   const catCount = new Map<string, number>();
   for (const it of entries) {
@@ -286,7 +321,9 @@ export function queryCatalog(
   const categories: MarketFacet[] = [...catCount.entries()]
     .map(([key, count]) => ({
       key,
-      label: catalog.categories[key]?.zh ?? catalog.categories[key]?.en ?? key,
+      label: key === LOCAL_CATEGORY
+        ? "本机已装（目录未收录）"
+        : (catalog.categories[key]?.zh ?? catalog.categories[key]?.en ?? key),
       count,
     }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
