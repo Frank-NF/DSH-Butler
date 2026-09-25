@@ -84,6 +84,19 @@ const AUTH_COOKIE = "butler_token";
 export function createApiServer(opts: { token: string; port?: number }): ServerHandle {
   const token = opts.token;
 
+  // 【2026-09-25 审计 QUAL-02】Deno.serve 会优先采用环境变量 DENO_SERVE_ADDRESS，
+  // 而且它**覆盖**我们显式传的端口。本机实测：环境里残留 tcp:127.0.0.1:51424 时，
+  // --headless 想绑 8731 却去绑 51424，直接 EADDRINUSE 启动失败，报错完全不提这个变量；
+  // 连单元测试都会被它拖挂。管家从不希望自己跑在别人的端口上，所以这里直接摘掉并说明原因。
+  const serveOverride = Deno.env.get("DENO_SERVE_ADDRESS");
+  if (serveOverride) {
+    Deno.env.delete("DENO_SERVE_ADDRESS");
+    log.warn(
+      "api",
+      `检测到 DENO_SERVE_ADDRESS=${serveOverride}（它会覆盖监听端口，可能让启动因端口占用而失败）—— 已忽略它，按管家自己的端口启动`,
+    );
+  }
+
   function json(body: unknown, status = 200): Response {
     return new Response(JSON.stringify(body), {
       status,
@@ -113,6 +126,26 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     if (fromQuery === token) return true;
     // cookie 是桌面态的主通道 —— 见下方 AUTH_COOKIE 说明。
     return readCookie(req, AUTH_COOKIE) === token;
+  }
+
+  /**
+   * 只接受回环 Host。【安全 · 2026-09-25 审计 SEC-01】
+   *
+   * 只把服务绑在 127.0.0.1 是不够的：DNS rebinding 会让攻击者的域名解析到 127.0.0.1，
+   * 此时浏览器发出的请求**同源**（cookie、CORS 都拦不住），但 Host 头仍然是攻击者的域名。
+   * 校验 Host 就能把这一步直接掐掉 —— 浏览器一定是按 URL 里的主机名填 Host 的。
+   */
+  function isLoopbackHost(hostHeader: string | null): boolean {
+    if (!hostHeader) return false;
+    let h = hostHeader.trim().toLowerCase();
+    if (h.startsWith("[")) {
+      const end = h.indexOf("]");
+      h = end >= 0 ? h.slice(1, end) : h;
+    } else {
+      const colon = h.lastIndexOf(":");
+      if (colon >= 0) h = h.slice(0, colon);
+    }
+    return h === "127.0.0.1" || h === "localhost" || h === "::1";
   }
 
   /** 单任务的 SSE：先补一份当前快照，再持续推增量事件。 */
@@ -233,6 +266,15 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
   async function handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const path = url.pathname;
+
+    // 【安全 SEC-01】Host 白名单在**所有路由之前**：静态页、健康检查、接口一律先过这道门。
+    if (!isLoopbackHost(req.headers.get("host"))) {
+      log.warn("api", `拒绝非回环 Host 的请求：${req.headers.get("host")} ${path}`);
+      return json(
+        { ok: false, error: "拒绝非本机来源的请求：Host 必须是 127.0.0.1 或 localhost" },
+        403,
+      );
+    }
 
     if (path === "/healthz") {
       return json({ ok: true, app: APP_NAME, version: APP_VERSION });
@@ -638,6 +680,11 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
    * 任何一条响应都能完成"发牌"—— 窗口加载的 `/` 自然就拿到了。
    */
   function withSessionCookie(req: Request, res: Response): Response {
+    // 【安全 SEC-01】只有「请求本身已经证明它知道令牌」时才换发 cookie。
+    // 以前的写法是「任何缺少 cookie 的请求都补一个」—— 等于把令牌白送给任何能连上本机
+    // 端口的人（实测不带任何凭据 GET / 就能从响应头读到令牌），也让 DNS rebinding 拿到同源会话。
+    // 桌面态的启动流程不受影响：窗口是用 `/?t=<令牌>` 打开的，那一下就带着正确令牌。
+    if (!authed(req, new URL(req.url))) return res;
     if (readCookie(req, AUTH_COOKIE) === token) return res;
     const h = new Headers(res.headers);
     h.append("set-cookie", `${AUTH_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict`);

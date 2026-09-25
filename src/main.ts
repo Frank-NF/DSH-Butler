@@ -109,17 +109,10 @@ async function main(): Promise<void> {
 
   const appUrl = `${server.origin}/?t=${token}`;
 
-  // 【实测坑】环境里若有 DENO_SERVE_ADDRESS（deno desktop / 某些沙箱会设），
-  // Deno.serve 会拿它**覆盖**我们显式传的端口 —— 于是 --headless 的固定 8731 失效。
-  // 这属于 Deno 的既定行为，我们能做的是把它说清楚，别让"脚本连不上"变成悬案。
-  const serveAddrOverride = Deno.env.get("DENO_SERVE_ADDRESS");
-  if (headless && serveAddrOverride) {
-    log.warn(
-      "main",
-      `环境变量 DENO_SERVE_ADDRESS=${serveAddrOverride} 覆盖了 --headless 的固定端口 ` +
-        `${BUTLER_PORT_HEADLESS}（Deno 既定行为），实际地址以本行下面的"本地服务地址"为准`,
-    );
-  }
+  // 【实测坑 · 2026-09-25 审计 QUAL-02 已修】环境里若有 DENO_SERVE_ADDRESS（deno desktop /
+  // 某些沙箱会设），Deno.serve 会拿它覆盖我们显式传的端口 —— 于是 --headless 的固定 8731 失效，
+  // 甚至因端口被占而直接启动失败。现在这个变量在 createApiServer（真正 bind 的地方）里就被摘掉
+  // 并记一条 warn，单元测试也一并受保护，这里不再重复提示。
 
   log.info("main", `本地服务地址：${server.origin}`);
   if (interrupted.length > 0) {

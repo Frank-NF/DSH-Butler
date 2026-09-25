@@ -50,7 +50,7 @@
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding } from "../../util/result.ts";
-import { run } from "../../host/shell.ts";
+import { run, runCmd } from "../../host/shell.ts";
 import { isFile, moveSafe, pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
 import { butlerRoot, dshProfileDir, p, resolveDshSourceRoot, stampOf } from "../../util/paths.ts";
 import { DSH_PORT_CANDIDATES, DSH_PORT_DEFAULT, TIMEOUTS } from "../../version.ts";
@@ -294,10 +294,8 @@ function tail3(text: string): string {
 async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 注入检查必须先于 skip —— 否则 SKIP_PM_OPS 下失败注入永远轮不到
   if (pmSkipped()) return;
-  const r = await run(
-    "cmd",
+  const r = await runCmd(
     [
-      "/c",
       "npm",
       "install",
       spec,
@@ -326,10 +324,8 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
 async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 同 pmInstall：注入优先于 skip
   if (pmSkipped()) return;
-  const r = await run(
-    "cmd",
+  const r = await runCmd(
     [
-      "/c",
       "npm",
       "install",
       "--prefix",
@@ -366,10 +362,8 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
 async function pmUnlink(profileDir: string, name: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady();
   if (pmSkipped()) return;
-  const r = await run(
-    "cmd",
+  const r = await runCmd(
     [
-      "/c",
       "npm",
       "uninstall",
       name,
@@ -399,6 +393,17 @@ function validPkgName(name: string): boolean {
   if (name.includes("..") || name.includes("\\") || name.includes(":")) return false;
   if (name.startsWith("/") || name.startsWith(".")) return false;
   return /^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/.test(name);
+}
+
+/**
+ * 版本号白名单。【安全 · 2026-09-25 审计 SEC-02】
+ *
+ * 版本号会被拼成 `name@version` 再进 `cmd /c npm install`，而 cmd.exe 会二次解析参数：
+ * 实测 `left-pad@1.0.0&whoami` 真的把 whoami 执行了。所以这里只放行版本号真正需要的字符，
+ * 显式挡掉 & | < > % " 与空白 —— 宁可报「版本号不合法」，也不能把字符串交给 cmd。
+ */
+export function validVersion(v: string): boolean {
+  return /^[0-9A-Za-z][0-9A-Za-z.+\-_~*]{0,63}$/.test(v);
 }
 
 // ── 回滚共享（失败路径与启动恢复同一套代码，行为必然一致） ─────────
@@ -559,6 +564,21 @@ async function installPreflight(params: PluginInstallParams): Promise<Finding[]>
   const name = typeof params.name === "string" ? params.name.trim() : "";
   const out = commonProblems(name);
   if (out.length > 0) return out;
+
+  // 【安全 SEC-02】版本号在写前检查里就拦掉：它是唯一会进 cmd /c 的自由文本。
+  const rawVersion = typeof params.version === "string" ? params.version.trim() : "";
+  if (rawVersion && rawVersion !== "*" && !validVersion(rawVersion)) {
+    out.push(
+      finding("plugin.bad-version", "error", `版本号不合法：${rawVersion}`,
+        {
+          cause: "版本号只允许数字、字母与 . + - _ ~（最长 64 位），且不能以符号开头",
+          impact: "这个字符串会被送进 cmd /c 执行 npm，含 & | < > % 等字符时会被当成命令分隔符",
+          action: "填一个正常的版本号（如 3.26.5），或留空表示最新版",
+          evidence: [rawVersion],
+        }),
+    );
+    return out;
+  }
 
   const pkg = readJson<ProfilePkg>(profileManifestPath(dshProfileDir()));
   const deps = Object.keys(pkg?.dependencies ?? {});
@@ -800,6 +820,11 @@ async function runInstall(
   const version = typeof params.version === "string" && params.version.trim()
     ? params.version.trim()
     : "*";
+  // 【安全 SEC-02】兜底再查一次：preflight 已经拦过，但覆盖安装的第二段等路径也要过这里，
+  // 而它最终会进 cmd /c —— 不让任何调用方绕过闸口。
+  if (version !== "*" && !validVersion(version)) {
+    throw new Error(`版本号不合法：${version}（只允许数字、字母与 . + - _ ~，最长 64 位）`);
+  }
   const spec = version === "*" ? name : `${name}@${version}`;
 
   const profileDir = dshProfileDir();

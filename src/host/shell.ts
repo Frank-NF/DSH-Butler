@@ -278,6 +278,44 @@ export async function which(name: string): Promise<string | null> {
 }
 
 /**
+ * cmd.exe 特殊字符闸口。【安全 · 2026-09-25 审计 SEC-02】
+ *
+ * 为什么必须专门拦一次：`run("cmd", ["/c", ...])` 的参数最终由 cmd.exe 再解析一遍，
+ * 而 Windows 上 Deno(Rust std) 只在参数**含空格或制表符**时才加引号 —— 实测：
+ *   args ['/c','echo','left-pad@1.0.0&whoami'] → 真的执行了 whoami；
+ *   args ['/c','echo','x & whoami']            → 被引号化，原样输出。
+ * 也就是「不含空格的 & | < > % "」会原样落进 cmd，构成命令注入。
+ *
+ * 这里统一拒绝。注意**不拒绝 ^ 与 ~**：`包名@^1.0.0` 是合法 semver 范围，
+ * 而且 ^ 只能转义它后面那个字符 —— 真要注入仍必须带上被拒绝的 & | < > % "，
+ * 所以放行 ^ 不会留下绕过口子。
+ */
+const CMD_METACHARS = /[&|<>%"\r\n]/;
+
+export function assertSafeCmdArgs(args: readonly string[], what = "cmd 参数"): void {
+  for (const a of args) {
+    if (CMD_METACHARS.test(a)) {
+      throw new Error(
+        `${what}里出现了 cmd 特殊字符：${a} —— 已拒绝执行` +
+          `（& | < > % " 在 cmd.exe 里有特殊含义，会被当成命令分隔符或变量展开）`,
+      );
+    }
+  }
+}
+
+/**
+ * 走 cmd /c 执行并强制过闸口。
+ * 所有 `cmd /c` 调用都应该用它，而不是裸 `run("cmd", ...)` —— 闸口只有一处才守得住。
+ */
+export async function runCmd(
+  args: readonly string[],
+  options: RunOptions,
+): Promise<RunResult> {
+  assertSafeCmdArgs(args);
+  return await run("cmd", ["/c", ...args], options);
+}
+
+/**
  * 在【已知路径】上取版本号。
  *
  * 与 versionOf 的区别：不再做一次 locate。

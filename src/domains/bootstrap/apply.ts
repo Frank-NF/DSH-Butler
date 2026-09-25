@@ -100,6 +100,31 @@ async function bootstrapPreflight(params: BootstrapApplyParams): Promise<Finding
     }
   }
 
+  // 【安全 SEC-03 / SEC-04】地址与目标目录的硬校验。
+  // 这两项以前完全没把关：url 会被 git 当选项解析，root 则决定了「强制重装」要搬走哪个目录。
+  const rawUrl = params.url?.trim() ?? "";
+  if (rawUrl && !isSafeRepoUrl(rawUrl)) {
+    out.push(
+      finding("bootstrap.bad-url", "error", `源码地址不合法：${rawUrl}`, {
+        cause: "只允许 https:// 、ssh:// 或 git@主机:路径 三种写法",
+        impact: "别的取值会被 git 当成命令行选项（例如 --upload-pack），可能在本机执行任意程序",
+        action: "改成 https://github.com/... 这样的地址，或留空用默认仓库",
+        evidence: [rawUrl],
+      }),
+    );
+  }
+  const rootReason = badRootReason(root);
+  if (rootReason) {
+    out.push(
+      finding("bootstrap.bad-root", "error", `安装目录不合法：${root}`, {
+        cause: rootReason,
+        impact: "部署要往这个目录 clone 源码、必要时还会整体搬移它，路径不可信时风险很高",
+        action: "换一个普通的本地目录，例如 D:\\DeepSeek_Harness",
+        evidence: [root],
+      }),
+    );
+  }
+
   // 磁盘空间（按目标盘判）
   const disk = await diskSpace(root);
   if (disk && disk.freeBytes < BOOTSTRAP_ESTIMATES.diskBytes) {
@@ -145,6 +170,44 @@ async function bootstrapPreflight(params: BootstrapApplyParams): Promise<Finding
 
 function tailLines(text: string, n = 3): string[] {
   return text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-n);
+}
+
+/**
+ * 【安全 · 2026-09-25 审计 SEC-03】git 地址白名单。
+ *
+ * 这个 url 是作为位置参数交给 `git clone` 的，而 git 的选项解析允许它出现在那个位置 ——
+ * 形如 `--upload-pack=<命令>` 的取值会被 git 当成选项执行。只放行正常写法，堵掉这条路。
+ */
+export function isSafeRepoUrl(url: string): boolean {
+  return /^https:\/\/[^\s]+$/i.test(url) ||
+    /^ssh:\/\/[^\s]+$/i.test(url) ||
+    /^git@[A-Za-z0-9._-]+:[^\s]+$/.test(url);
+}
+
+/**
+ * 【安全 SEC-04】安装目标目录的基本约束。
+ *
+ * 这里**刻意不限制必须在用户目录下**：把 DSH 装到 D:\ 或 G:\ 是正常的用法
+ * （本机就是这么装的）。只挡掉最危险的几类：UNC 网络路径、盘根、系统目录本身、
+ * 以 - 开头的取值（会被当成命令选项）。真正的高危动作「强制重装会搬走整个目录」
+ * 另由 looksLikeDshSource() 兜住。
+ */
+export function badRootReason(root: string): string | null {
+  if (!root || !root.trim()) return "目标目录为空";
+  const r = root.trim();
+  if (r.startsWith("-")) return "不能以 - 开头（会被命令当成选项解析）";
+  if (/^\\\\/.test(r)) return "不支持 UNC 网络路径（\\\\主机\\共享）";
+  if (!/^[A-Za-z]:[\\/]/.test(r)) return "必须是绝对路径，例如 D:\\DSH";
+  if (/^[A-Za-z]:[\\/]?$/.test(r)) return "不能直接装在盘根目录";
+  if (/^[A-Za-z]:[\\/](Windows|Program Files|Program Files \(x86\)|ProgramData|Users)[\\/]?$/i.test(r)) {
+    return "不能直接装在 Windows 系统目录或用户根目录上";
+  }
+  return null;
+}
+
+/** 目标目录看起来确实是 DSH 源码吗（强制重装要搬走整个目录，必须先确认这一点）。 */
+export function looksLikeDshSource(root: string): boolean {
+  return isDir(p(root, "apps", "cli")) || isDir(p(root, "apps", "web"));
 }
 
 async function runBootstrap(
@@ -213,7 +276,15 @@ async function runBootstrap(
   mark("s2", BOOTSTRAP_STEPS[1], false);
 
   // 强制重装：旧目录先移进隔离区（不删除），再重新 clone
-  if (params.force && isDir(root) && isDir(p(root, ".git"))) {
+  // 【安全 SEC-04】只允许搬移「确实是 DSH 源码」的目录。以前只要目标是个 git 仓库就会被整体
+  // 移走 —— 等于给了外部一个「用任意路径触发」的高危破坏原语（实测报告里的 SEC-04）。
+  if (params.force && isDir(root) && isDir(p(root, ".git")) && !looksLikeDshSource(root)) {
+    throw new Error(
+      `拒绝强制重装：${root} 是 git 仓库，但里面没有 apps/cli，看起来不是 DSH 源码 —— ` +
+        `为避免误搬你的项目，请换目录，或先手动处理这个仓库`,
+    );
+  }
+  if (params.force && isDir(root) && isDir(p(root, ".git")) && looksLikeDshSource(root)) {
     const dest = p(quarantineStampDir(root, stampOf()), "replaced-by-bootstrap");
     ensureDir(dirname(dest));
     try {
@@ -293,7 +364,8 @@ async function runBootstrap(
         report.quarantineDir = dest;
       } catch { /* 还原失败也不能盖住原始错误 */ }
     });
-    const clone = await run("git", ["clone", "--depth", String(depth), url0, root], {
+    // `--` 终止选项解析：即使 url 里带了像选项的东西，也只会被当成仓库地址（SEC-03 的第二道保险）
+  const clone = await run("git", ["clone", "--depth", String(depth), "--", url0, root], {
       timeoutMs: 1_800_000,
       allowNonZero: true,
       scope: "git",
