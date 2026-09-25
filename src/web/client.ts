@@ -34,7 +34,7 @@ export const CLIENT_JS = `(function () {
     pendingPlan: null,
     logFilter: '',
     /** 插件市场：搜索词、分类、排序、状态筛选与页码（界面上切换时只改这里再重渲染）。 */
-    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false }
+    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [] }
   };
 
   // ── 基础工具 ─────────────────────────────────────────────────────
@@ -1074,15 +1074,26 @@ export const CLIENT_JS = `(function () {
 
   function marketRow(it) {
     var zh = it.description.zh || it.description.en || '';
-    var marks = it.installed
-      ? badge('ok', '已装 ' + (it.installedVersion || ''), '本机 profile 依赖清单里的版本')
-      : badge('plain', '未安装');
+    var marks = '';
+    if (it.installed) {
+      marks += badge('ok', '已装 ' + (it.installedVersion || ''), '本机 profile 依赖清单里的版本');
+      if (it.outdated && it.latestVersion) {
+        marks += badge('warn', '可更新 → ' + it.latestVersion, 'registry 上的最新版本是 ' + it.latestVersion);
+      } else if (it.latestVersion) {
+        marks += badge('plain', '已是最新');
+      }
+    } else {
+      marks += badge('plain', '未安装');
+    }
     var meta = [];
     if (it.stars) meta.push('★ ' + it.stars);
     if (it.downloads) meta.push('↓ ' + it.downloads);
     if (it.added) meta.push(it.added);
     var actions = '';
     if (it.installed) {
+      if (it.outdated && it.latestVersion) {
+        actions += writeBtn('upload', '更新到 ' + it.latestVersion, 'plugin.install', { name: it.npm, version: it.latestVersion });
+      }
       actions += writeBtn('trash', '卸载', 'plugin.uninstall', { name: it.npm }, 'sm danger');
     } else {
       actions += writeBtn('plus', '安装', 'plugin.install', { name: it.npm });
@@ -1091,13 +1102,77 @@ export const CLIENT_JS = `(function () {
     var linkBtn = link
       ? '<a class="btn sm" href="' + esc(link) + '" target="_blank" rel="noreferrer noopener">' + icon('external') + '<span>主页</span></a>'
       : '';
-    return '<div class="row"><div class="row-main">'
+    // 批量勾选只给"还没装"的：已装的那些在上面的按钮里单独处理，混在一起容易误操作
+    var pick = it.installed
+      ? '<span class="mkt-pick-space"></span>'
+      : '<label class="mkt-pick" title="勾选后可一次装多个"><input type="checkbox" data-market-pick="' + esc(it.npm) + '"'
+        + (state.market.picked.indexOf(it.npm) >= 0 ? ' checked' : '') + '></label>';
+    return '<div class="row mkt-row' + (it.installed ? ' is-installed' : '') + '">' + pick + '<div class="row-main">'
       + '<div class="row-name">' + esc(it.name)
       + '<span class="mkt-owner">' + esc(it.owner ? '@' + it.owner : '') + '</span></div>'
       + '<div class="row-meta">' + marks + (meta.length ? badge('plain', meta.join(' · ')) : '') + '</div>'
       + '<div class="mkt-desc">' + esc(zh) + '</div>'
       + (it.install ? '<div class="mkt-cmd" title="上游给的安装命令">' + esc(it.install) + '</div>' : '')
       + '</div><div class="row-actions">' + actions + linkBtn + '</div></div>';
+  }
+
+  // 批量安装：一个一个装，每个都有自己的回滚点与事务日志 —— 不发明"一次改一堆"的新写路径，
+  // 出问题时边界清楚：已经装好的留在那儿（各自可回滚），失败的那个停下等你处理。
+  function openBatchInstall() {
+    var picks = state.market.picked.slice();
+    if (!picks.length) { toast('先勾选要装的插件', 'warn'); return; }
+    var items = '';
+    for (var i = 0; i < picks.length; i++) items += '<li>' + esc(picks[i]) + '</li>';
+    openModal({
+      title: '批量安装 ' + picks.length + ' 个插件',
+      sub: '会一个接一个装：每个都先停服、建自己的回滚点、装完校验，再装下一个。中途失败就停在那里，'
+        + '已经装好的保持原样（各自都能回滚）。',
+      body: '<ul class="mkt-batch-list">' + items + '</ul>',
+      foot: '<button class="btn" id="modal-cancel">取消</button><span class="spacer"></span>'
+        + '<button class="btn primary" id="batch-go">开始安装</button>'
+    });
+    $('modal-cancel').addEventListener('click', closeModal);
+    $('batch-go').addEventListener('click', function () {
+      closeModal();
+      runBatch(picks);
+    });
+  }
+
+  function runBatch(names) {
+    var queue = names.slice();
+    var okCount = 0;
+    var total = queue.length;
+    function next() {
+      if (!queue.length) {
+        toast('批量安装完成：成功 ' + okCount + ' / ' + total + ' 个', okCount === total ? '' : 'warn');
+        state.market.picked = [];
+        state.cache = {};
+        go('market', true);
+        return;
+      }
+      var one = queue.shift();
+      toast('正在安装 ' + one + '（还剩 ' + queue.length + ' 个）', '');
+      runAction('plugin.install', { name: one }, '安装 ' + one)
+        .then(function () {
+          okCount++;
+          state.market.picked = state.market.picked.filter(function (n) { return n !== one; });
+          next();
+        })
+        .catch(function (e) {
+          toast(one + ' 安装失败，已停下（成功 ' + okCount + ' 个）：' + (e && e.message ? e.message : e), 'err');
+          state.cache = {};
+          go('market', true);
+        });
+    }
+    next();
+  }
+
+  function marketBatchBar(p) {
+    var n = state.market.picked.length;
+    if (!n) return '';
+    return '<div class="mkt-batch"><span>已选 <strong>' + n + '</strong> 个</span>'
+      + '<button class="btn sm primary" id="market-batch-go">' + icon('plus') + '<span>批量安装</span></button>'
+      + '<button class="btn sm" id="market-batch-clear">清空</button></div>';
   }
 
   function renderMarket(res) {
@@ -1115,6 +1190,7 @@ export const CLIENT_JS = `(function () {
       + stat('目录插件', p.total)
       + stat('当前筛出', p.matched)
       + stat('本机已装', res.installedCount, '来自本机 profile 的依赖清单')
+      + stat('可更新', res.outdatedCount || 0, res.outdatedCount ? '点「可更新」看是哪些' : '已装插件都是最新的')
       + stat('数据时间', res.cached ? '本地缓存' : '刚刚更新', res.cachedAt ? '缓存于 ' + res.cachedAt.slice(0, 16).replace('T', ' ') : '')
       + '</div>';
     if (res.note) html += '<div class="note-line">' + esc(res.note) + '</div>';
@@ -1133,11 +1209,14 @@ export const CLIENT_JS = `(function () {
       + '<button class="btn sm' + (m.state === 'all' ? ' on' : '') + '" data-market-state="all">全部</button>'
       + '<button class="btn sm' + (m.state === 'missing' ? ' on' : '') + '" data-market-state="missing">未安装</button>'
       + '<button class="btn sm' + (m.state === 'installed' ? ' on' : '') + '" data-market-state="installed">已安装</button>'
+      + '<button class="btn sm' + (m.state === 'outdated' ? ' on' : '') + '" data-market-state="outdated">可更新<span class="chip-n">' + (res.outdatedCount || 0) + '</span></button>'
       + '</span>'
       + '</div>' + marketChips(p) + '</div>';
 
     html += '<div class="card"><div class="card-title">插件列表<span class="sub">'
-      + p.matched + ' 个结果 · 第 ' + p.page + '/' + p.pages + ' 页</span></div>';
+      + p.matched + ' 个结果 · 第 ' + p.page + '/' + p.pages + ' 页</span>'
+      + '<button class="btn sm" id="market-pick-all">勾选本页未安装的</button>'
+      + '<span id="market-batch-slot">' + marketBatchBar(p) + '</span></div>';
     if (!p.items.length) {
       html += emptyBox('没有匹配的插件', '换个关键词，或点上面的「全部」清掉筛选。');
     } else {
@@ -1480,6 +1559,19 @@ export const CLIENT_JS = `(function () {
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
     if (hit('#btn-refresh') || hit('#btn-refresh-page')) { state.cache = {}; state.extra = {}; go(state.page, true); return; }
     if (hit('#btn-theme')) { toggleTheme(); return; }
+    if (hit('#market-pick-all')) {
+      if (state.cache.market) {
+        var pageItems = state.cache.market.page.items;
+        for (var pi = 0; pi < pageItems.length; pi++) {
+          if (pageItems[pi].installed) continue;
+          if (state.market.picked.indexOf(pageItems[pi].npm) < 0) state.market.picked.push(pageItems[pi].npm);
+        }
+      }
+      go('market', true);
+      return;
+    }
+    if (hit('#market-batch-go')) { openBatchInstall(); return; }
+    if (hit('#market-batch-clear')) { state.market.picked = []; go('market', true); return; }
     if (hit('#btn-market-refresh')) { state.market.force = true; state.market.page = 1; go('market', true); return; }
     if (hit('#market-search')) { state.market.q = ($('market-q') ? $('market-q').value : ''); state.market.page = 1; go('market', true); return; }
     var mcat = hit('[data-market-cat]');
@@ -1509,7 +1601,17 @@ export const CLIENT_JS = `(function () {
   });
 
   document.addEventListener('change', function (e) {
-    if (e.target && e.target.id === 'market-sort') { state.market.sort = e.target.value; state.market.page = 1; go('market', true); }
+    if (e.target && e.target.id === 'market-sort') { state.market.sort = e.target.value; state.market.page = 1; go('market', true); return; }
+    if (e.target && e.target.getAttribute && e.target.getAttribute('data-market-pick')) {
+      var pickedName = e.target.getAttribute('data-market-pick');
+      if (e.target.checked) {
+        if (state.market.picked.indexOf(pickedName) < 0) state.market.picked.push(pickedName);
+      } else {
+        state.market.picked = state.market.picked.filter(function (n) { return n !== pickedName; });
+      }
+      var slot = document.getElementById('market-batch-slot');
+      if (slot) slot.innerHTML = marketBatchBar();
+    }
   });
 
   document.addEventListener('input', function (e) {

@@ -74,7 +74,7 @@ export interface CatalogLoadFail {
 export type CatalogLoadResult = CatalogLoadOk | CatalogLoadFail;
 
 export type MarketSort = "stars" | "downloads" | "new" | "name";
-export type MarketStateFilter = "all" | "installed" | "missing";
+export type MarketStateFilter = "all" | "installed" | "missing" | "outdated";
 
 export interface MarketQuery {
   q?: string;
@@ -90,6 +90,10 @@ export interface MarketEntry extends MarketPlugin {
   /** 本机 profile 依赖清单里的版本，没装就是 null。 */
   installedVersion: string | null;
   installed: boolean;
+  /** registry 上的最新版本（没查或查不到就是 null）。 */
+  latestVersion: string | null;
+  /** 本机版本落后于 registry —— 界面上的"可更新"。 */
+  outdated: boolean;
 }
 
 export interface MarketFacet {
@@ -106,7 +110,7 @@ export interface MarketPage {
   pages: number;
   items: MarketEntry[];
   categories: MarketFacet[];
-  stats: { total: number; matched: number; installed: number };
+  stats: { total: number; matched: number; installed: number; outdated: number };
 }
 
 /** 缓存文件路径。 */
@@ -252,14 +256,23 @@ export function queryCatalog(
   catalog: MarketCatalog,
   query: MarketQuery,
   installed: Record<string, string> = {},
+  updates: Record<string, { current: string; latest: string; outdated: boolean }> = {},
 ): MarketPage {
   const pageSize = Math.min(Math.max(query.pageSize ?? 48, 1), 200);
   const wantInstalled = query.state === "installed";
   const wantMissing = query.state === "missing";
+  const wantOutdated = query.state === "outdated";
 
   const entries: MarketEntry[] = catalog.plugins.map((it) => {
     const ver = installed[it.npm] ?? installed[it.name] ?? null;
-    return { ...it, installedVersion: ver, installed: ver !== null };
+    const up = updates[it.npm] ?? updates[it.name] ?? null;
+    return {
+      ...it,
+      installedVersion: ver,
+      installed: ver !== null,
+      latestVersion: up?.latest ?? null,
+      outdated: up?.outdated ?? false,
+    };
   });
 
   // 分类维度：不管当前筛了哪个分类，都把整个目录的分类计数算出来（界面上的 chips 要用）
@@ -281,6 +294,7 @@ export function queryCatalog(
     if (query.category && it.category !== query.category) return false;
     if (wantInstalled && !it.installed) return false;
     if (wantMissing && it.installed) return false;
+    if (wantOutdated && !it.outdated) return false;
     if (terms.length) {
       const hay = `${it.name} ${it.npm} ${it.owner} ${it.description.zh} ${it.description.en}`
         .toLowerCase();
@@ -301,6 +315,7 @@ export function queryCatalog(
 
   const total = entries.length;
   const installedCount = entries.filter((it) => it.installed).length;
+  const outdatedCount = entries.filter((it) => it.outdated).length;
   const pages = Math.max(1, Math.ceil(matched.length / pageSize));
   const page = Math.min(Math.max(query.page ?? 1, 1), pages);
   const items = matched.slice((page - 1) * pageSize, page * pageSize);
@@ -313,6 +328,6 @@ export function queryCatalog(
     pages,
     items,
     categories,
-    stats: { total, matched: matched.length, installed: installedCount },
+    stats: { total, matched: matched.length, installed: installedCount, outdated: outdatedCount },
   };
 }

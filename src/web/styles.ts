@@ -435,4 +435,20 @@ button { cursor: pointer; }
 .mkt-cmd { margin-top: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-3); }
 .mkt-pager { display: flex; align-items: center; gap: 10px; justify-content: flex-end; padding-top: 12px; }
 .note-line { margin-top: 10px; color: var(--warn); font-size: 12.5px; }
+
+/* 市场行：左边一个勾选框列，右边动作区 */
+.mkt-row { align-items: flex-start; }
+.mkt-pick { flex: none; display: inline-flex; align-items: center; padding-top: 2px; }
+.mkt-pick input { width: 15px; height: 15px; accent-color: var(--brand-fill); cursor: pointer; }
+.mkt-pick-space { flex: none; width: 15px; }
+.mkt-row.is-installed { background: var(--surface-2); }
+
+/* 批量安装条：跟在列表标题那一行右侧 */
+.mkt-batch {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 6px 4px 12px; border-radius: 999px;
+  background: var(--brand-weak); color: var(--brand-text); font-size: 12.5px;
+}
+.mkt-batch strong { font-weight: 600; }
+.mkt-batch-list { margin: 0; padding-left: 18px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.9; }
 `.trim();

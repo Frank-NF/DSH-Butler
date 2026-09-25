@@ -28,6 +28,7 @@ import {
   type MarketStateFilter,
   queryCatalog,
 } from "../net/market.ts";
+import { checkUpdates } from "../net/npm-registry.ts";
 import { log } from "../util/log.ts";
 
 const nextTick = (fn: () => void) => {
@@ -279,19 +280,39 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         )
         ? (sortRaw as MarketSort)
         : "downloads";
-      const state: MarketStateFilter = (["all", "installed", "missing"] as const).includes(
-          stateRaw as MarketStateFilter,
-        )
-        ? (stateRaw as MarketStateFilter)
-        : "all";
-      const page = queryCatalog(loaded.catalog, {
-        q: sp.get("q") ?? "",
-        category: sp.get("cat") ?? "",
-        sort,
-        state,
-        page: Number(sp.get("page") ?? "1") || 1,
-        pageSize: Number(sp.get("size") ?? "48") || 48,
-      });
+      const state: MarketStateFilter =
+        (["all", "installed", "missing", "outdated"] as const).includes(
+            stateRaw as MarketStateFilter,
+          )
+          ? (stateRaw as MarketStateFilter)
+          : "all";
+      // 已装 ∩ 市场里的包，顺带问一下 registry 有没有新版本（内存里缓存 30 分钟）。
+      // 一般只有几个包，查完很快；查不到就当作"不提示更新"，绝不让市场页因此打不开。
+      let updates: Record<string, { current: string; latest: string; outdated: boolean }> = {};
+      if (sp.get("updates") !== "0") {
+        try {
+          updates = (await checkUpdates(
+            installed,
+            loaded.catalog.plugins.map((x) => x.npm),
+          )).updates;
+        } catch (e) {
+          log.warn("api", `市场：查更新失败（不影响浏览）：${(e as Error).message}`);
+        }
+      }
+
+      const page = queryCatalog(
+        loaded.catalog,
+        {
+          q: sp.get("q") ?? "",
+          category: sp.get("cat") ?? "",
+          sort,
+          state,
+          page: Number(sp.get("page") ?? "1") || 1,
+          pageSize: Number(sp.get("size") ?? "48") || 48,
+        },
+        installed,
+        updates,
+      );
 
       return json({
         ok: true,
@@ -302,6 +323,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         source: loaded.catalog.source,
         total: loaded.catalog.plugins.length,
         installedCount: Object.keys(installed).length,
+        outdatedCount: page.stats.outdated,
         page,
       });
     }
