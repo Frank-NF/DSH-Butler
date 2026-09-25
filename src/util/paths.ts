@@ -76,6 +76,15 @@ export function homeDir(): string {
 
 // ── 管家自己的目录 ────────────────────────────────────────────────
 
+/** 用户下载目录（不存在就退回用户主目录）—— 导出的日志/报告默认落这里。 */
+export function downloadsDir(): string {
+  const dl = p(homeDir(), "Downloads");
+  try {
+    if (Deno.statSync(dl).isDirectory) return dl;
+  } catch { /* 没有下载目录就用主目录 */ }
+  return homeDir();
+}
+
 export function butlerRoot(): string {
   return p(homeDir(), ".dsh-butler");
 }

@@ -12,8 +12,9 @@
     "lint": "deno lint src",
     "fmt": "deno fmt src",
     "test": "deno test -A",
-    "build": "deno desktop -A --compress --output ./dist/dsh-butler src/main.ts",
-    "build:plain": "deno desktop -A --output ./dist/dsh-butler src/main.ts"
+    "build": "deno desktop -A --compress --icon ./icons/icon.ico --output ./dist/dsh-butler src/main.ts && deno run -A scripts/embed-exe-icon.ts ./dist/dsh-butler/dsh-butler.exe ./icons/icon.ico",
+    "build:plain": "deno desktop -A --icon ./icons/icon.ico --output ./dist/dsh-butler src/main.ts && deno run -A scripts/embed-exe-icon.ts ./dist/dsh-butler/dsh-butler.exe ./icons/icon.ico",
+    "icon:exe": "deno run -A scripts/embed-exe-icon.ts ./dist/dsh-butler/dsh-butler.exe ./icons/icon.ico"
   },
   "desktop": {
     "app": {

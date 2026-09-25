@@ -42,6 +42,9 @@ export const INDEX_HTML = `<!doctype html>
       <span class="badge" id="badge-service"><span class="dot"></span><span>检测中</span></span>
       <button class="btn icon ghost" id="btn-theme" aria-label="切换深浅色" title="切换深浅色"></button>
       <button class="btn" id="btn-refresh">刷新</button>
+      <button class="btn primary" id="btn-enter-dsh" data-enter-dsh data-enter-label="进入 DSH">
+        <span>进入 DSH</span>
+      </button>
     </div>
   </header>
 

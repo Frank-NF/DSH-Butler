@@ -29,6 +29,8 @@ import {
   queryCatalog,
 } from "../net/market.ts";
 import { checkUpdates } from "../net/npm-registry.ts";
+import { collectLogs, readTail } from "../domains/runtime/logs.ts";
+import { downloadsDir, p } from "../util/paths.ts";
 import { log } from "../util/log.ts";
 
 const nextTick = (fn: () => void) => {
@@ -256,6 +258,53 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     // ── 只读快照 ──────────────────────────────────────────────
     if (req.method === "GET" && path === "/api/state/overview") {
       return json(await collectOverview(url.searchParams.get("force") === "1"));
+    }
+    // 导出日志：日志来源、错误摘录、最新一份日志的正文，拼成一个 txt 落到下载目录。
+    // 为什么不走浏览器下载：这是 WebView 窗口，"文件到底存哪了"必须说清楚 —— 直接把路径回给界面。
+    if (req.method === "POST" && path === "/api/logs/export") {
+      try {
+        const report = await collectLogs();
+        const out: string[] = [];
+        out.push("# DSH管家 日志导出");
+        out.push("导出时间：" + new Date().toLocaleString("zh-CN"));
+        out.push("产品版本：" + APP_NAME + " " + APP_VERSION);
+        out.push(
+          "日志来源：" + report.sources.length + " 份 · 合计 " +
+            (report.totalBytes / 1048576).toFixed(1) + " MB",
+        );
+        out.push("");
+        out.push("## 日志文件");
+        for (const src of report.sources) {
+          out.push(
+            "- " + src.label + "　" + (src.sizeBytes / 1024).toFixed(0) + " KB　" +
+              (src.mtime ?? "未知时间"),
+          );
+        }
+        out.push("");
+        out.push("## 错误摘录");
+        if (!report.recentErrors.length) out.push("（这次没发现明显错误）");
+        for (const hit of report.recentErrors) {
+          out.push("");
+          out.push("### " + hit.source + (hit.mtime ? "　" + hit.mtime : ""));
+          for (const l of hit.lines) out.push(l);
+        }
+        const newest = report.sources[0];
+        if (newest) {
+          out.push("");
+          out.push("## 最新一份日志全文（" + newest.label + "）");
+          out.push(newest.path);
+          out.push("");
+          const tail = readTail(newest.path, 20000);
+          for (const l of tail.lines) out.push(l);
+        }
+        const text = out.join("\n");
+        const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+        const target = p(downloadsDir(), "DSH管家-日志-" + stamp + ".txt");
+        Deno.writeTextFileSync(target, text);
+        return json({ ok: true, path: target, bytes: text.length, sources: report.sources.length });
+      } catch (e) {
+        return json({ ok: false, error: "导出失败：" + (e as Error).message }, 500);
+      }
     }
     // 插件市场目录：目录拉取与缓存、搜索/筛选/分页、"本机已装"标注全在服务端做，
     // 界面只负责画 —— 目录有 2000+ 条，不能让浏览器端着。

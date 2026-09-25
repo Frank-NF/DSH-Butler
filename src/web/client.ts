@@ -972,7 +972,8 @@ export const CLIENT_JS = `(function () {
 
   function renderLogs(r) {
     var kw = (state.logFilter || '').toLowerCase();
-    var html = pageHead('日志', '自动从最近的启动日志里挑出真正的错误行。');
+    var logTools = '<button class="btn sm" id="btn-export-logs">' + icon('upload') + '<span>导出日志</span></button>';
+    var html = pageHead('日志', '自动从最近的启动日志里挑出真正的错误行。', logTools);
     html += '<div class="card"><div class="card-title">过滤</div><input class="input" id="log-filter" placeholder="只看含这个关键词的行（例如 error / 端口 / 插件名）" value="' + esc(state.logFilter) + '" spellcheck="false"><div class="field-help">过滤只作用于下面已经挑出来的错误摘录，不会重新读盘。</div></div>';
     html += '<div class="card"><div class="card-title">日志文件<span class="sub">共 ' + r.sources.length + ' 份 · ' + humanSize(r.totalBytes) + '</span></div>';
     if (!r.sources.length) {
@@ -1167,6 +1168,45 @@ export const CLIENT_JS = `(function () {
     next();
   }
 
+  // 卡片视图：一屏能扫更多，适合"逛"；列表视图信息更全，适合"挑"。
+  function marketCard(it) {
+    var zh = it.description.zh || it.description.en || '';
+    var marks = '';
+    if (it.installed) {
+      marks += badge('ok', '已装 ' + (it.installedVersion || ''));
+      if (it.outdated && it.latestVersion) marks += badge('warn', '可更新 → ' + it.latestVersion);
+    } else {
+      marks += badge('plain', '未安装');
+    }
+    var meta = [];
+    if (it.stars) meta.push('★ ' + it.stars);
+    if (it.downloads) meta.push('↓ ' + it.downloads);
+    var actions = '';
+    if (it.installed) {
+      if (it.outdated && it.latestVersion) {
+        actions += writeBtn('upload', '更新', 'plugin.install', { name: it.npm, version: it.latestVersion });
+      }
+      actions += writeBtn('trash', '卸载', 'plugin.uninstall', { name: it.npm }, 'sm danger');
+    } else {
+      actions += writeBtn('plus', '安装', 'plugin.install', { name: it.npm });
+    }
+    var link = it.page || it.url;
+    var pick = it.installed
+      ? ''
+      : '<input type="checkbox" data-market-pick="' + esc(it.npm) + '"'
+        + (state.market.picked.indexOf(it.npm) >= 0 ? ' checked' : '') + '>';
+    return '<div class="mkt-card' + (it.installed ? ' is-installed' : '') + '">'
+      + '<div class="mkt-card-head"><label class="mkt-pick" title="勾选后可一次装多个">' + pick + '</label>'
+      + '<div class="mkt-card-title"><div class="row-name">' + esc(it.name) + '</div>'
+      + '<div class="mkt-owner">' + esc(it.owner ? '@' + it.owner : '') + '</div></div></div>'
+      + '<div class="row-meta">' + marks + '</div>'
+      + '<div class="mkt-desc">' + esc(zh) + '</div>'
+      + (meta.length ? '<div class="mkt-card-meta">' + esc(meta.join(' · ')) + '</div>' : '')
+      + '<div class="mkt-card-actions">' + actions
+      + (link ? '<a class="btn sm" href="' + esc(link) + '" target="_blank" rel="noreferrer noopener">' + icon('external') + '<span>主页</span></a>' : '')
+      + '</div></div>';
+  }
+
   function marketBatchBar(p) {
     var n = state.market.picked.length;
     if (!n) return '';
@@ -1206,6 +1246,9 @@ export const CLIENT_JS = `(function () {
       + '<option value="name"' + (m.sort === 'name' ? ' selected' : '') + '>按名字</option>'
       + '</select>'
       + '<span class="seg">'
+      + '<button class="btn sm' + (m.view === 'list' ? ' on' : '') + '" data-market-view="list" title="列表视图">列表</button>'
+      + '<button class="btn sm' + (m.view === 'card' ? ' on' : '') + '" data-market-view="card" title="卡片视图">卡片</button>'
+      + '</span>'
       + '<button class="btn sm' + (m.state === 'all' ? ' on' : '') + '" data-market-state="all">全部</button>'
       + '<button class="btn sm' + (m.state === 'missing' ? ' on' : '') + '" data-market-state="missing">未安装</button>'
       + '<button class="btn sm' + (m.state === 'installed' ? ' on' : '') + '" data-market-state="installed">已安装</button>'
@@ -1217,17 +1260,21 @@ export const CLIENT_JS = `(function () {
       + p.matched + ' 个结果 · 第 ' + p.page + '/' + p.pages + ' 页</span>'
       + '<button class="btn sm" id="market-pick-all">勾选本页未安装的</button>'
       + '<span id="market-batch-slot">' + marketBatchBar(p) + '</span></div>';
+    var pagerHtml = '<div class="mkt-pager">'
+      + '<button class="btn sm" data-market-page="' + (p.page - 1) + '"' + (p.page <= 1 ? ' disabled' : '') + '>上一页</button>'
+      + '<span class="muted">第 ' + p.page + ' / ' + p.pages + ' 页</span>'
+      + '<button class="btn sm" data-market-page="' + (p.page + 1) + '"' + (p.page >= p.pages ? ' disabled' : '') + '>下一页</button>'
+      + '</div>';
     if (!p.items.length) {
       html += emptyBox('没有匹配的插件', '换个关键词，或点上面的「全部」清掉筛选。');
+    } else if (m.view === 'card') {
+      html += '<div class="mkt-cards">';
+      for (var ci = 0; ci < p.items.length; ci++) html += marketCard(p.items[ci]);
+      html += '</div>' + pagerHtml;
     } else {
       html += '<div class="rows">';
       for (var i = 0; i < p.items.length; i++) html += marketRow(p.items[i]);
-      html += '</div>';
-      html += '<div class="mkt-pager">'
-        + '<button class="btn sm" data-market-page="' + (p.page - 1) + '"' + (p.page <= 1 ? ' disabled' : '') + '>上一页</button>'
-        + '<span class="muted">第 ' + p.page + ' / ' + p.pages + ' 页</span>'
-        + '<button class="btn sm" data-market-page="' + (p.page + 1) + '"' + (p.page >= p.pages ? ' disabled' : '') + '>下一页</button>'
-        + '</div>';
+      html += '</div>' + pagerHtml;
     }
     html += '</div>';
     return html;
@@ -1482,6 +1529,11 @@ export const CLIENT_JS = `(function () {
     { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' }
   ];
 
+  try {
+    var savedView = localStorage.getItem('dsh-butler-market-view');
+    if (savedView === 'card' || savedView === 'list') state.market.view = savedView;
+  } catch (e) { /* 忽略 */ }
+
   function pageById(id) {
     for (var i = 0; i < PAGES.length; i++) if (PAGES[i].id === id) return PAGES[i];
     return null;
@@ -1570,6 +1622,13 @@ export const CLIENT_JS = `(function () {
       go('market', true);
       return;
     }
+    var mview = hit('[data-market-view]');
+    if (mview) {
+      state.market.view = mview.getAttribute('data-market-view') || 'list';
+      try { localStorage.setItem('dsh-butler-market-view', state.market.view); } catch (e) { /* 忽略 */ }
+      go('market', true);
+      return;
+    }
     if (hit('#market-batch-go')) { openBatchInstall(); return; }
     if (hit('#market-batch-clear')) { state.market.picked = []; go('market', true); return; }
     if (hit('#btn-market-refresh')) { state.market.force = true; state.market.page = 1; go('market', true); return; }
@@ -1581,6 +1640,14 @@ export const CLIENT_JS = `(function () {
     var mpg = hit('[data-market-page]');
     if (mpg) { state.market.page = parseInt(mpg.getAttribute('data-market-page'), 10) || 1; go('market', true); return; }
     if (hit('#btn-cancel')) { cancelJob(); return; }
+    if (hit('#btn-export-logs')) {
+      toast('正在打包日志…', '');
+      api('/api/logs/export', { method: 'POST' }).then(function (r) {
+        if (r && r.ok) toast('日志已导出：' + r.path, '');
+        else toast((r && r.error) || '导出失败', 'err');
+      }).catch(function (e) { toast('导出失败：' + (e && e.message ? e.message : e), 'err'); });
+      return;
+    }
     if (hit('#btn-copy-report')) { copyReport(); return; }
     if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
     if (hit('[data-enter-dsh]')) { enterDsh(hit('[data-enter-dsh]')); return; }

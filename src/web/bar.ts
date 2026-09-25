@@ -147,11 +147,42 @@ export const BUTLER_BAR_JS = `(function () {
     });
   }
 
+  // ── 展开后闲置 3 秒自动收起 ────────────────────────────────────────
+  // 需求：点开之后 3 秒没有动作、且鼠标不在展开条上，就自己收起来。
+  // 鼠标一旦停在上面就不收（否则正要点按钮时它自己没了）；鼠标离开重新计时。
+  var idleTimer = null;
+  var hovering = false;
+  function armAutoCollapse() {
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    idleTimer = setTimeout(function () {
+      idleTimer = null;
+      if (host.getAttribute('data-state') !== 'expanded') return;
+      if (hovering) return;
+      setCollapsed(true);
+    }, 3000);
+  }
+  host.addEventListener('mouseenter', function () {
+    hovering = true;
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+  });
+  host.addEventListener('mouseleave', function () {
+    hovering = false;
+    armAutoCollapse();
+  });
+  // 点任何按钮、或用键盘操作，都算"有动作"，重新计时
+  host.addEventListener('click', function () { armAutoCollapse(); });
+  host.addEventListener('keydown', function () { armAutoCollapse(); });
+
   function setCollapsed(collapsed) {
     host.setAttribute('data-state', collapsed ? 'collapsed' : 'expanded');
     $('dbb-pill').className = collapsed ? 'dbb-pill dbb-hide' : 'dbb-pill';
     $('dbb-mini').className = collapsed ? 'dbb-mini' : 'dbb-mini dbb-hide';
     try { localStorage.setItem('dsh-butler-dock', collapsed ? 'collapsed' : 'expanded'); } catch (e) { /* 忽略 */ }
+    if (collapsed) {
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+    } else {
+      armAutoCollapse();
+    }
   }
   $('dbb-back').addEventListener('click', function () { call('back'); });
   // 标志图是 data URI：万一 DSH 页面的 CSP 不让加载，就把小方片藏掉，按钮只剩"管家"两个字
