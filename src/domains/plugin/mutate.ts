@@ -277,7 +277,20 @@ function tail3(text: string): string {
   return lines.slice(-3).join(" / ") || "无输出";
 }
 
-/** npm install <spec> --prefix <profile>。经 cmd /c 调起（Windows 的 npm 是 .cmd）。 */
+/**
+ * npm install <spec> --prefix <profile>。经 cmd /c 调起（Windows 的 npm 是 .cmd）。
+ *
+ * 【三处 npm 调用都带 --legacy-peer-deps，原因（2026-09-25 实测）】
+ * profile 里的第三方插件互相之间就有 peer 版本冲突：
+ *   dsh-context@0.55.0 要 @deepseek-ai/dsh-scope@^0.1.2-rc.1，
+ *   而 @dhicoc/dsh-reverse-skill 这条链要的是 ^0.0.1-rc.1。
+ * npm 7+ 默认严格校验 peer，一冲突就整树拒绝（ERESOLVE）——
+ * 连 --dry-run 都过不去，于是安装 / 卸载 / 同步依赖锁全被挡。
+ * 用户实测：卸载 @liustack/modlens 直接报「依赖锁同步失败（退出码 1）」并回滚。
+ * 这棵树本来就是按宽松语义装好、且 14 个插件正在跑的，npm 自己在报错里
+ * 给的建议也正是这个参数；加上后实测 install「up to date in 5s」、
+ * uninstall「removed 3 packages in 780ms」，都是 EXIT=0。
+ */
 async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 注入检查必须先于 skip —— 否则 SKIP_PM_OPS 下失败注入永远轮不到
   if (pmSkipped()) return;
@@ -294,6 +307,8 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
       "--no-fund",
       // 优先用本地 npm 缓存：重复安装/更新时能省掉大部分网络等待（实测最明显的一档）
       "--prefer-offline",
+      // 见上方 pmInstall 的注释：profile 里有 peer 版本冲突，严格模式整树拒绝（ERESOLVE）
+      "--legacy-peer-deps",
       "--loglevel",
       "error",
     ],
@@ -323,6 +338,8 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
       "--no-fund",
       // 优先用本地 npm 缓存：重复安装/更新时能省掉大部分网络等待（实测最明显的一档）
       "--prefer-offline",
+      // 见 pmInstall 的注释：不加这个，ERESOLVE 会把整棵树拒绝掉（全量重算必挂）
+      "--legacy-peer-deps",
       "--loglevel",
       "error",
     ],
@@ -333,6 +350,44 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
       ? `超过 ${Math.round(TIMEOUTS.install / 60_000)} 分钟未结束`
       : `退出码 ${r.code}`;
     throw new Error(`依赖锁同步失败（${why}）：${tail3(r.stderr || r.stdout)}`);
+  }
+}
+
+/**
+ * 卸载后定向摘除包（比全量 install 快一个数量级）。
+ *
+ * 为什么不用 pmSync 的全量 install：那一步要按 package.json 解析整棵依赖树
+ * （本机 profile 15 个依赖、没有 lock 文件），无缓存命中时要 10 分钟以上 ——
+ * 用户实测「卸载一直卡在同步依赖锁」。卸载只摘走一个包，npm uninstall <name>
+ * 是定向操作：秒级完成、不联网解析全树。
+ * 加 --no-package-lock：该 profile 没维护 lock 文件，重新生成一份大 lock
+ * 只是把用户没要过的东西写进盘上。失败时抛错，调用方退回全量 pmSync 兜底。
+ */
+async function pmUnlink(profileDir: string, name: string, signal?: AbortSignal): Promise<void> {
+  pmEnvReady();
+  if (pmSkipped()) return;
+  const r = await run(
+    "cmd",
+    [
+      "/c",
+      "npm",
+      "uninstall",
+      name,
+      "--prefix",
+      profileDir,
+      "--no-audit",
+      "--no-fund",
+      "--no-package-lock",
+      // 见 pmInstall 的注释：定向摘除也要重算这棵树，缺它同样被 ERESOLVE 挡下
+      "--legacy-peer-deps",
+      "--loglevel",
+      "error",
+    ],
+    { timeoutMs: 180_000, allowNonZero: true, scope: "plugin", signal },
+  );
+  if (r.code !== 0 || r.timedOut) {
+    const why = r.timedOut ? "超过 3 分钟未结束" : `退出码 ${r.code}`;
+    throw new Error(`npm 定向移除失败（${why}）：${tail3(r.stderr || r.stdout)}`);
   }
 }
 
@@ -431,7 +486,7 @@ export const UNINSTALL_STEPS = [
   "创建回滚点并登记事务日志",
   "从双名单移除（先摘清单）",
   "把插件目录移入隔离区",
-  "同步依赖锁（npm）",
+  "清理依赖（定向移除，必要时全量重算）",
   "校验卸载结果",
   "提交事务并重启服务",
 ] as const;
@@ -994,14 +1049,25 @@ async function runUninstall(
     }
     ctx.throwIfCancelled();
 
-    // ── s5 同步依赖锁（按摘除后的清单重算） ──
+    // ── s5 同步依赖锁（先定向摘除，失败再退回全量重算） ──
+    // 定向 npm uninstall 只摘走这一个包（秒级）；全量 install 要按 package.json
+    // 解析整棵依赖树（15+ 依赖、无 lock 文件时 10 分钟起），只在定向失败时兜底。
     ctx.step("s5", UNINSTALL_STEPS[4]);
     ctx.progress(0.7);
+    ctx.detail(`移除 ${name}（定向，通常几秒）`);
     if (pmSkipped() && !pmFailInjected()) {
       line("同步依赖锁：隔离模式跳过 npm");
     } else {
-      await pmSync(profileDir, ctx.signal);
-      line("同步依赖锁：完成");
+      try {
+        await pmUnlink(profileDir, name, ctx.signal);
+        line(`依赖清理：定向移除 ${name} 完成（秒级）`);
+      } catch (e) {
+        ctx.throwIfCancelled();
+        ctx.detail(`定向移除失败，退回全量重算（较慢，最多 15 分钟）：${(e as Error).message}`);
+        line(`依赖清理：定向移除失败（${(e as Error).message}），退回全量重算`);
+        await pmSync(profileDir, ctx.signal);
+        line("依赖清理：全量重算完成");
+      }
     }
     ctx.throwIfCancelled();
 

@@ -136,7 +136,7 @@ button { cursor: pointer; }
 
 .body { display: grid; grid-template-columns: var(--sidebar-w) 1fr; min-height: 0; }
 
-.nav { padding: 12px 10px 20px; border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+.nav { padding: 12px 10px 20px; border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; display: flex; flex-direction: column; }
 .nav-group { padding: 12px 10px 6px; font-size: 12px; font-weight: 600; color: var(--text-3); letter-spacing: .03em; }
 .nav-item {
   display: flex; align-items: center; gap: 9px;
@@ -149,7 +149,10 @@ button { cursor: pointer; }
 .nav-item:hover { background: var(--surface-2); color: var(--text); }
 .nav-item.active { background: var(--brand-weak); color: var(--brand-text); font-weight: 500; }
 .nav-item .nav-count { margin-left: auto; font-size: 12px; color: var(--text-3); }
-.nav-foot { margin-top: 16px; padding: 10px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; line-height: 1.55; }
+/* 侧栏「DSH 本体」的更新徽标：有新版才亮，用警示色区别于普通计数 */
+.nav-count.warn { color: var(--warn); font-weight: 600; }
+/* 侧栏页脚：钉在左下角（margin-top:auto 把它推到最底），内容左对齐 */
+.nav-foot { margin-top: auto; padding: 10px 0 0; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; line-height: 1.55; }
 
 .main { overflow-y: auto; padding: 22px 26px 96px; }
 .wrap { max-width: 1040px; }
@@ -451,6 +454,76 @@ button { cursor: pointer; }
 }
 .mkt-batch strong { font-weight: 600; }
 .mkt-batch-list { margin: 0; padding-left: 18px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.9; }
+
+/* ① 卡片视图：网格布局（一行 3 列，窄窗 2 列）—— 此前卡片类全无样式，塌成竖排裸块 */
+.mkt-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+@media (max-width: 1100px) { .mkt-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mkt-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+.mkt-card.is-installed { background: var(--surface-2); }
+.mkt-card-head { display: flex; align-items: flex-start; gap: 8px; }
+.mkt-card-title { min-width: 0; }
+.mkt-card-title .row-name { font-size: 13.5px; font-weight: 500; }
+.mkt-card .row-meta { margin-top: 0; }
+.mkt-card .mkt-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.mkt-card-meta { color: var(--text-3); font-size: 12px; }
+.mkt-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+/* ② 视图切换：列表/卡片两个小图标，放「插件列表」标题行最右侧 */
+.card-title .mkt-batch { margin-left: 0; } /* 标题行里的批量条不再自己撑开，位置交给 .spacer */
+.mkt-view-toggle { margin-left: 10px; }
+.mkt-view-toggle .btn.icon { width: 28px; height: 26px; }
+
+/* nav-foot：官网链接 + 使用小技巧 + 底部设置按钮（⑥⑨⑩） */
+.nav-foot { display: flex; flex-direction: column; gap: 8px; }
+.nav-link {
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.nav-link:hover { color: var(--brand-text); }
+.nav-foot .nav-link, .nav-foot .nav-tip { padding-left: 10px; }
+.nav-tip {
+  font-size: 12px;
+  color: var(--text-3);
+  line-height: 1.55;
+  cursor: pointer;
+  user-select: none;
+  min-height: 18px;
+}
+.nav-tip:hover { color: var(--text-2); }
+/* 设置按钮：钉在左下角，文字与左边缘都和上面的导航项对齐（不居中） */
+.nav-settings { width: 100%; justify-content: flex-start; padding: 0 10px; }
+
+/* 阶段标签（⑨）：DOM 里保留 STAGE_LABEL 作为唯一来源（version_test 依赖），但不向用户展示 */
+.nav-stage { display: none; }
 
 /* ── 设置页 ─────────────────────────────────────────────────────── */
 

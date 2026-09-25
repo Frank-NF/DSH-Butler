@@ -33,6 +33,7 @@ import { collectLogs, readTail } from "../domains/runtime/logs.ts";
 import { butlerConfigPath, downloadsDir, p } from "../util/paths.ts";
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
+import { collectCoreChangelog } from "../domains/core/status.ts";
 import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
 import { log } from "../util/log.ts";
 
@@ -349,6 +350,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         "autoCheckUpdates",
         "backupBeforeUpdate",
         "autostart",
+        "onboardingDone", // 首次使用提示完成标记（客户端弹窗点「知道了」后置 true）
       ] as const;
       for (const k of bools) {
         if (typeof body[k] === "boolean") patch[k] = body[k];
@@ -555,6 +557,13 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         force: url.searchParams.get("force") === "1",
       });
       return json(info);
+    }
+
+    // ③ 本体更新日志：源码仓库最近 N 条提交（只读；未安装本体时给空态）
+    if (req.method === "GET" && path === "/api/changelog") {
+      const limit = Number(url.searchParams.get("limit") ?? 20);
+      const n = Number.isFinite(limit) ? Math.min(Math.max(Math.round(limit), 5), 50) : 20;
+      return json(await collectCoreChangelog(n));
     }
     if (req.method === "GET" && path === "/api/shell/state") {
       const state = await collectShellState().catch(() => null);

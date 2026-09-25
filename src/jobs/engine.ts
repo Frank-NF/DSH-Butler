@@ -89,9 +89,11 @@ export class JobEngine {
       const holder = this.#locks.get(def.domain);
       if (holder) {
         const h = this.#jobs.get(holder);
+        const step = h?.steps.find((s) => s.status === 'running' || s.status === 'pending');
+        const stepHint = step ? `（正在「${step.title}」）` : '';
         return {
           ok: false,
-          error: `${def.title}需要独占执行，但「${h?.actionTitle ?? holder}」正在进行中`,
+          error: `${def.title}需要独占执行，但「${h?.actionTitle ?? holder}」正在进行中${stepHint} —— 去「任务」页看进度，或取消它后再试`,
         };
       }
     }

@@ -7,18 +7,18 @@
  * 侧栏条目、弹窗内容、任务条内容都由 client.ts 动态填充，这里只留骨架与锚点。
  */
 
-import { STAGE_LABEL, UI_WRITE_ENABLED } from "../version.ts";
+import { NAV_TIPS, OFFICIAL_SITE, STAGE_LABEL } from "../version.ts";
+
+/** 侧栏底部官网链接（需求 10：加入官网地址入口；地址统一来自 version.ts）。 */
+const OFFICIAL_SITE_URL = OFFICIAL_SITE;
 
 /**
- * 侧栏底部那行提示语。
- *
- * 单独抽出来，是因为它必须跟着版本阶段常量走：写死「只读版本（S1）」会与启动日志、
- * 总览接口对不上。用拼接而不是把变量塞进 INDEX_HTML —— 后者是原样注入的模板串，
- * 里面不能出现 ${（会连同表达式一起注进 HTML）。
+ * 阶段标签（⑨）：只检测/写开放这类开发阶段说明不再向普通用户展示，
+ * 但 version_test 钉住「界面必须引用 STAGE_LABEL 这一唯一来源」——
+ * 所以在 nav-foot 里保留一个 display:none 的 <span class="nav-stage">，
+ * DOM 有值（测试可验证单一来源），界面上看不到（用户只看使用小技巧）。
  */
-const NAV_HINT = UI_WRITE_ENABLED
-  ? `${STAGE_LABEL}：写操作已开放，动手前会先把计划摊给你确认。`
-  : `${STAGE_LABEL}：界面上只检测、不修改；写操作目前只在命令行可用。`;
+const NAV_STAGE = STAGE_LABEL;
 
 export const INDEX_HTML = `<!doctype html>
 <html lang="zh-CN" data-theme="light">
@@ -27,6 +27,7 @@ export const INDEX_HTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DSH Butler</title>
 <link rel="stylesheet" href="/style.css">
+<script>window.__NAV_TIPS__ = ${JSON.stringify(NAV_TIPS)};</script>
 </head>
 <body>
 <div class="app">
@@ -51,7 +52,12 @@ export const INDEX_HTML = `<!doctype html>
   <div class="body">
     <nav class="nav" aria-label="主导航">
       <div id="nav-items"></div>
-      <div class="nav-foot">` + NAV_HINT + `</div>
+      <div class="nav-foot">
+        <span class="nav-stage" aria-hidden="true">${NAV_STAGE}</span>
+        <a class="nav-link" href="${OFFICIAL_SITE_URL}" target="_blank" rel="noreferrer noopener">DSH 官网</a>
+        <div class="nav-tip" id="nav-tip" title="点一下换一条"></div>
+        <button class="btn sm nav-settings" data-page="settings" aria-label="打开设置">设置</button>
+      </div>
     </nav>
     <main class="main" id="main" tabindex="-1"></main>
   </div>

@@ -34,7 +34,7 @@ export const CLIENT_JS = `(function () {
     pendingPlan: null,
     logFilter: '',
     /** 插件市场：搜索词、分类、排序、状态筛选与页码（界面上切换时只改这里再重渲染）。 */
-    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [] }
+    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [], view: 'list' }
   };
 
   // ── 基础工具 ─────────────────────────────────────────────────────
@@ -374,7 +374,34 @@ export const CLIENT_JS = `(function () {
         // 记下正在跑的任务：进度条上的「取消」按钮靠它才能找到要取消谁。
         state.job = res.jobId;
         return waitJob(res.jobId, title);
+      })
+      .catch(function (e) {
+        // ④ 同域互斥（典型：卸载在跑时又去装/卸）—— 错误文案已带当前步骤，
+        // 这里再引导一次：进度条就显示那个任务，别傻等。
+        var msg = e && e.message ? e.message : String(e);
+        if (msg.indexOf('正在进行中') >= 0) {
+          toast(msg, 'warn');
+          adoptRunningJob();
+        }
+        throw e;
       });
+  }
+
+  // ④ 后台还有任务在跑时（窗口刚打开 / 切页回来 / 任务页重渲染），把进度条挂回去：
+  // 拉一次任务列表找 running/queued 的，重新订阅它的 SSE 并显示当前步骤链。
+  function adoptRunningJob() {
+    if (state.job) return; // 自己发起的还在跟踪
+    api('/api/jobs?limit=50').then(function (list) {
+      var running = null;
+      for (var i = 0; i < (list || []).length; i++) {
+        if (list[i].status === 'running' || list[i].status === 'queued') { running = list[i]; break; }
+      }
+      if (!running) return;
+      state.job = running.id;
+      waitJob(running.id, running.actionTitle || '任务进行中').then(function () {
+        state.cache = {}; // 结果落地了：缓存作废，回到页面时重新取
+      }, function () { /* 任务失败：错误已经由各弹窗报告过，这里不再重复 */ });
+    }).catch(function () { /* 拉不到任务列表就不打扰 */ });
   }
 
   function cancelJob() {
@@ -423,10 +450,23 @@ export const CLIENT_JS = `(function () {
     $('modal-close').addEventListener('click', closeModal);
   }
 
-  function confirmPlan(plan, danger) {
+  /**
+   * extras.action === 'plugin.install'，且错误级问题【只有】「插件已安装」时，
+   * 弹窗额外给一个「卸载并安装」按钮（resolve('reinstall')）。
+   * 用户点更新/安装就是想换成目标版本，被拦下后还得自己先去卸载再回来点一次，
+   * 属于白跑一趟 —— 既然建议写的就是「先卸载再装」，那就直接给他一键做掉。
+   */
+  function confirmPlan(plan, danger, extras) {
+    extras = extras || {};
     return new Promise(function (resolve) {
       var findings = plan.findings || [];
       var errors = findings.filter(function (f) { return f.severity === 'error'; });
+      var onlyInstalled = errors.length > 0;
+      for (var ei = 0; ei < errors.length; ei++) {
+        if (errors[ei].id !== 'plugin.already-installed') onlyInstalled = false;
+      }
+      var canReinstall = onlyInstalled && extras.action === 'plugin.install' &&
+        !!extras.params && !!extras.params.name;
       var steps = plan.steps || [];
       var body = '';
       if (steps.length) {
@@ -443,13 +483,19 @@ export const CLIENT_JS = `(function () {
       }
       var blocked = errors.length > 0;
       if (blocked) {
-        body += '<div class="gate-note">有 ' + errors.length + ' 项错误级问题，执行入口已阻止。请先按「建议」处理后再来。</div>';
+        body += '<div class="gate-note">有 ' + errors.length + ' 项错误级问题，执行入口已阻止。'
+          + (canReinstall
+            ? '这一条是「已经装过」—— 直接点右下角「卸载并安装」，会先卸载、再按上面的步骤装回来。'
+            : '请先按「建议」处理后再来。')
+          + '</div>';
       } else {
         body += '<div style="height:14px"></div>';
         body += '<label class="check"><input type="checkbox" id="plan-ack"><span>我已了解上述步骤与影响，确认现在执行。</span></label>';
       }
       var foot = '<button class="btn" id="modal-cancel">取消</button>';
-      if (!blocked) {
+      if (blocked && canReinstall) {
+        foot += '<span class="spacer"></span><button class="btn primary" id="modal-reinstall">卸载并安装</button>';
+      } else if (!blocked) {
         foot += '<span class="spacer"></span><button class="btn ' + (danger ? 'danger-solid' : 'primary') + '" id="modal-exec" disabled>' + (danger ? '确认执行（有风险）' : '确认执行') + '</button>';
       }
       openModal({ title: esc(plan.title || '执行计划'), sub: plan.description || '', body: body, foot: foot });
@@ -457,6 +503,14 @@ export const CLIENT_JS = `(function () {
       var ack = $('plan-ack');
       if (ack) ack.addEventListener('change', function () { $('modal-exec').disabled = !ack.checked; });
       $('modal-cancel').addEventListener('click', closeModal);
+      var reinstall = $('modal-reinstall');
+      if (reinstall) {
+        reinstall.addEventListener('click', function () {
+          state.pendingPlan = null;
+          closeModal();
+          resolve('reinstall');
+        });
+      }
       var exec = $('modal-exec');
       if (exec) {
         exec.addEventListener('click', function () {
@@ -489,6 +543,26 @@ export const CLIENT_JS = `(function () {
     $('modal-close').addEventListener('click', closeModal);
   }
 
+  /**
+   * 「已安装」被拦住后的一键覆盖：先卸载，再按原计划装回来。
+   * 两个动作同属 plugin 域 —— runAction 要等任务真正结束（SSE done）才返回，
+   * 而域锁是 done 之后同一拍就释放的，所以顺序串起来不会撞同域互斥。
+   * 故意不做 deferRestart：卸载那步失败时服务已经自己拉回来了，不会把人晾在停服状态。
+   */
+  function runReinstall(params) {
+    var name = params.name;
+    return runAction('plugin.uninstall', { name: name }, '卸载 ' + name + '（覆盖安装：先卸载）')
+      .then(function (unResult) {
+        return runAction('plugin.install', params, '安装 ' + name + '（覆盖安装：装回来）')
+          .then(function (ok) { return ok; }, function (e) {
+            throw new Error('卸载成功，但安装没成功：' + ((e && e.message) || e) +
+              '。插件现在是卸载状态，重新点「安装」就能补装回来。');
+          });
+      }, function (e) {
+        throw new Error('卸载这一步就没成功：' + ((e && e.message) || e) +
+          '。插件没被动过，可以直接重试。');
+      });
+  }
   // 写操作：plan → 确认 → apply
   function startWrite(action, el) {
     if (action === 'backup.create') { openBackupForm(); return; }
@@ -504,11 +578,12 @@ export const CLIENT_JS = `(function () {
     return api('/api/plan', { method: 'POST', body: { action: action, params: params } })
       .then(function (plan) {
         if (!plan || !plan.ok) throw new Error((plan && plan.error) || '无法生成执行计划');
-        return confirmPlan(plan, !!ACT_DANGER[action]);
+        return confirmPlan(plan, !!ACT_DANGER[action], { action: action, params: params });
       })
       .then(function (ok) {
         if (!ok) return null;
-        return runAction(action, params, label).then(function (result) {
+        var work = ok === 'reinstall' ? runReinstall(params) : runAction(action, params, label);
+        return work.then(function (result) {
           state.cache = {};
           return result;
         });
@@ -650,11 +725,12 @@ export const CLIENT_JS = `(function () {
     return api('/api/plan', { method: 'POST', body: { action: action, params: params } })
       .then(function (plan) {
         if (!plan || !plan.ok) throw new Error((plan && plan.error) || '无法生成执行计划');
-        return confirmPlan(plan, !!ACT_DANGER[action]);
+        return confirmPlan(plan, !!ACT_DANGER[action], { action: action, params: params });
       })
       .then(function (ok) {
         if (!ok) return null;
-        return runAction(action, params, label).then(function (result) { state.cache = {}; return result; });
+        var work = ok === 'reinstall' ? runReinstall(params) : runAction(action, params, label);
+        return work.then(function (result) { state.cache = {}; return result; });
       })
       .then(function (result) {
         if (!result) return;
@@ -685,6 +761,26 @@ export const CLIENT_JS = `(function () {
   function setNavCount(page, n) {
     var el = $('nav-count-' + page);
     if (el) el.textContent = (!n) ? '' : String(n);
+  }
+
+  // ⑤ 本体有新版本时，侧栏「DSH 本体」条目挂一个醒目的徽标（不是数字，是「↑ 可更新」）。
+  function refreshCoreBadge(ov) {
+    var el = $('nav-count-core');
+    if (!el) return;
+    if (!ov || !ov.dsh) { el.textContent = ''; el.classList.remove('warn'); return; }
+    if (ov.dsh.updateAvailable) {
+      el.textContent = '可更新';
+      el.classList.add('warn');
+      el.title = '本体有新版本 ' + (ov.dsh.latestVersion || '');
+    } else if (ov.dsh.needsFinishUpdate) {
+      el.textContent = '待完成更新';
+      el.classList.add('warn');
+      el.title = '本体停在旧提交上，需要完成一次更新';
+    } else {
+      el.textContent = '';
+      el.classList.remove('warn');
+      el.title = '';
+    }
   }
 
   function verifyCard(v) {
@@ -760,6 +856,7 @@ export const CLIENT_JS = `(function () {
             : { kind: 'ok', text: '本体正常' }));
       setBadge('badge-dsh', dshBadge.kind, dshBadge.text);
       setBadge('badge-service', ov.runtime.running ? 'ok' : '', ov.runtime.running ? '服务运行中' : '服务未运行');
+      refreshCoreBadge(ov);
       setNavCount('plugins', ov.plugins.declared);
     });
   }
@@ -831,6 +928,11 @@ export const CLIENT_JS = `(function () {
     }
     html += '</div>';
 
+    // ③ 本体更新日志：最近 20 条提交（来自源码仓库 git log，异步拉取）
+    html += '<div class="card"><div class="card-title">本体更新日志<span class="sub">最近 20 条提交 · 来自源码仓库</span>'
+      + '<span class="spacer"></span><button class="btn sm" id="btn-refresh-changelog">' + icon('refresh') + '<span>刷新</span></button></div>'
+      + '<div id="changelog-list"><div class="empty"><span class="spinner"></span> 正在读取提交记录…</div></div></div>';
+
     html += '<div class="card"><div class="card-title">构建记录对比</div>';
     if (r.build) {
       html += kv('记录中的提交', r.build.commit || '-', true)
@@ -866,6 +968,32 @@ export const CLIENT_JS = `(function () {
 
     html += '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
     return html;
+  }
+
+  // ③ 本体更新日志（最近 20 条提交）：渲染进 DSH 本体页的占位卡片里
+  function fillChangelog() {
+    var el = $('changelog-list');
+    if (!el) return;
+    el.innerHTML = '<div class="empty"><span class="spinner"></span> 正在读取提交记录…</div>';
+    api('/api/changelog?limit=20').then(function (res) {
+      if (state.page !== 'core') return; // 用户已经切走了，别覆盖新页面
+      var box = $('changelog-list');
+      if (!box) return;
+      if (!res || res.error || !res.entries || !res.entries.length) {
+        box.innerHTML = emptyBox('没有读到提交记录', res && res.error ? res.error : '本体源码目录不是一个 git 仓库？');
+        return;
+      }
+      var rows = '';
+      for (var i = 0; i < res.entries.length; i++) {
+        var e = res.entries[i];
+        rows += '<div class="row"><div class="row-main"><div class="row-name">' + esc(e.subject || '(无提交说明)')
+          + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
+      }
+      box.innerHTML = '<div class="rows">' + rows + '</div>';
+    }).catch(function (err) {
+      var box = $('changelog-list');
+      if (box) box.innerHTML = emptyBox('读取失败', err && err.message ? err.message : String(err));
+    });
   }
 
   // ── 页面：运行状态 ───────────────────────────────────────────────
@@ -1148,6 +1276,10 @@ export const CLIENT_JS = `(function () {
       + kv('管家版本', (res.appName || '') + ' ' + (res.appVersion || ''), true)
       + kv('可执行文件', res.exePath || '', true)
       + kv('配置文件', res.configPath || '', true)
+      + setRow('官网', '<a class="btn sm" href="https://dsh.huilinsh.cn" data-open-url="https://dsh.huilinsh.cn">' + icon('external') + '<span>打开 DSH 管家官网</span></a>',
+        '更新说明、下载与文档都在官网。')
+      + setRow('使用指引', '<button class="btn sm" id="btn-see-onboarding">' + icon('clipboard') + '<span>再看一遍首次使用指引</span></button>',
+        '忘了哪个入口干什么用的，点一下就弹出来。')
       + '</div>';
 
     html += '<div class="btn-row" style="margin-top:4px"><button class="btn primary" id="btn-save-settings">保存设置</button>'
@@ -1396,10 +1528,6 @@ export const CLIENT_JS = `(function () {
       + '<option value="new"' + (m.sort === 'new' ? ' selected' : '') + '>最新上架</option>'
       + '<option value="name"' + (m.sort === 'name' ? ' selected' : '') + '>按名字</option>'
       + '</select>'
-      + '<span class="seg">'
-      + '<button class="btn sm' + (m.view === 'list' ? ' on' : '') + '" data-market-view="list" title="列表视图">列表</button>'
-      + '<button class="btn sm' + (m.view === 'card' ? ' on' : '') + '" data-market-view="card" title="卡片视图">卡片</button>'
-      + '</span>'
       + '<button class="btn sm' + (m.state === 'all' ? ' on' : '') + '" data-market-state="all">全部</button>'
       + '<button class="btn sm' + (m.state === 'missing' ? ' on' : '') + '" data-market-state="missing">未安装</button>'
       + '<button class="btn sm' + (m.state === 'installed' ? ' on' : '') + '" data-market-state="installed">已安装</button>'
@@ -1407,10 +1535,16 @@ export const CLIENT_JS = `(function () {
       + '</span>'
       + '</div>' + marketChips(p) + '</div>';
 
+    // ② 视图切换（列表/卡片）放在「插件列表」标题行最右侧，不进搜索栏
+    var viewToggle = '<span class="seg mkt-view-toggle" title="切换列表/卡片视图">'
+      + '<button class="btn icon' + (m.view === 'list' ? ' on' : '') + '" data-market-view="list" aria-label="列表视图" title="列表视图">' + icon('list') + '</button>'
+      + '<button class="btn icon' + (m.view === 'card' ? ' on' : '') + '" data-market-view="card" aria-label="卡片视图" title="卡片视图">' + icon('grid') + '</button>'
+      + '</span>';
     html += '<div class="card"><div class="card-title">插件列表<span class="sub">'
       + p.matched + ' 个结果 · 第 ' + p.page + '/' + p.pages + ' 页</span>'
       + '<button class="btn sm" id="market-pick-all">勾选本页未安装的</button>'
-      + '<span id="market-batch-slot">' + marketBatchBar(p) + '</span></div>';
+      + '<span id="market-batch-slot">' + marketBatchBar(p) + '</span>'
+      + '<span class="spacer"></span>' + viewToggle + '</div>';
     var pagerHtml = '<div class="mkt-pager">'
       + '<button class="btn sm" data-market-page="' + (p.page - 1) + '"' + (p.page <= 1 ? ' disabled' : '') + '>上一页</button>'
       + '<span class="muted">第 ' + p.page + ' / ' + p.pages + ' 页</span>'
@@ -1670,7 +1804,9 @@ export const CLIENT_JS = `(function () {
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
     { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
     { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场' },
-    { id: 'settings', label: '设置', group: '记录', icon: 'sliders', load: loadSettings, render: renderSettings, title: '设置' },
+    // 设置不在左栏中间列表里 —— 它在侧栏最底部（markup.ts 的 nav-foot），
+    // 但路由仍要注册：data-page="settings" 靠它解析。
+    { id: 'settings', label: '设置', group: '记录', icon: 'sliders', load: loadSettings, render: renderSettings, title: '设置', hiddenFromNav: true },
     { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
     { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
     { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
@@ -1696,11 +1832,13 @@ export const CLIENT_JS = `(function () {
     var lastGroup = '';
     for (var i = 0; i < PAGES.length; i++) {
       var p = PAGES[i];
+      if (p.hiddenFromNav) continue; // 设置按钮固定在侧栏底部，不进中间列表
       if (p.group !== lastGroup) {
         html += '<div class="nav-group">' + esc(p.group) + '</div>';
         lastGroup = p.group;
       }
-      var countId = (p.id === 'plugins' || p.id === 'jobs' || p.id === 'backups') ? '<span class="nav-count" id="nav-count-' + p.id + '"></span>' : '';
+      // core 的徽标是「本体有新版本」时才亮（见 refreshCoreBadge），其余三个是计数。
+      var countId = (p.id === 'plugins' || p.id === 'jobs' || p.id === 'backups' || p.id === 'core') ? '<span class="nav-count" id="nav-count-' + p.id + '"></span>' : '';
       html += '<button class="nav-item" data-page="' + p.id + '" title="' + esc(p.label) + '">' + icon(p.icon) + '<span class="label">' + esc(p.label) + '</span>' + countId + '</button>';
     }
     $('nav-items').innerHTML = html;
@@ -1709,6 +1847,9 @@ export const CLIENT_JS = `(function () {
   function afterRender(page) {
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
+    // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，
+    // 但保险起见在每次重渲染后核对一次：有 running 任务却没挂 SSE 就重新挂上。
+    adoptRunningJob();
   }
 
   function go(page, force) {
@@ -1724,6 +1865,7 @@ export const CLIENT_JS = `(function () {
       pageOverview().catch(function (e) { showError(e); });
       return;
     }
+    if (page === 'core') fillChangelog();
     if (!force && state.cache[page]) {
       setMain(def.render(state.cache[page]));
       afterRender(page);
@@ -1761,6 +1903,7 @@ export const CLIENT_JS = `(function () {
     if (jr) { openJob(jr.getAttribute('data-job')); return; }
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
+    if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
     if (hit('#btn-refresh') || hit('#btn-refresh-page')) { state.cache = {}; state.extra = {}; go(state.page, true); return; }
     if (hit('#btn-theme')) { toggleTheme(); return; }
     if (hit('#market-pick-all')) {
@@ -1811,9 +1954,19 @@ export const CLIENT_JS = `(function () {
       return;
     }
     if (hit('#btn-copy-report')) { copyReport(); return; }
+    if (hit('#btn-see-onboarding')) { showOnboarding(); return; }
     if (hit('#btn-bootstrap-form')) { openBootstrapForm(); return; }
     if (hit('[data-enter-dsh]')) { enterDsh(hit('[data-enter-dsh]')); return; }
     if (hit('#modal-cancel') || hit('#modal-close')) { closeModal(); return; }
+    // ⑩ 外链（官网 / 插件主页 / 下载新版）：desktop WebView 里 target=_blank 不一定开得到系统浏览器，
+    // 统一拦下来用 window.open 让宿主打开。
+    var ou = hit('[data-open-url]');
+    if (ou) {
+      e.preventDefault();
+      var url = ou.getAttribute('data-open-url') || ou.getAttribute('href');
+      if (url) { try { window.open(url, '_blank'); } catch (err) { toast('打不开链接：' + (err && err.message ? err.message : err), 'warn'); } }
+      return;
+    }
   });
 
   document.addEventListener('keydown', function (e) {
@@ -1865,8 +2018,59 @@ export const CLIENT_JS = `(function () {
 
   applyTheme();
   buildNav();
+  applyNavTips();
   api('/api/state/overview').then(function (ov) {
     $('app-version').textContent = 'v' + (ov.app.version || '');
     go('overview', false);
+    // ④ 窗口刚打开时，若后台还有在跑的任务（如上一轮没走完的卸载），把进度条挂回去
+    adoptRunningJob();
+    maybeOnboarding();
   }).catch(function (e) { showError(e); });
+
+  // ⑨ 侧栏底部「使用小技巧」：随机取一条，点一下换下一条（纯本地轮换，不发请求）
+  function applyNavTips() {
+    var el = $('nav-tip');
+    var tips = window.__NAV_TIPS__ || [];
+    if (!el || !tips.length) return;
+    el.dataset.index = String(Math.floor(Math.random() * tips.length));
+    el.textContent = tips[Number(el.dataset.index)];
+    el.addEventListener('click', function () {
+      el.dataset.index = String((Number(el.dataset.index) + 1) % tips.length);
+      el.textContent = tips[Number(el.dataset.index)];
+    });
+  }
+
+  // ⑧ 首次使用：功能指引（只弹一次，config.onboardingDone 记住）
+  function maybeOnboarding() {
+    api('/api/settings').then(function (res) {
+      if (!res || res.ok === false) return;
+      if (res.config && res.config.onboardingDone) return;
+      showOnboarding();
+    }).catch(function () { /* 设置读不到就不打扰 */ });
+  }
+
+  function showOnboarding() {
+    var body =
+      '<div class="finding info"><div class="finding-title"><span class="tag info">欢迎</span>DSH管家 · 首次使用指引</div>'
+      + '<ol class="steps-ol" style="margin:10px 0 0 18px;line-height:2">'
+      + '<li><b>总览</b>：一眼看 DSH 本体、服务与插件的当前状况，异常会直接给出下一步动作。</li>'
+      + '<li><b>一键部署</b>：从零装一台 DSH；先出计划、你确认之后才动手。</li>'
+      + '<li><b>插件市场</b>：线上目录挑插件；装 / 卸 / 更新都先摊开计划再执行，勾选多个可一次装完。</li>'
+      + '<li><b>体检报告</b>：全面检查并把结论 + 证据 + 建议整理成可复制的 Markdown。</li>'
+      + '<li><b>回滚点</b>：每次写操作前自动留一个；出问题从这里一键还原。</li>'
+      + '<li><b>底部任务条</b>：任务进行中实时显示步骤链与进度，可取消；切页也不丢。</li>'
+      + '</ol></div>';
+    openModal({
+      title: '欢迎使用 DSH管家',
+      sub: '让 DSH 始终好用 —— 一键部署、环境体检、插件管理、更新与回滚，都在一个窗口里。',
+      body: body,
+      foot: '<span class="spacer"></span><button class="btn" id="onboarding-later">稍后再说</button><button class="btn primary" id="onboarding-done">知道了</button>'
+    });
+    function done(save) {
+      closeModal();
+      if (save) api('/api/settings', { method: 'POST', body: { onboardingDone: true } }).catch(function () { /* 忽略 */ });
+    }
+    $('onboarding-later').addEventListener('click', function () { done(false); });
+    $('onboarding-done').addEventListener('click', function () { done(true); });
+  }
 })();`;

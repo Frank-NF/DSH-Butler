@@ -28,6 +28,9 @@ export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";
 export const APP_VERSION = "2.0.0-rc.1";
 
+/** 官网地址（界面「官网」入口与更新日志下载页共用）。 */
+export const OFFICIAL_SITE = "https://dsh.huilinsh.cn";
+
 /**
  * 阶段标识（方案 §10.2：S1 只读 / S2 诊断 / S3 写操作接管 / S4 一键部署 / S5 跨平台）。
  *
@@ -50,6 +53,18 @@ export const UI_WRITE_ENABLED = true;
 
 /** 给人看的阶段标签（含界面视图状态）。 */
 export const STAGE_LABEL = `${STAGE_TITLE}${UI_WRITE_ENABLED ? "" : " · 界面只读视图"}`;
+
+/**
+ * 侧栏底部给普通用户看的小技巧（不是开发阶段说明 —— 阶段标识只进日志与总览接口）。
+ * 写操作接进界面后，这里展示的是"怎么少点几下就达到目的"的实用提示。
+ */
+export const NAV_TIPS = [
+  "写操作都会先摊开计划、你确认才动手；想看细节就点顶栏「刷新」重看一遍状态。",
+  "装/卸插件前可以先建个回滚点：点「回滚点」→「创建回滚点」，出问题一键还原。",
+  "DSH 服务起不来时先看「运行状态」页的端口与进程，再点「重启服务」多数情况就好。",
+  "插件市场里勾选多个未安装插件可以一次装完；已装的插件在行内直接更新/卸载。",
+  "右下角那条 DSH 悬浮工具条能随时回管家；关掉它只在设置里勾「启用」。",
+];
 
 /** 配置 schema 版本。每次结构变更必须 +1 并补迁移函数。 */
 export const CONFIG_SCHEMA_VERSION = 1;

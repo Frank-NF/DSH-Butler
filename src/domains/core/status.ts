@@ -354,6 +354,45 @@ async function gitOut(root: string, args: string[]): Promise<string | null> {
   return r.code === 0 && out.length > 0 ? out : null;
 }
 
+/**
+ * 本体更新日志（③）：最近 N 条 git 提交。
+ *
+ * 为什么读源码仓库的 git log 而不是线上 changelog：
+ *   - DSH 本体的更新 = git pull + 重建，「更新日志」的权威来源就是提交记录；
+ *   - 线上 butler/version.json 没有 changelog 数组（已探测），官网也没有
+ *     butler/changelog.json —— 本地仓库是唯一可得的数据源；
+ *   - 没有仓库（未安装本体）时返回 sourceRoot: null，界面显示空态引导一键部署。
+ * 只读操作，失败返回空数组与原因，不影响主流程。
+ */
+export interface ChangelogEntry {
+  sha: string;
+  date: string;
+  subject: string;
+}
+
+export interface ChangelogResult {
+  sourceRoot: string | null;
+  entries: ChangelogEntry[];
+  error: string | null;
+}
+
+export async function collectCoreChangelog(limit = 20): Promise<ChangelogResult> {
+  const probe = resolveDshSourceRoot();
+  if (!probe) return { sourceRoot: null, entries: [], error: "未安装 DSH 本体" };
+  const raw = await gitOut(probe.path, [
+    "log",
+    "-n", String(limit),
+    "--date=short",
+    "--pretty=format:%h|%cd|%s",
+  ]);
+  if (raw === null) return { sourceRoot: probe.path, entries: [], error: "读不到提交记录（目录可能不是 git 仓库）" };
+  const entries: ChangelogEntry[] = raw.split("\n").filter((l) => l.trim().length > 0).map((l) => {
+    const [sha, date, ...rest] = l.split("|");
+    return { sha: sha ?? "", date: date ?? "", subject: rest.join("|") || l };
+  });
+  return { sourceRoot: probe.path, entries, error: null };
+}
+
 async function readPkgVersion(root: string): Promise<string | null> {
   const pkg = readJson<{ version?: string }>(p(root, "package.json"));
   return pkg?.version ?? null;

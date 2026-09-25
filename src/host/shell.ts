@@ -65,9 +65,35 @@ export async function run(
   let timedOut = false;
   let cancelled = false;
   const timeoutMs = options.timeoutMs ?? 30_000;
+
+  // ── 收工兜底（实测 2026-09-25 修 core.update 卡死挂起）──────────────
+  // 子进程退出后，它的输出管道本该在毫秒级 EOF。但 Windows 上句柄可能被孙进程
+  // 拿走：powershell 用 Start-Process -NoNewWindow 起的【控制台程序】（node.exe）
+  // 会一直握着写端，于是管道永远不 EOF，Promise.all 永远等不到 —— abort 只杀得掉
+  // 子进程、解不开这个等待，超时形同虚设。表现：一条命令无限挂起、任务永远 running
+  // （进度条一直跑）。所以这里双保险：超时后给子进程一点退出宽限，子进程退出后给
+  // 管道一点 EOF 宽限，两处到点都强制收工、带着已拿到的输出返回。
+  const PIPE_EOF_GRACE_MS = 2_000;
+  const EXIT_GRACE_MS = 3_000;
+  let releaseForce: (() => void) | null = null;
+  let forceTimer: ReturnType<typeof setTimeout> | null = null;
+  let pipeHeld = false; // 子进程已退出、管道却始终不关闭
+  let caught = false; // 走到 catch 说明已经打过日志，别重复报
+  const forcePromise = new Promise<void>((resolve) => {
+    releaseForce = resolve;
+  });
+  const armForce = (ms: number) => {
+    if (forceTimer) return;
+    forceTimer = setTimeout(() => {
+      const fn = releaseForce;
+      releaseForce = null;
+      fn?.();
+    }, ms);
+  };
   const timer = setTimeout(() => {
     timedOut = true;
     controller.abort();
+    armForce(EXIT_GRACE_MS);
   }, timeoutMs);
   const onExternalAbort = () => {
     cancelled = true;
@@ -116,14 +142,29 @@ export async function run(
       }
     };
 
-    const [, , status] = await Promise.all([
+    const pumps = Promise.all([
       pump(child.stdout, "stdout"),
       pump(child.stderr, "stderr"),
-      child.status,
     ]);
-    code = status.code;
+    const settled = (async () => {
+      const status = await child.status;
+      code = status.code;
+      // 子进程已退出：管道通常立刻 EOF。2 秒还没 EOF = 写端被孙进程占着（见上），
+      // 到点收工 —— 输出该拿到的早就拿到了，剩下的是永远等不到的 EOF。
+      await Promise.race([
+        pumps,
+        new Promise<void>((resolve) => {
+          setTimeout(() => {
+            pipeHeld = true;
+            resolve();
+          }, PIPE_EOF_GRACE_MS);
+        }),
+      ]);
+    })();
+    await Promise.race([settled, forcePromise]);
   } catch (e) {
     const err = e as Error;
+    caught = true;
     if (cancelled && !timedOut) {
       log.warn(scope, `命令已被取消：${cmd} ${args.join(" ")}`);
     } else if (err.name === "AbortError" || timedOut) {
@@ -135,7 +176,14 @@ export async function run(
     code = -1;
   } finally {
     clearTimeout(timer);
+    if (forceTimer) clearTimeout(forceTimer);
     options.signal?.removeEventListener("abort", onExternalAbort);
+  }
+  // 强制收工的路径没走 catch，这里补一条日志（有异常时 catch 已打过）
+  if (!caught && timedOut) {
+    log.warn(scope, `命令超时（${timeoutMs}ms）：${cmd} ${args.join(" ")}`);
+  } else if (!caught && pipeHeld) {
+    log.warn(scope, `命令已退出但输出管道被孙进程占着，已按时收工：${cmd} ${args.join(" ")}`);
   }
 
   const result: RunResult = { code, stdout, stderr, timedOut, durationMs: Date.now() - started };
