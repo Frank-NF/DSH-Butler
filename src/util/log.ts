@@ -24,14 +24,20 @@ type Sink = (line: LogLine) => void;
 
 const LEVEL_ORDER: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
-class Logger {
+export class Logger {
   #ring: LogLine[] = [];
   #cap = 2000;
   #sinks = new Set<Sink>();
   #minLevel: LogLevel = "info";
   #file?: Deno.FsFile;
+  #filePath?: string;
   #fileLines = 0;
-  #maxFileLines = 20_000;
+  #maxFileLines: number;
+
+  /** maxFileLines 可注入，只为测试轮转（线上永远用默认 20000 行）。 */
+  constructor(opts: { maxFileLines?: number } = {}) {
+    this.#maxFileLines = opts.maxFileLines ?? 20_000;
+  }
 
   setMinLevel(level: LogLevel): void {
     this.#minLevel = level;
@@ -41,6 +47,7 @@ class Logger {
     try {
       Deno.mkdirSync(path.replace(/[/\\][^/\\]+$/, ""), { recursive: true });
       this.#file = Deno.openSync(path, { create: true, append: true, write: true });
+      this.#filePath = path;
     } catch (e) {
       this.#emit({
         ts: new Date().toISOString(),
@@ -112,12 +119,36 @@ class Logger {
     }
   }
 
+  /**
+   * 文件轮转：关旧 → 改名成 .1 → 重开一个新文件。
+   *
+   * 【2026-09-25 审计 Q-06】旧实现只 close 并把 #file 置空，既不重开也不改名 ——
+   * 于是本进程写满 20000 行之后**再也不写日志文件**，现场在无声中断链。
+   */
   #rotate(): void {
+    const path = this.#filePath;
     try {
       this.#file?.close();
     } catch { /* ignore */ }
     this.#file = undefined;
     this.#fileLines = 0;
+    if (!path) return;
+    try {
+      const rolled = `${path}.1`;
+      try {
+        Deno.removeSync(rolled);
+      } catch { /* 上一份不存在，正常 */ }
+      Deno.renameSync(path, rolled);
+      this.#file = Deno.openSync(path, { create: true, append: true, write: true });
+    } catch (e) {
+      this.#file = undefined;
+      this.#emit({
+        ts: new Date().toISOString(),
+        level: "warn",
+        scope: "log",
+        msg: `日志轮转失败，后续只保留内存缓冲：${(e as Error).message}`,
+      });
+    }
   }
 }
 

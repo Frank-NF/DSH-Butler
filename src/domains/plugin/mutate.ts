@@ -51,6 +51,7 @@
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding } from "../../util/result.ts";
 import { run, runCmd } from "../../host/shell.ts";
+import { type AppConfig, loadConfig } from "../state/config.ts";
 import { isFile, moveSafe, pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
 import { butlerRoot, dshProfileDir, p, resolveDshSourceRoot, stampOf } from "../../util/paths.ts";
 import { DSH_PORT_CANDIDATES, DSH_PORT_DEFAULT, TIMEOUTS } from "../../version.ts";
@@ -307,6 +308,9 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
       "--prefer-offline",
       // 见上方 pmInstall 的注释：profile 里有 peer 版本冲突，严格模式整树拒绝（ERESOLVE）
       "--legacy-peer-deps",
+      // 【2026-09-25 审计 SEC-16】把设置里的「npm 安装源 / 网络代理」真正接进来 ——
+      // 这两个设置项以前只存不用，界面上等于空承诺。
+      ...npmSourceArgs(),
       "--loglevel",
       "error",
     ],
@@ -336,6 +340,9 @@ async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
       "--prefer-offline",
       // 见 pmInstall 的注释：不加这个，ERESOLVE 会把整棵树拒绝掉（全量重算必挂）
       "--legacy-peer-deps",
+      // 【2026-09-25 审计 SEC-16】把设置里的「npm 安装源 / 网络代理」真正接进来 ——
+      // 这两个设置项以前只存不用，界面上等于空承诺。
+      ...npmSourceArgs(),
       "--loglevel",
       "error",
     ],
@@ -374,6 +381,9 @@ async function pmUnlink(profileDir: string, name: string, signal?: AbortSignal):
       "--no-package-lock",
       // 见 pmInstall 的注释：定向摘除也要重算这棵树，缺它同样被 ERESOLVE 挡下
       "--legacy-peer-deps",
+      // 【2026-09-25 审计 SEC-16】把设置里的「npm 安装源 / 网络代理」真正接进来 ——
+      // 这两个设置项以前只存不用，界面上等于空承诺。
+      ...npmSourceArgs(),
       "--loglevel",
       "error",
     ],
@@ -393,6 +403,23 @@ function validPkgName(name: string): boolean {
   if (name.includes("..") || name.includes("\\") || name.includes(":")) return false;
   if (name.startsWith("/") || name.startsWith(".")) return false;
   return /^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/.test(name);
+}
+
+/**
+ * 设置页里的「npm 安装源」与「网络代理」→ npm 命令行参数。【审计 SEC-16】
+ *
+ * 这两个设置以前只保存、从来不生效 —— 界面上写着能改安装源与代理，实际装插件时全走默认。
+ * 这里用 npm 自带的 --registry / --proxy / --https-proxy，而不是改子进程的整份环境变量：
+ * 后者会覆盖 PATH 之类的关键变量，风险远大于收益。
+ */
+export function npmSourceArgs(cfg?: AppConfig): string[] {
+  const c = cfg ?? loadConfig();
+  const args: string[] = [];
+  const reg = (c.npmRegistry ?? "").trim();
+  if (reg) args.push("--registry", reg);
+  const proxy = (c.proxyUrl ?? "").trim();
+  if (proxy) args.push("--proxy", proxy, "--https-proxy", proxy);
+  return args;
 }
 
 /**

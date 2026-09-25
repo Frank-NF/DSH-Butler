@@ -36,6 +36,9 @@ export const BUTLER_BAR_JS = `(function () {
     '.dbb-btn.dbb-danger{color:#F08A8A}',
     '.dbb-dot{width:7px;height:7px;border-radius:50%;background:#918E85;flex:none}',
     '.dbb-dot.ok{background:#8FBF5A}.dbb-dot.err{background:#F08A8A}',
+    // 【2026-09-25 审计 Q-11】脚本会输出 dbb-dot warn 这个类，但样式表里从来没定义过它 ——
+    // 「服务已启动但还没就绪」于是显示成默认灰，和「已停止」看不出区别。
+    '.dbb-dot.warn{background:#E0A03C}',
     '.dbb-sep{width:1px;height:18px;background:rgba(255,255,255,.16);margin:0 3px}',
     '.dbb-msg{max-width:260px;padding:0 8px;color:#BDBAB2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
     '.dbb-mini{display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;',

@@ -34,6 +34,7 @@ import { butlerConfigPath, downloadsDir, p } from "../util/paths.ts";
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
+import { maskSecrets } from "../util/redact.ts";
 import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
 import { log } from "../util/log.ts";
 
@@ -85,15 +86,20 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
   const token = opts.token;
 
   // 【2026-09-25 审计 QUAL-02】Deno.serve 会优先采用环境变量 DENO_SERVE_ADDRESS，
-  // 而且它**覆盖**我们显式传的端口。本机实测：环境里残留 tcp:127.0.0.1:51424 时，
-  // --headless 想绑 8731 却去绑 51424，直接 EADDRINUSE 启动失败，报错完全不提这个变量；
-  // 连单元测试都会被它拖挂。管家从不希望自己跑在别人的端口上，所以这里直接摘掉并说明原因。
+  // 而且它**覆盖**我们显式传的 port（实测：显式传 port 也照样绑到变量里那个）。
+  // 本机实测后果：环境里残留 tcp:127.0.0.1:51424（该端口落在 Windows 保留区间）时，
+  // --headless 想绑 8731 却去绑 51424 → EADDRINUSE 启动失败，报错还完全不提这个变量；
+  // 连单元测试都被一起拖挂。
+  // 注意：Deno.env.delete() 对这条路径**无效**（serve 读的是进程环境快照），
+  // 必须把变量**改写**成我们真正想要的地址 —— 实测写成 tcp:127.0.0.1:0 就会绑随机端口，
+  // 写成 tcp:127.0.0.1:8731 就会老老实实绑 8731。
   const serveOverride = Deno.env.get("DENO_SERVE_ADDRESS");
   if (serveOverride) {
-    Deno.env.delete("DENO_SERVE_ADDRESS");
+    const want = opts.port ?? 0;
+    Deno.env.set("DENO_SERVE_ADDRESS", `tcp:127.0.0.1:${want}`);
     log.warn(
       "api",
-      `检测到 DENO_SERVE_ADDRESS=${serveOverride}（它会覆盖监听端口，可能让启动因端口占用而失败）—— 已忽略它，按管家自己的端口启动`,
+      `检测到 DENO_SERVE_ADDRESS=${serveOverride}（它会覆盖监听端口）—— 已改写为 tcp:127.0.0.1:${want}，按管家自己的端口启动`,
     );
   }
 
@@ -343,7 +349,8 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
           const tail = readTail(newest.path, 20000);
           for (const l of tail.lines) out.push(l);
         }
-        const text = out.join("\n");
+        // 【安全 SEC-10】导出前统一脱敏：日志正文里可能带着 DSH 的进程令牌与其它密钥。
+    const text = maskSecrets(out.join("\n"));
         const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
         const target = p(downloadsDir(), "DSH管家-日志-" + stamp + ".txt");
         Deno.writeTextFileSync(target, text);

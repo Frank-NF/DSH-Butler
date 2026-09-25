@@ -10,6 +10,19 @@ import { createApiServer } from "./server.ts";
 
 const TOKEN = "test-token-0123456789abcdef";
 
+/**
+ * 取一个可用端口交给被测服务。
+ * 为什么必须显式传：Deno.serve 会优先采用环境变量 DENO_SERVE_ADDRESS（本机实测它连显式
+ * port 都覆盖），而 server.ts 会把该变量改写成我们要的地址；这里给每次测试一个确定的新端口，
+ * 避免两条测试前后抢同一个随机端口。
+ */
+function freePort(): number {
+  const l = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const p = (l.addr as Deno.NetAddr).port;
+  l.close();
+  return p;
+}
+
 /** 用裸 TCP 发请求：fetch 不允许自己设 Host 头，而这两条测试恰恰要控制 Host。 */
 async function rawGet(port: number, host: string, path = "/"): Promise<string> {
   const conn = await Deno.connect({ hostname: "127.0.0.1", port });
@@ -42,7 +55,7 @@ async function rawGet(port: number, host: string, path = "/"): Promise<string> {
 }
 
 Deno.test("接口边界：匿名请求不再拿到会话 cookie（SEC-01）", async () => {
-  const s = createApiServer({ token: TOKEN });
+  const s = createApiServer({ token: TOKEN, port: freePort() });
   try {
     const anon = await fetch(`${s.origin}/`);
     assertEquals(anon.status, 200);
@@ -68,7 +81,7 @@ Deno.test("接口边界：匿名请求不再拿到会话 cookie（SEC-01）", as
 });
 
 Deno.test("接口边界：非回环 Host 一律 403（防 DNS rebinding，SEC-01）", async () => {
-  const s = createApiServer({ token: TOKEN });
+  const s = createApiServer({ token: TOKEN, port: freePort() });
   try {
     const evil = await rawGet(s.port, "evil.example.com");
     assertEquals(evil.startsWith("HTTP/1.1 403"), true, `应 403，实际：${evil.slice(0, 40)}`);

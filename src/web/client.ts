@@ -327,43 +327,84 @@ export const CLIENT_JS = `(function () {
     $('progress-steps').innerHTML = html;
   }
 
+  /**
+   * 订阅任务事件流。
+   *
+   * 【2026-09-25 审计 Q-10】SSE 的 onerror 只代表「这条连接断了」——刷新页面、瞬时网络抖动、
+   * 服务重启都会触发它，**不等于任务失败**。旧实现 300ms 后直接按「已结束」收尾，任务其实还在跑，
+   * 界面却弹「失败：任务进行中」，进度条也消失不再恢复。
+   * 现在的做法：断线先问一次任务真实状态 —— 还在跑就重连（指数退避，最多 5 次），只有终态才收尾。
+   */
   function waitJob(jobId, title) {
     showProgress(title || '任务进行中');
     return new Promise(function (resolve, reject) {
-      var url = '/api/jobs/' + jobId + '/events' + (TOKEN ? '?t=' + encodeURIComponent(TOKEN) : '');
-      var es = new EventSource(url);
-      state.es = es;
-      var done = false;
+      var attempts = 0;
+      var MAX_ATTEMPTS = 5;
 
-      function finish() {
-        if (done) return;
-        done = true;
-        try { es.close(); } catch (e) { /* 已关闭 */ }
-        state.es = null;
-        state.job = null;
-        hideProgress();
-        api('/api/jobs/' + jobId).then(function (job) {
-          if (job.status === 'succeeded') resolve(job.result);
-          else reject(new Error(job.error || ('任务' + (STATUS_LABEL[job.status] || job.status))));
-        }, reject);
+      function connect() {
+        var url = '/api/jobs/' + jobId + '/events' + (TOKEN ? '?t=' + encodeURIComponent(TOKEN) : '');
+        var es = new EventSource(url);
+        state.es = es;
+        var closed = false;
+
+        function drop() {
+          closed = true;
+          try { es.close(); } catch (e) { /* 已关闭 */ }
+          if (state.es === es) state.es = null;
+        }
+
+        function finish() {
+          if (closed) return;
+          drop();
+          state.job = null;
+          hideProgress();
+          api('/api/jobs/' + jobId).then(function (job) {
+            if (job.status === 'succeeded') resolve(job.result);
+            else reject(new Error(job.error || ('任务' + (STATUS_LABEL[job.status] || job.status))));
+          }, reject);
+        }
+
+        function retry() {
+          attempts++;
+          if (attempts > MAX_ATTEMPTS) { finish(); return; }
+          var wait = Math.min(1000 * Math.pow(2, attempts - 1), 8000);
+          setTimeout(function () { if (!closed) connect(); }, wait);
+        }
+
+        es.onmessage = function (e) {
+          var ev;
+          try { ev = JSON.parse(e.data); } catch (err) { return; }
+          if (ev.data && Array.isArray(ev.data.steps)) {
+            renderSteps(ev.data.steps);
+            $('progress-fill').style.width = Math.round((ev.data.progress || 0) * 100) + '%';
+          }
+          if (ev.type === 'step-log' && ev.message) $('progress-detail').textContent = ev.message;
+          if (ev.type === 'step-start') $('progress-detail').textContent = ev.message || '';
+          if (ev.type === 'step-done') {
+            var pct = Math.round((ev.progress || 0) * 100);
+            if (pct) $('progress-fill').style.width = pct + '%';
+          }
+          if (ev.type === 'done') finish();
+        };
+        es.onerror = function () {
+          if (closed) return;
+          drop();
+          api('/api/jobs/' + jobId).then(function (job) {
+            if (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled' || job.status === 'timeout') {
+              closed = false;
+              finish();
+              return;
+            }
+            closed = false;
+            retry();
+          }, function () {
+            closed = false;
+            retry();
+          });
+        };
       }
 
-      es.onmessage = function (e) {
-        var ev;
-        try { ev = JSON.parse(e.data); } catch (err) { return; }
-        if (ev.data && Array.isArray(ev.data.steps)) {
-          renderSteps(ev.data.steps);
-          $('progress-fill').style.width = Math.round((ev.data.progress || 0) * 100) + '%';
-        }
-        if (ev.type === 'step-log' && ev.message) $('progress-detail').textContent = ev.message;
-        if (ev.type === 'step-start') $('progress-detail').textContent = ev.message || '';
-        if (ev.type === 'step-done') {
-          var pct = Math.round((ev.progress || 0) * 100);
-          if (pct) $('progress-fill').style.width = pct + '%';
-        }
-        if (ev.type === 'done') finish();
-      };
-      es.onerror = function () { if (!done) setTimeout(finish, 300); };
+      connect();
     });
   }
 
@@ -1532,7 +1573,8 @@ export const CLIENT_JS = `(function () {
       + '<button class="btn sm' + (m.state === 'missing' ? ' on' : '') + '" data-market-state="missing">未安装</button>'
       + '<button class="btn sm' + (m.state === 'installed' ? ' on' : '') + '" data-market-state="installed">已安装</button>'
       + '<button class="btn sm' + (m.state === 'outdated' ? ' on' : '') + '" data-market-state="outdated">可更新<span class="chip-n">' + (res.outdatedCount || 0) + '</span></button>'
-      + '</span>'
+      // 【2026-09-25 审计 Q-12】这里原本还多出一行孤立的 span 闭合标签（上一行已经闭合干净），
+      // 它会把 .market-bar 的 DOM 结构推歪 —— 浏览器容错掩盖了这个问题。
       + '</div>' + marketChips(p) + '</div>';
 
     // ② 视图切换（列表/卡片）放在「插件列表」标题行最右侧，不进搜索栏

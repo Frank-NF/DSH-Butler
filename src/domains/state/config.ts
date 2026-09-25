@@ -7,8 +7,13 @@
 
 import type { LogLevel } from "../../util/log.ts";
 import { log } from "../../util/log.ts";
-import { butlerConfigPath, dshProfileDir, legacyConfigPath } from "../../util/paths.ts";
-import { readJson, writeJsonAtomic } from "../../host/fs.ts";
+import {
+  butlerConfigPath,
+  dshProfileDir,
+  legacyConfigPath,
+  stampOf,
+} from "../../util/paths.ts";
+import { pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
 import { DSH_PORT_DEFAULT } from "../../version.ts";
 
 export const CONFIG_SCHEMA_VERSION = 1;
@@ -112,7 +117,23 @@ let cached: AppConfig | null = null;
 export function loadConfig(): AppConfig {
   if (cached) return cached;
 
-  const existing = readJson<AppConfig>(butlerConfigPath());
+  const cfgPath = butlerConfigPath();
+  const existing = readJson<AppConfig>(cfgPath);
+  // 【2026-09-25 审计 Q-14】文件在、却读不出来 = 损坏。
+  // 旧实现把它当「首次运行」，直接用 defaults() 覆盖写回 —— 用户设置静默清零、
+  // 无备份、无日志、事后无法追查。现在改成「留证 + 记错误日志」再回退默认值。
+  if (!existing && pathExists(cfgPath)) {
+    const backup = `${cfgPath}.corrupt-${stampOf()}`;
+    try {
+      Deno.renameSync(cfgPath, backup);
+      log.error("config", `配置文件解析失败，原文件已保留为 ${backup}，本次先按默认值运行`);
+    } catch (e) {
+      log.error(
+        "config",
+        `配置文件解析失败，且备份也失败（${(e as Error).message}）：${cfgPath}`,
+      );
+    }
+  }
   if (existing) {
     const merged = { ...defaults(), ...existing };
     // schema 升级链
