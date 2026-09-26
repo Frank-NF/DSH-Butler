@@ -13,7 +13,7 @@ import { CLIENT_JS } from "./client.ts";
  * 把注入脚本里的 paramsFor 抠出来**真的执行** —— 比字符串匹配硬：能验证它到底返回什么。
  */
 function loadParamsFor(): (action: string, el: unknown) => Record<string, unknown> {
-  const m = /function paramsFor\(action, el\) \{[\s\S]*?\n  \}/.exec(CLIENT_JS);
+  const m = /function paramsFor\(action, el\) \{[\s\S]*?\n {2}\}/.exec(CLIENT_JS);
   assertEquals(m !== null, true, "找不到 paramsFor 函数");
   return new Function("action", "el", m![0] + "\nreturn paramsFor(action, el);") as (
     action: string,
