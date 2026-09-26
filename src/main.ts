@@ -14,6 +14,7 @@ import { recoverPluginTxn } from "./domains/plugin/mutate.ts";
 import { loadConfig } from "./domains/state/config.ts";
 import { startScheduler, type SchedulerHandle } from "./domains/state/scheduler.ts";
 import { unseenCount } from "./domains/state/notices.ts";
+import { initCoexist } from "./domains/env/coexist.ts";
 import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
 import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
@@ -164,6 +165,10 @@ async function main(): Promise<void> {
     } catch { /* ignore */ }
   };
 
+  // 与官方桌面端共存：启动时算一次模式（检测失败一律当「没检测到」，不因检测而改变行为）
+  const coexist = await initCoexist();
+  log.info("main", `共存模式：${coexist.mode === "service-only" ? "运维模式（官方桌面端在跑）" : "完整模式"}${coexist.detection.evidence.length ? " —— " + coexist.detection.evidence.join("；") : ""}`);
+
   if (headless) {
     // 无界面模式：把地址打到 stdout，便于脚本抓取
     console.log(`READY ${appUrl}`);
@@ -180,7 +185,9 @@ async function main(): Promise<void> {
     // 保活 + 托盘提示刷新（没有它，收进托盘后进程会自己退出，见 startHousekeeping 注释）
     startHousekeeping(tray, { headless });
     // 悬浮条要在进 DSH 之前装好：进 DSH 之后页面就换了，注入由 navigateMain 触发
-    if (mainWin) setupButlerOverlay(appUrl);
+    // 运维模式下不注入悬浮条：官方桌面端在跑时，用户不需要多一条浮条抢地方
+    if (mainWin && coexist.mode === "full") setupButlerOverlay(appUrl);
+    else if (mainWin) log.info("main", "运维模式：跳过悬浮条注入（要恢复完整模式，把设置里的 coexistMode 改成 full）");
     // 「打开就能用」：装了本体就直接把窗口换成 DSH；没装则留在管家界面（一键部署页）。
     // 异步跑 —— 先让管家界面秒开，再做探测与启动。
     if (mainWin) void autoEnterDsh();

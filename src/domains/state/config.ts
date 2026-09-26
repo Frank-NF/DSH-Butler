@@ -57,6 +57,12 @@ export interface AppConfig {
   retention: { maxBackups: number; maxBackupBytes: number };
   /** 定时任务（体检 / 备份 / 查更新）。 */
   schedule: ScheduleConfig;
+  /**
+   * 与官方桌面端共存的模式：
+   *   auto —— 检测到官方桌面端在跑就自动退成「运维模式」（不抢窗口与托盘）
+   *   full —— 永远完整模式（检测误判时用这个一句话关掉）
+   */
+  coexistMode: "auto" | "full";
   /** 实例标识（沿用旧版，保持统计连续性）。 */
   installId: string | null;
   /** 首次部署引导是否已完成。 */
@@ -95,6 +101,7 @@ function defaults(): AppConfig {
     logLevel: "info",
     theme: "light",
     retention: { maxBackups: 10, maxBackupBytes: 2 * 1024 ** 3 },
+    coexistMode: "auto",
     schedule: {
       enabled: true,
       healthEveryHours: 12,

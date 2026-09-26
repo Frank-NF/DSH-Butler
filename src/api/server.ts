@@ -441,6 +441,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         }
         patch.retention = next;
       }
+      if (body.coexistMode === "auto" || body.coexistMode === "full") patch.coexistMode = body.coexistMode;
       if (typeof body.theme === "string" && ["light", "dark", "auto"].includes(body.theme)) {
         patch.theme = body.theme;
       }
