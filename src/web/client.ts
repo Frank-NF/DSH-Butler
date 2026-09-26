@@ -101,6 +101,19 @@ export const CLIENT_JS = `(function () {
     }
   }
   function isDark() { return document.documentElement.getAttribute('data-theme') === 'dark'; }
+  /**
+   * 把「设置里的主题偏好」落到 localStorage 并立刻应用。
+   * 【踩过的坑】主题曾有两个真相源：<html data-theme> 只看 localStorage，而设置页存的是配置里的 theme，
+   * 于是「在设置里切换主题」完全没反应（用户报「主题色切换无效」）。现在设置改动会同步到 localStorage 并重画。
+   * auto = 跟随系统：去掉本地覆盖，交回给 prefers-color-scheme。
+   */
+  function applyThemePref(pref) {
+    try {
+      if (pref === 'auto') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, pref === 'dark' ? 'dark' : 'light');
+    } catch (e) { /* 忽略：localStorage 不可用时至少当次生效 */ }
+    applyTheme();
+  }
   function toggleTheme() {
     try { localStorage.setItem(THEME_KEY, isDark() ? 'light' : 'dark'); } catch (e) { /* 忽略 */ }
     applyTheme();
@@ -1618,6 +1631,7 @@ export const CLIENT_JS = `(function () {
     };
     api('/api/settings', { method: 'POST', body: body }).then(function (r) {
       if (!r || r.ok === false) { toast((r && r.error) || '保存失败', 'err'); return; }
+      applyThemePref(body.theme); // 主题要在保存后立刻生效，不能等下次打开
       toast('设置已保存' + (r.notes && r.notes.length ? '；' + r.notes.join('；') : ''), '');
       state.extra.settings = null;
       go('settings', true);
@@ -2421,6 +2435,13 @@ export const CLIENT_JS = `(function () {
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
     if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
     // 设置页左侧分组导航：切组只切 hidden，不重渲染 —— 已经改过的输入不会丢
+    // 主题下拉：选完立刻预览（保存时再落进配置），不用非点保存才看得见
+    var themeSel = hit('#set-theme');
+    if (themeSel) {
+      applyThemePref(themeSel.value);
+      return;
+    }
+
     var secGo = hit('[data-sec-go]');
     if (secGo) {
       var want = Number(secGo.getAttribute('data-sec-go'));
@@ -2593,6 +2614,7 @@ export const CLIENT_JS = `(function () {
   // ⑧ 首次使用：功能指引（只弹一次，config.onboardingDone 记住）
   function maybeOnboarding() {
     api('/api/settings').then(function (res) {
+      if (res && res.config && res.config.theme) applyThemePref(res.config.theme);
       if (!res || res.ok === false) return;
       if (res.config && res.config.onboardingDone) return;
       showOnboarding();
