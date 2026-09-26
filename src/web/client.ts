@@ -1543,19 +1543,33 @@ export const CLIENT_JS = `(function () {
     return Math.round(ms / 60000) + ' 分';
   }
 
+  /** 成功率语义色（颜色只是辅助，数字始终显示）。 */
+  function rateClass(rate) { return rate >= 95 ? 'ok' : rate >= 80 ? 'warn' : 'err'; }
+  function peakOf(points) { var m = 0; for (var i = 0; i < points.length; i++) if (points[i].value > m) m = points[i].value; return m; }
+  /** 指标 vs 目标：bullet（轨道 + 填充 + 目标线），规范里最推荐的看板写法。 */
+  function bulletStat(label, valueText, rate, target) {
+    return '<div class="bullet ' + rateClass(rate) + '"><div class="bullet-head"><span class="bullet-label">' + esc(label) + '</span><span class="bullet-value">' + esc(valueText) + '</span></div>'
+      + '<div class="bullet-track"><div class="bullet-fill" style="width:' + Math.max(2, Math.min(100, rate)) + '%"></div>'
+      + '<div class="bullet-target" style="left:' + target + '%" title="目标 ' + target + '%"></div></div>'
+      + '<div class="bullet-foot">目标 ' + target + '%</div></div>';
+  }
+
   function renderStats(r) {
     var j = r.jobs || {};
     var tools = actBtn('refresh', '重新统计', 'diag.stats');
     var html = pageHead('统计', '管家自己的账本：任务成功率与耗时、最常跑的动作、失败原因、数据目录体积，以及按天的趋势（每次打开都会补记今天的采样）。', tools);
 
-    html += '<div class="card"><div class="card-title">任务（最近 ' + (j.rangeDays || 30) + ' 天）</div><div class="stat-grid">'
-      + stat('任务总数', j.total || 0)
-      + stat('成功率', (j.successRate || 0) + '%', '成功 ' + (j.ok || 0) + ' / 失败 ' + (j.failed || 0))
-      + stat('耗时中位数', fmtMs(j.medianMs))
-      + stat('最慢一次', fmtMs(j.maxMs))
-      + '</div>'
-      + '<div class="chart-wrap">' + barChart((j.daily || []).map(function (d) { return { label: d.date.slice(5), value: d.count }; }), 56) + '</div>'
-      + '<div class="field-help">上图：每天跑了多少任务（红色=有任务，灰色=0）</div></div>';
+    var daily = (j.daily || []).map(function (d) { return { label: d.date.slice(5), value: d.count }; });
+    html += '<div class="stats-hero">'
+      + '<div class="stat-card"><div class="stat-k">任务总数</div><div class="stat-v">' + (j.total || 0) + '</div><div class="stat-s">近 ' + (j.rangeDays || 30) + ' 天</div></div>'
+      + '<div class="stat-card span2">' + bulletStat('成功率', (j.successRate || 0) + '%　成功 ' + (j.ok || 0) + ' · 失败 ' + (j.failed || 0), j.successRate || 0, 95) + '</div>'
+      + '<div class="stat-card"><div class="stat-k">耗时中位数</div><div class="stat-v">' + fmtMs(j.medianMs) + '</div><div class="stat-s">最慢 ' + fmtMs(j.maxMs) + '</div></div>'
+      + '<div class="stat-card"><div class="stat-k">平均耗时</div><div class="stat-v">' + fmtMs(j.avgMs) + '</div><div class="stat-s">' + (j.running || 0) + ' 条进行中</div></div>'
+      + '</div>';
+    html += '<div class="card"><div class="card-title">每日任务量<span class="sub">峰值 ' + peakOf(daily) + ' 次 / 天</span></div>'
+      + '<div class="chart-wrap">' + barChart(daily, 60) + '</div>'
+      + '<div class="chart-axis"><span>' + (daily.length ? esc(daily[0].label) : '') + '</span><span>今天</span></div>'
+      + '<div class="field-help">灰色柱 = 那天没跑任务；鼠标停在柱子上可看日期与次数</div></div>';
 
     html += '<div class="card"><div class="card-title">最常跑的动作<span class="sub">次数</span></div>'
       + hBars(j.topActions || [], ' 次') + '</div>';

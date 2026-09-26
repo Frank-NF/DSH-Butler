@@ -11,6 +11,7 @@ import { engine } from "../jobs/engine.ts";
 import { collectOverview } from "./overview.ts";
 import { INDEX_HTML } from "../web/markup.ts";
 import { STYLE_CSS } from "../web/styles.ts";
+import { STATS_CSS } from "../web/styles_stats.ts";
 import { CLIENT_JS } from "../web/client.ts";
 import { HELP_MD } from "../web/help.ts";
 import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
@@ -296,7 +297,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       });
     }
     if (req.method === "GET" && path === "/style.css") {
-      return new Response(STYLE_CSS, {
+      return new Response(STYLE_CSS + STATS_CSS, {
         headers: { "content-type": "text/css; charset=utf-8" },
       });
     }
