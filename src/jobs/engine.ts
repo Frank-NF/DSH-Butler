@@ -337,8 +337,14 @@ export class JobEngine {
     }
   }
 
-  /** 启动时载入历史任务，并把上次没跑完的标记为 interrupted。 */
-  loadHistory(): Job[] {
+  /**
+   * 启动时载入历史任务，并把上次没跑完的标记为 interrupted。
+   *
+   * 【只能在启动时调用一次】它会**改状态并落盘**：运行中的任务只要被它扫到，就会变成「被打断」。
+   * 曾用名 loadHistory（名字太像只读，结果被动作层当成「取历史列表」用了）：
+   * 审计动作在运行中调它，把自己和同伴都标成了 interrupted。要读历史请用 list()。
+   */
+  loadHistoryAtBoot(): Job[] {
     const interrupted: Job[] = [];
     try {
       const files = listDir(butlerJobsDir()).filter((f) => !f.dir && f.name.endsWith(".json"));

@@ -16,8 +16,18 @@ function isWriteAction(action: string): boolean {
   return def ? def.readonly === false : false;
 }
 
+/**
+ * 取历史任务。
+ * 【踩过的坑】绝不能用那个「启动时的一次性恢复」方法：它会把 running/queued
+ * 的任务标成 interrupted 并落盘 —— 在运行中的动作里调它，等于把正在跑的自己和同伴标成「被打断」
+ * （用户截图里「写操作审计」自己报「上次运行时程序被关闭」就是这个原因）。engine.list 只读。
+ */
+function historyJobs() {
+  return engine.list(500);
+}
+
 function collectRows(): AuditRow[] {
-  return buildAuditRows(engine.loadHistory(), listRollbackPoints(), isWriteAction);
+  return buildAuditRows(historyJobs(), listRollbackPoints(), isWriteAction);
 }
 
 export interface AuditReport {
@@ -37,7 +47,7 @@ export const dataAuditAction: ActionDef<Record<string, never>, AuditReport> = {
   steps: ["读取任务历史", "关联回滚点", "汇总"],
   run: async (ctx) => {
     ctx.step("s1", "读取任务历史");
-    const jobs = engine.loadHistory();
+    const jobs = historyJobs();
     ctx.detail(`历史任务 ${jobs.length} 条`);
     ctx.progress(0.4);
     ctx.step("s2", "关联回滚点");

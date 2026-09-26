@@ -9,6 +9,16 @@ import type { Job } from "../../jobs/types.ts";
 import type { RollbackPoint } from "../backup/rollback.ts";
 import { auditSummary, buildAuditRows, renderAuditCsv, renderAuditMarkdown, summarizeJob } from "./audit.ts";
 
+Deno.test("审计动作：只许读历史，不许用启动恢复（它会改状态）", async () => {
+  const src = await Deno.readTextFile(new URL("./audit_actions.ts", import.meta.url));
+  assertEquals(
+    src.includes("engine.loadHistoryAtBoot("),
+    false,
+    "审计动作绝不能调用启动恢复：那是会改状态的（会把运行中的任务标成 interrupted）",
+  );
+  assertEquals(src.includes("engine.list("), true, "取历史要走只读的 engine.list");
+});
+
 function job(over: Partial<Job>): Job {
   return {
     id: "job-1",

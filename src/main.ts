@@ -103,7 +103,7 @@ async function main(): Promise<void> {
   assertStageSafety();
 
   // 崩溃恢复：识别上次没结束的任务
-  const interrupted = engine.loadHistory();
+  const interrupted = engine.loadHistoryAtBoot();
   if (interrupted.length > 0) {
     for (const j of interrupted) {
       log.warn("main", `发现上次未完成的任务：${j.actionTitle}（${j.id}）`);
