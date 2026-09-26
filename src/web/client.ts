@@ -1506,6 +1506,25 @@ export const CLIENT_JS = `(function () {
         + '</select>', '市场目录 2000 多条，缓存久一点更省流量；点「刷新目录」可以强制重拉。')
       + '</div>';
 
+    var sch = c.schedule || {};
+    var ret = c.retention || {};
+    html += '<div class="card"><div class="card-title">定时任务与备份<span class="sub">到点自动干活，不用你盯着</span></div>'
+      + setRow('总开关', checkBox('set-sched-enabled', sch.enabled, '按下面的周期自动体检 / 备份 / 查更新'),
+        '关掉之后三个定时任务全停；手动按钮不受影响。')
+      + setRow('定时体检', '<input class="input set-num" id="set-sched-health" type="number" min="0" max="720" value="' + (sch.healthEveryHours === undefined ? 12 : sch.healthEveryHours) + '"> 小时',
+        '0 = 不做。体检发现错误或警告会记一条提醒。')
+      + setRow('定时备份', '<input class="input set-num" id="set-sched-backup" type="number" min="0" max="720" value="' + (sch.backupEveryHours === undefined ? 24 : sch.backupEveryHours) + '"> 小时',
+        '0 = 不做。备份落在管家的 backups 目录，按下面的保留策略清理。')
+      + setRow('定时查更新', '<input class="input set-num" id="set-sched-check" type="number" min="0" max="720" value="' + (sch.checkUpdatesEveryHours === undefined ? 6 : sch.checkUpdatesEveryHours) + '"> 小时',
+        '0 = 不做。发现有可更新的插件会记一条提醒。')
+      + setRow('发现问题时提醒', checkBox('set-sched-notify', sch.notify, '记一条提醒（总览页卡片 + 托盘提示）'),
+        '全绿时不打扰：只有错误/警告、备份失败、有插件可更新才提醒。')
+      + setRow('备份最多留几个', '<input class="input set-num" id="set-retention-count" type="number" min="1" max="500" value="' + (ret.maxBackups || 10) + '">',
+        '超出后从最旧的开始清理；最新的一个永远保留。')
+      + setRow('备份最多占多少 MB', '<input class="input set-num" id="set-retention-mb" type="number" min="1" max="102400" value="' + Math.round((ret.maxBackupBytes || 2147483648) / 1048576) + '">',
+        '最新的一个永远保留，哪怕它自己就超过了这个上限。')
+      + '</div>';
+
     html += '<div class="card"><div class="card-title">更新</div>'
       + setRow('自动检查本体更新', checkBox('set-auto-core', c.autoCheckCoreUpdate, '总览页自动显示"本体有新版本"'),
         '官方 npm 的 latest 通道可能落后于 next，管家会把三个通道都读回来取最新那个。')
@@ -1558,7 +1577,18 @@ export const CLIENT_JS = `(function () {
       autoCheckButlerUpdate: $('set-auto-butler').checked,
       npmRegistry: $('set-npm-registry').value,
       proxyUrl: $('set-proxy').value,
-      dshPort: Number($('set-dsh-port').value)
+      dshPort: Number($('set-dsh-port').value),
+      schedule: {
+        enabled: $('set-sched-enabled').checked,
+        healthEveryHours: Number($('set-sched-health').value) || 0,
+        backupEveryHours: Number($('set-sched-backup').value) || 0,
+        checkUpdatesEveryHours: Number($('set-sched-check').value) || 0,
+        notify: $('set-sched-notify').checked
+      },
+      retention: {
+        maxBackups: Number($('set-retention-count').value) || 10,
+        maxBackupBytes: (Number($('set-retention-mb').value) || 2048) * 1048576
+      }
     };
     api('/api/settings', { method: 'POST', body: body }).then(function (r) {
       if (!r || r.ok === false) { toast((r && r.error) || '保存失败', 'err'); return; }
