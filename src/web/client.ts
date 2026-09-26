@@ -65,6 +65,20 @@ export const CLIENT_JS = `(function () {
     return Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒';
   }
   function tail(p) { var a = String(p || '').split(/[\\\\/]/); return a[a.length - 1] || p; }
+  // 相对时间：时间线上「2 小时前」比裸时间戳好扫（绝对时间同时显示，两者不冲突）
+  function fmtAgo(iso) {
+    var t = new Date(iso).getTime();
+    if (!t || isNaN(t)) return '';
+    var d = Date.now() - t;
+    if (d < 60000) return '刚刚';
+    var m = Math.floor(d / 60000);
+    if (m < 60) return m + ' 分钟前';
+    var h = Math.floor(m / 60);
+    if (h < 24) return h + ' 小时前';
+    var dd = Math.floor(h / 24);
+    if (dd < 30) return dd + ' 天前';
+    return Math.floor(dd / 30) + ' 个月前';
+  }
   function healthText(h) { return h === 'error' ? '发现错误' : h === 'warn' ? '发现警告' : '一切正常'; }
   function healthClass(h) { return h === 'error' ? 'err' : h === 'warn' ? 'warn' : 'ok'; }
 
