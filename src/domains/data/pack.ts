@@ -14,13 +14,12 @@
  *   3. 支持 dryRun：先把「会覆盖什么、会新增什么」摊出来给人看（和回滚影响预览一个思路）。
  */
 
-import { ensureDir, isDir, isFile, listDir, pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
+import { ensureDir, isDir, listDir, pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
 import { p } from "../../util/paths.ts";
 import { APP_VERSION } from "../../version.ts";
 import {
   buildEntries,
   copyInto,
-  type DataEntry,
   type DataPreset,
   measureEntries,
   selectEntries,
