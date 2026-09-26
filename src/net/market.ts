@@ -270,8 +270,13 @@ export function queryCatalog(
   const wantOutdated = query.state === "outdated";
 
   const entries: MarketEntry[] = catalog.plugins.map((it) => {
-    const ver = installed[it.npm] ?? installed[it.name] ?? null;
-    const up = updates[it.npm] ?? updates[it.name] ?? null;
+    // 【2026-09-26 修】只按完整包名匹配，绝不能退化用短名。
+    // 曾经写成 installed[it.npm] ?? installed[it.name]：对 @steven-wu/dsh-cost-meter 这种带 scope 的包，
+    // 它拿短名 dsh-cost-meter 去匹配 —— 于是「装了 dsh-cost-meter」的状态被套到这个包头上，
+    // 界面上就是同一个插件出现两次、而且两个都写着「已装」（用户实测报的 bug）。
+    // updates 同理：版本比较也必须认全名，否则会拿另一个包的版本吓唬人。
+    const ver = installed[it.npm] ?? null;
+    const up = updates[it.npm] ?? null;
     return {
       ...it,
       installedVersion: ver,
@@ -287,8 +292,9 @@ export function queryCatalog(
   // （实测：本机 15 个装插件里 6 个不在目录里，其中有真的有新版本）。
   const covered = new Set<string>();
   for (const p of catalog.plugins) {
+    // 同样只认全名：短名一旦被当作「已覆盖」，本机真正装着的那个包就可能从
+    // 「目录未收录」里消失 —— 于是它的新版本没地方显示。
     if (installed[p.npm] !== undefined) covered.add(p.npm);
-    if (installed[p.name] !== undefined) covered.add(p.name);
   }
   for (const key of Object.keys(installed)) {
     if (covered.has(key)) continue;
