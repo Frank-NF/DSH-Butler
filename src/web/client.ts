@@ -182,6 +182,7 @@ export const CLIENT_JS = `(function () {
     'plugin.uninstall': '卸载插件', 'plugin.repair': '修复插件', 'plugin.cleanResidue': '清理安装残留',
     'plugin.cleanBackups': '清理历史备份',
     'plugin.deps': '依赖冲突体检', 'plugin.syncLock': '重建锁文件',
+    'plugin.batchUpdate': '批量更新插件',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
     'bootstrap.verify': '部署校验', 'bootstrap.discard': '放弃部署',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',
@@ -1174,6 +1175,7 @@ export const CLIENT_JS = `(function () {
   function renderPlugins(r) {
     var tools = actBtn('shield', '插件诊断', 'plugin.diagnose')
       + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
+      + writeBtn('upload', '批量更新（含验证）', 'plugin.batchUpdate')
       + writeBtn('plus', '安装插件', 'plugin.install')
       + writeBtn('wrench', '清理残留', 'plugin.cleanResidue');
     var html = pageHead('插件', '双名单（依赖 ∩ 生效名单）、包实体与作层资格。装/卸/修都会先摊开计划再执行。', tools);

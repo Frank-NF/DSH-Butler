@@ -325,7 +325,7 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
 }
 
 /** 按当前 package.json 重算依赖与锁（卸载后清理 / 回滚后对账都用它）。 */
-async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
+export async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 同 pmInstall：注入优先于 skip
   if (pmSkipped()) return;
   const r = await runCmd(
@@ -819,7 +819,7 @@ async function restartPhase(
 }
 
 /** 写前回滚点：清单 + （存在的）锁文件，逆操作 = 还原文件。 */
-async function createManifestPoint(
+export async function createManifestPoint(
   manifestPath: string,
   profileDir: string,
   trigger: string,
