@@ -27,6 +27,9 @@ import { pluginCleanResidueAction } from "../domains/plugin/clean_residue.ts";
 import { pluginCleanBackupsAction } from "../domains/plugin/clean_backups.ts";
 import { pluginDepsAction, pluginSyncLockAction } from "../domains/plugin/deps_actions.ts";
 import { pluginBatchUpdateAction } from "../domains/plugin/batch_update.ts";
+import { pluginInstallOfflineAction } from "../domains/plugin/offline_install.ts";
+import { networkSetRegistryAction, networkTestSourcesAction } from "../domains/net/sources.ts";
+import { profileListAction, profileSwitchAction } from "../domains/profile/manage.ts";
 import {
   dataBackupAction,
   dataBackupsAction,
@@ -72,6 +75,11 @@ export function registerAllActions(): void {
     pluginDepsAction,
     pluginSyncLockAction,
     pluginBatchUpdateAction,
+    pluginInstallOfflineAction,
+    networkTestSourcesAction,
+    networkSetRegistryAction,
+    profileListAction,
+    profileSwitchAction,
     dataExportAction,
     dataInspectAction,
     dataRestoreAction,

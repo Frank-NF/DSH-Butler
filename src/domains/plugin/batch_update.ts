@@ -22,8 +22,9 @@ import { runCmd } from "../../host/shell.ts";
 import { dshProfileDir } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
 import { checkUpdates } from "../../net/npm-registry.ts";
-import { collectRuntimeStatus, healthCheck } from "../runtime/status.ts";
-import { startDshServer, stopDshServer } from "../core/finish_update.ts";
+import { collectRuntimeStatus } from "../runtime/status.ts";
+import { stopDshServer } from "../core/finish_update.ts";
+import { restartAndVerify } from "./update_guard.ts";
 import { applyRollbackPoint } from "../backup/rollback.ts";
 import { explainErrorText } from "../../util/error-translate.ts";
 import {
@@ -119,16 +120,6 @@ async function batchPreflight(params: BatchUpdateParams): Promise<Finding[]> {
 
 // ── run ─────────────────────────────────────────────────────────────
 
-async function pollHealthy(port: number | null, timeoutMs: number): Promise<boolean> {
-  if (!port) return false;
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const h = await healthCheck(port);
-    if (h.reachable) return true;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return false;
-}
 
 async function runBatchUpdate(ctx: ActionContext, params: BatchUpdateParams): Promise<BatchUpdateReport> {
   const profileDir = dshProfileDir();
@@ -227,22 +218,14 @@ async function runBatchUpdate(ctx: ActionContext, params: BatchUpdateParams): Pr
   ctx.progress(0.6);
   ctx.throwIfCancelled();
 
-  // ── s4 重启 + 体检 ──
+  // ── s4 重启 + 体检（与离线安装共用 update_guard：判据只有一份，不会分叉）──
   ctx.step("s4", "重启并体检");
   ctx.progress(0.75);
   const root = resolveDshSourceRoot()?.path ?? null;
-  let started = false;
-  if (root && port) {
-    const r = await startDshServer(root, port);
-    started = r.ok;
-    line(r.ok ? `已重启 DSH 服务（端口 ${port}）` : `重启失败：${r.message}`);
-  } else {
-    line("拿不到 DSH 本体目录或端口，跳过重启（请在面板手动启动后自行确认）");
-  }
-  const reachable = started ? await pollHealthy(port, 60_000) : false;
-  const stAfter = await collectRuntimeStatus();
-  report.after = { running: stAfter.running, port: stAfter.port, reachable };
-  line(`更新后体检：进程${stAfter.running ? "在" : "不在"}，HTTP ${reachable ? "可达" : "不可达"}`);
+  const rv = await restartAndVerify(root, port);
+  for (const l of rv.lines) line(l);
+  const reachable = rv.reachable;
+  report.after = { running: rv.running, port: rv.port, reachable };
 
   // ── s5 结论：不通过就整批回退 ──
   ctx.step("s5", "结论与必要的回退");
@@ -261,15 +244,11 @@ async function runBatchUpdate(ctx: ActionContext, params: BatchUpdateParams): Pr
       } catch (e) {
         line(`⚠ 依赖树同步失败：${(e as Error).message}（清单已还原，可手动重装）`);
       }
-      if (root && port) {
-        const r2 = await startDshServer(root, port);
-        line(r2.ok ? `回退后已重启 DSH（端口 ${port}）` : `回退后重启失败：${r2.message}`);
-        const ok2 = r2.ok ? await pollHealthy(port, 60_000) : false;
-        report.after = { running: (await collectRuntimeStatus()).running, port, reachable: ok2 };
-        report.verdict = ok2 ? "rolled-back" : "verify-failed";
-      } else {
-        report.verdict = "rolled-back";
-      }
+      const rv2 = await restartAndVerify(root, port);
+      for (const l of rv2.lines) line(l);
+      report.after = { running: rv2.running, port: rv2.port, reachable: rv2.reachable };
+      // 拿不到本体/端口时（restartAndVerify 不假装成功）判定为「已退回」，因为清单与锁确实还原了
+      report.verdict = rv2.reachable || !root || !port ? "rolled-back" : "verify-failed";
     } else {
       report.verdict = "verify-failed";
       line(`⚠ 自动回退失败：${rb.error ?? "未知原因"}（回滚点 ${pointId} 仍在，可手动用「回滚点」页还原）`);

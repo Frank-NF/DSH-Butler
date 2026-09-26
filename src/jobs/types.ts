@@ -116,6 +116,7 @@ export type ActionDomain =
   | "self"
   | "backup"
   | "data"
+  | "profile"
   | "market"
   | "network"
   | "mcp"

@@ -183,6 +183,9 @@ export const CLIENT_JS = `(function () {
     'plugin.cleanBackups': '清理历史备份',
     'plugin.deps': '依赖冲突体检', 'plugin.syncLock': '重建锁文件',
     'plugin.batchUpdate': '批量更新插件',
+    'network.testSources': '测安装源速度', 'network.setRegistry': '切换安装源',
+    'profile.list': '多 profile 与端口', 'profile.switch': '切换目标 profile',
+    'plugin.installOffline': '离线安装（.tgz）',
     'data.export': '导出搬移包', 'data.inspect': '检查搬移包',
     'data.restore': '从搬移包恢复', 'data.backup': '立即备份一次', 'data.backups': '备份列表',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
@@ -657,6 +660,7 @@ export const CLIENT_JS = `(function () {
   // 写操作：plan → 确认 → apply
   function startWrite(action, el) {
     if (action === 'backup.create') { openBackupForm(); return; }
+    if (action === 'plugin.installOffline') { openOfflineForm(); return; }
     if (action === 'bootstrap.apply') { openBootstrapForm(); return; }
     // 带 data-name 的安装按钮（插件页的行内按钮、插件市场的每个条目）直接拿这个名字去出计划，
     // 不再弹空表单让人重填一遍 —— 那既多一步，也容易填错。
@@ -715,6 +719,52 @@ export const CLIENT_JS = `(function () {
       }
       toast('体检完成：' + result.summary.errors + ' 项错误 / ' + result.summary.warns + ' 项警告',
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
+      return;
+    }
+    if (action === 'profile.list') {
+      var pr = result.port || {};
+      var body = '<div class="finding ' + (pr.free ? 'info' : 'warn') + '">'
+        + '<div class="finding-title"><span class="tag ' + (pr.free ? 'ok' : 'warn') + '">' + (pr.free ? '可绑定' : '被占用') + '</span>DSH 端口 ' + esc(String(pr.configured || '')) + '</div>'
+        + '<div class="finding-row">' + (pr.likelyReserved ? '这个端口在动态保留区间（≥49152），Windows 可能把它留给系统，绑上去会报 10048。' : '不在动态保留区间。') + '</div></div>';
+      var cands = pr.candidates || [];
+      for (var ci = 0; ci < cands.length; ci++) {
+        var cd = cands[ci];
+        body += '<div class="finding ' + (cd.free ? 'info' : 'warn') + '"><div class="finding-title">'
+          + '<span class="tag ' + (cd.free ? 'ok' : 'warn') + '">' + (cd.free ? '可用' : '不可用') + '</span>端口 ' + esc(String(cd.port)) + '</div>'
+          + '<div class="finding-row">' + esc(cd.note) + '</div></div>';
+      }
+      openModal({ title: '端口体检', sub: '当前 profile：' + esc(result.active || ''), body: body, foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>' });
+      $('modal-close').addEventListener('click', closeModal);
+      return;
+    }
+    if (action === 'network.testSources') {
+      var rows = '';
+      var probes = result.probes || [];
+      for (var pi = 0; pi < probes.length; pi++) {
+        var pb = probes[pi];
+        var isBest = result.fastest && pb.url === result.fastest.url;
+        rows += '<div class="finding ' + (pb.ok ? 'info' : 'error') + '">'
+          + '<div class="finding-title"><span class="tag ' + (pb.ok ? 'ok' : 'error') + '">' + (pb.ok ? pb.ms + ' ms' : '不可用') + '</span>'
+          + esc(pb.label) + (isBest ? ' <span class="tag ok">最快</span>' : '') + '</div>'
+          + '<div class="finding-row">' + esc(pb.url) + (pb.error ? ' — ' + esc(pb.error) : '') + '</div>'
+          + '</div>';
+      }
+      var foot = '<span class="spacer"></span>';
+      if (result.fastest) {
+        // 用 writeBtn 而不是手拼按钮：它内部已经处理了属性转义（手写 data-params='…' 会踩到
+        // 模板字符串把反斜杠吃掉的问题，导致生成的脚本语法错误）。
+        foot = writeBtn('upload', '切到最快的（' + result.fastest.label + '）', 'network.setRegistry',
+          { params: { url: result.fastest.url } }, 'primary') + foot;
+      }
+      foot += '<button class="btn" id="modal-close">知道了</button>';
+      openModal({
+        title: '安装源测速结果',
+        sub: '当前管家配置：' + esc(result.current ? result.current.npmRegistry : '')
+          + '｜.npmrc：' + esc(result.npmrc && result.npmrc.registryLine ? result.npmrc.registryLine : '（没有 registry 行）'),
+        body: rows || emptyBox('没有可测的源', ''),
+        foot: foot,
+      });
+      $('modal-close').addEventListener('click', closeModal);
       return;
     }
     if (action === 'data.inspect') {
@@ -797,6 +847,25 @@ export const CLIENT_JS = `(function () {
   }
 
   // ── 表单弹窗 ─────────────────────────────────────────────────────
+
+  /** 离线安装：填一个 .tgz 文件（或装着若干 .tgz 的目录）。 */
+  function openOfflineForm() {
+    openModal({
+      title: esc('离线安装（.tgz）'),
+      sub: '填 .tgz 文件的完整路径，或一个装着若干 .tgz 的目录。不需要联网查元数据；包自身的依赖仍需本地已有或网络可达。',
+      body: '<div class="field"><label class="field-label" for="offline-path">.tgz 路径</label>'
+        + '<input class="input" id="offline-path" placeholder="C:\\Users\\你\\Downloads\\dsh-xxx-1.0.0.tgz" spellcheck="false">'
+        + '<div class="field-help">动手前会先停服、留整批回滚点；装完重启体检，起不来自动整批回退。</div></div>',
+      foot: '<button class="btn" id="modal-cancel">取消</button><span class="spacer"></span><button class="btn primary" id="offline-go">摊开计划</button>',
+    });
+    $('modal-cancel').addEventListener('click', closeModal);
+    $('offline-go').addEventListener('click', function () {
+      var p = ($('offline-path').value || '').trim();
+      if (!p) { toast('请先填 .tgz 路径', 'warn'); return; }
+      closeModal();
+      runWriteFlow('plugin.installOffline', { path: p });
+    });
+  }
 
   function openInstallForm() {
     openModal({
@@ -1234,6 +1303,8 @@ export const CLIENT_JS = `(function () {
       + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
       + writeBtn('upload', '批量更新（含验证）', 'plugin.batchUpdate')
       + writeBtn('plus', '安装插件', 'plugin.install')
+      + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline')
+      + actBtn('activity', '测安装源速度', 'network.testSources')
       + writeBtn('wrench', '清理残留', 'plugin.cleanResidue');
     var html = pageHead('插件', '双名单（依赖 ∩ 生效名单）、包实体与作层资格。装/卸/修都会先摊开计划再执行。', tools);
     html += '<div class="card"><div class="stats">'
@@ -1857,6 +1928,40 @@ export const CLIENT_JS = `(function () {
     return html;
   }
 
+  // ── 页面：多 profile（P1-1） ─────────────────────────────────────
+
+  function renderProfiles(r) {
+    var tools = actBtn('refresh', '重新体检', 'profile.list');
+    var list = r.profiles || [];
+    var port = r.port || {};
+    var html = pageHead('多 profile', '本机有几个 profile、各自装了什么、管家在指挥哪一个；顺带体检 DSH 端口是否可用。', tools);
+    html += '<div class="card"><div class="stats">'
+      + stat('当前 profile', r.active || '-')
+      + stat('本机 profile 数', list.length)
+      + stat('DSH 端口', port.configured || '-', port.free ? '当前可绑定' : '已被占用（或服务自己在用）')
+      + stat('端口风险', port.likelyReserved ? '在动态保留区间（≥49152）' : '无', port.likelyReserved ? 'Windows 可能把这段留给系统，绑上去会报 10048' : '')
+      + '</div></div>';
+    if (!list.length) {
+      return html + '<div class="card">' + emptyBox('没找到 profile', '目录：' + esc(r.profilesRoot || '')) + '</div>';
+    }
+    html += '<div class="card"><div class="card-title">profile 列表<span class="sub">目录：' + esc(r.profilesRoot || '') + '</span></div><div class="rows">';
+    for (var i = 0; i < list.length; i++) {
+      var pf = list[i];
+      html += '<div class="row"><div class="row-main">'
+        + '<div class="row-name">' + esc(pf.name)
+        + (pf.active ? badge('ok', '正在使用') : '')
+        + (pf.hasManifest ? '' : badge('warn', '没有清单'))
+        + (pf.hasLock ? '' : badge('warn', '没有锁文件')) + '</div>'
+        + '<div class="row-meta"><span>' + pf.pluginCount + ' 个插件</span><span>依赖体积 '
+        + humanSize(pf.bytes || 0) + (pf.bytesComplete ? '' : '（至少）') + '</span><span class="mono muted">' + esc(pf.path) + '</span></div>'
+        + '<div class="row-actions">'
+        + (pf.active ? '' : writeBtn('history', '切到这个 profile', 'profile.switch', { params: { name: pf.name } }, 'sm'))
+        + '</div></div></div>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
   // ── 页面：数据搬家（P1-2） ───────────────────────────────────────
 
   /** 带参数的只读按钮（检查某个搬移包）—— actBtn 不带参数，这里单独造。 */
@@ -2061,7 +2166,8 @@ export const CLIENT_JS = `(function () {
     { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
     { id: 'jobs', label: '任务', group: '记录', icon: 'list', load: loadJobs, render: renderJobs },
     { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' },
-    { id: 'data', label: '数据搬家', group: '记录', icon: 'box', action: 'data.backups', render: renderData, title: '数据搬家' }
+    { id: 'data', label: '数据搬家', group: '记录', icon: 'box', action: 'data.backups', render: renderData, title: '数据搬家' },
+    { id: 'profiles', label: '多 profile', group: '记录', icon: 'grid', action: 'profile.list', render: renderProfiles, title: '多 profile' }
   ];
 
   try {
