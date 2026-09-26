@@ -8,12 +8,21 @@
 
 import type { ActionContext, ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding } from "../../util/result.ts";
-import { ensureDir, pathExists } from "../../host/fs.ts";
+import { ensureDir, pathExists, readJson } from "../../host/fs.ts";
 import { runCmd } from "../../host/shell.ts";
 import { butlerRoot, dshProfileDir, p, stampOf } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
 import { findDependencyProblems, type LockState, lockFileState } from "./deps.ts";
 import { npmSourceArgs, pmEnvReady, pmSkipped, profileManifestPath } from "./mutate.ts";
+
+/**
+ * 读 profile 清单里声明的依赖（依赖体检与定时查更新共用同一份读法，避免两处漂移）。
+ */
+export function readInstalledDeps(): Record<string, string> {
+  const manifestPath = profileManifestPath(dshProfileDir());
+  const manifest = readJson<{ dependencies?: Record<string, string> }>(manifestPath) ?? {};
+  return manifest.dependencies ?? {};
+}
 
 export interface DepsReport {
   profileDir: string;

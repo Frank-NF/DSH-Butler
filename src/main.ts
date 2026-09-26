@@ -12,6 +12,8 @@ import { engine } from "./jobs/engine.ts";
 import { assertStageSafety, registerAllActions } from "./jobs/registry.ts";
 import { recoverPluginTxn } from "./domains/plugin/mutate.ts";
 import { loadConfig } from "./domains/state/config.ts";
+import { startScheduler, type SchedulerHandle } from "./domains/state/scheduler.ts";
+import { unseenCount } from "./domains/state/notices.ts";
 import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
 import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
@@ -153,6 +155,8 @@ async function main(): Promise<void> {
   const shutdown = () => {
     log.info("main", "收到退出信号，正在关闭…");
     stopHousekeeping();
+    scheduler?.stop();
+    scheduler = null;
     releaseSingleInstance();
     server.shutdown();
     try {
@@ -174,7 +178,7 @@ async function main(): Promise<void> {
     const mainWin = adoptDesktopWindow(appUrl);
     const tray = setupDesktopTray(mainWin, appUrl, shutdown);
     // 保活 + 托盘提示刷新（没有它，收进托盘后进程会自己退出，见 startHousekeeping 注释）
-    startHousekeeping(tray);
+    startHousekeeping(tray, { headless });
     // 悬浮条要在进 DSH 之前装好：进 DSH 之后页面就换了，注入由 navigateMain 触发
     if (mainWin) setupButlerOverlay(appUrl);
     // 「打开就能用」：装了本体就直接把窗口换成 DSH；没装则留在管家界面（一键部署页）。
@@ -579,6 +583,10 @@ let housekeepingTimer: ReturnType<typeof setInterval> | null = null;
 let showRequestTimer: ReturnType<typeof setInterval> | null = null;
 /** 由 initShell 装上的「把窗口叫到前台（必要时重建）」回调，保活定时器要用。 */
 let bringToFront: (() => boolean) | null = null;
+/** 定时任务调度器（体检 / 备份 / 查更新）。 */
+let scheduler: SchedulerHandle | null = null;
+/** 未查看的提醒数（调度器回调更新，托盘提示每 30 秒读它，不反复读文件）。 */
+let unseenNotices = 0;
 
 /**
  * 每 30 秒做一次后台整理，同时充当「保活」。
@@ -588,7 +596,7 @@ let bringToFront: (() => boolean) | null = null;
  * 关窗收进托盘后进程会在几秒内自己退出，托盘图标随之消失，用户看到的就是"托盘坏了"。
  * 有了这个定时器，进程稳稳留在后台（探针实测隐藏后存活 > 45 秒仍在跑）。
  */
-function startHousekeeping(tray: TrayHandle | null): void {
+function startHousekeeping(tray: TrayHandle | null, opts: { headless?: boolean } = {}): void {
   if (housekeepingTimer !== null) return;
   const tick = async () => {
     if (!tray) return;
@@ -596,7 +604,8 @@ function startHousekeeping(tray: TrayHandle | null): void {
       const st = await collectRuntimeStatus();
       if (hiddenToTray) return; // 收在托盘里时保留"点图标回来"的提示
       const state = st.running ? (st.health?.reachable ? "运行中" : "已启动·未就绪") : "已停止";
-      tray.setTooltip(`${APP_NAME}：DSH ${state}${st.port ? ` · ${st.port}` : ""}`);
+      const pick = unseenNotices > 0 ? ` · ${unseenNotices} 条提醒` : "";
+      tray.setTooltip(`${APP_NAME}：DSH ${state}${st.port ? ` · ${st.port}` : ""}${pick}`);
     } catch { /* 探测失败不影响保活 */ }
   };
   void tick();
@@ -606,6 +615,28 @@ function startHousekeeping(tray: TrayHandle | null): void {
 
   // 「请把窗口叫出来」的请求单独用一个 3 秒的轻量定时器（只 statSync 一个文件）。
   // 不能塞进 30 秒那条：用户重复启动管家时，窗口 30 秒后才出来太久，体验像卡死。
+  // 定时任务调度器（P1-2e + P2-3）。
+  // 与保活共用这一个入口，免得又多一处「谁先谁后启动」的疑问；
+  // 只在非 headless 时跑：headless 是给脚本/远程调用的，不该偷偷做体检和备份。
+  // 测试钩子：BUTLER_SCHEDULE_FORCE=1 让 headless 也跑调度器；
+  // BUTLER_SCHEDULE_TICK_MS 可把默认 5 分钟的间隔调短（真机验证用）。
+  const forceSchedule = Deno.env.get("BUTLER_SCHEDULE_FORCE") === "1";
+  const tickMs = Number(Deno.env.get("BUTLER_SCHEDULE_TICK_MS") ?? "");
+  if ((!opts.headless || forceSchedule) && !scheduler) {
+    unseenNotices = unseenCount();
+    scheduler = startScheduler({
+      intervalMs: Number.isFinite(tickMs) && tickMs > 0 ? tickMs : undefined,
+      onNoticesChanged: (n) => { unseenNotices = n; },
+    });
+    const sc = loadConfig().schedule;
+    log.info(
+      "main",
+      sc.enabled
+        ? `定时任务已启动：体检每 ${sc.healthEveryHours} 小时 / 备份每 ${sc.backupEveryHours} 小时 / 查更新每 ${sc.checkUpdatesEveryHours} 小时`
+        : "定时任务已关闭（设置里可开）",
+    );
+  }
+
   showRequestTimer = setInterval(() => {
     if (!consumeShowRequest()) return;
     log.info("main", "收到「把窗口叫出来」请求（重复启动了管家）—— 正在把窗口叫到前台");

@@ -18,6 +18,22 @@ import { DSH_PORT_DEFAULT } from "../../version.ts";
 
 export const CONFIG_SCHEMA_VERSION = 1;
 
+/**
+ * 定时任务配置。
+ * everyHours = 0 表示不做这件事；enabled = false 则全部停。
+ */
+export interface ScheduleConfig {
+  enabled: boolean;
+  /** 每隔多少小时体检一次。 */
+  healthEveryHours: number;
+  /** 每隔多少小时备份一次。 */
+  backupEveryHours: number;
+  /** 每隔多少小时查一次插件更新。 */
+  checkUpdatesEveryHours: number;
+  /** 发现错误级问题、可更新插件等，是否提示。 */
+  notify: boolean;
+}
+
 export interface AppConfig {
   schemaVersion: number;
   /** 手动指定的 DSH 源码目录（覆盖自动探测）。 */
@@ -39,6 +55,8 @@ export interface AppConfig {
   theme: "light" | "dark" | "auto";
   /** 备份保留策略。 */
   retention: { maxBackups: number; maxBackupBytes: number };
+  /** 定时任务（体检 / 备份 / 查更新）。 */
+  schedule: ScheduleConfig;
   /** 实例标识（沿用旧版，保持统计连续性）。 */
   installId: string | null;
   /** 首次部署引导是否已完成。 */
@@ -77,6 +95,13 @@ function defaults(): AppConfig {
     logLevel: "info",
     theme: "light",
     retention: { maxBackups: 10, maxBackupBytes: 2 * 1024 ** 3 },
+    schedule: {
+      enabled: true,
+      healthEveryHours: 12,
+      backupEveryHours: 24,
+      checkUpdatesEveryHours: 6,
+      notify: true,
+    },
     installId: null,
     onboardingDone: false,
     closeToTray: true,
@@ -135,7 +160,15 @@ export function loadConfig(): AppConfig {
     }
   }
   if (existing) {
-    const merged = { ...defaults(), ...existing };
+    // 嵌套对象必须逐字段补默认值：浅合并时，老配置里少一个字段就会变成 undefined，
+    // 后面用到它的地方（比如保留策略、定时任务）会静默算错。
+    const d = defaults();
+    const merged = {
+      ...d,
+      ...existing,
+      retention: { ...d.retention, ...(existing.retention ?? {}) },
+      schedule: { ...d.schedule, ...(existing.schedule ?? {}) },
+    };
     // schema 升级链
     if ((existing.schemaVersion ?? 0) < CONFIG_SCHEMA_VERSION) {
       merged.schemaVersion = CONFIG_SCHEMA_VERSION;
