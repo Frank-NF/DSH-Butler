@@ -214,7 +214,10 @@ export const CLIENT_JS = `(function () {
       } catch (e) { /* 解析不了就走下面的按动作取参 */ }
     }
     if (action === 'plugin.install' || action === 'plugin.uninstall' || action === 'plugin.repair') return { name: name };
-    if (action === 'backup.apply' || action === 'backup.delete' || action === 'backup.verify') return { id: id };
+    // 带 id 的动作必须在这里登记 —— 漏登记的表现是「按钮看着正常，点下去说没给参数」
+    // （2026-09-26：backup.preview 就漏过，点了报「未指定要预览哪个回滚点」）。
+    if (action === 'backup.apply' || action === 'backup.delete' || action === 'backup.verify' ||
+      action === 'backup.preview') return { id: id };
     if (action === 'core.rollback') return id ? { id: id } : {};
     return {};
   }
