@@ -34,6 +34,15 @@ export interface ScheduleConfig {
   notify: boolean;
 }
 
+/** AI 助手：用户自带的 OpenAI 兼容接口（密钥只存本地配置文件，绝不回传原文）。 */
+export interface AiConfig {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  /** 对话时自动附带诊断现场（概览摘要 + 管家日志尾部，脱敏后）。 */
+  attachDiagnostics: boolean;
+}
+
 export interface AppConfig {
   schemaVersion: number;
   /** 手动指定的 DSH 源码目录（覆盖自动探测）。 */
@@ -73,6 +82,8 @@ export interface AppConfig {
   dockEnabled: boolean;
   /** 悬浮条展开后多久没动作就自动收起（毫秒）。 */
   dockIdleMs: number;
+  /** AI 助手（用户自带 API）。 */
+  ai: AiConfig;
   /** 市场目录缓存多久（毫秒）。 */
   marketCatalogTtlMs: number;
   /** 是否自动检查本体（DSH）有没有新版本。 */
@@ -114,6 +125,7 @@ function defaults(): AppConfig {
     closeToTray: true,
     dockEnabled: true,
     dockIdleMs: 3000,
+    ai: { baseUrl: "", apiKey: "", model: "", attachDiagnostics: true },
     marketCatalogTtlMs: 6 * 60 * 60 * 1000,
     autoCheckCoreUpdate: true,
     autoCheckButlerUpdate: true,
@@ -175,6 +187,7 @@ export function loadConfig(): AppConfig {
       ...existing,
       retention: { ...d.retention, ...(existing.retention ?? {}) },
       schedule: { ...d.schedule, ...(existing.schedule ?? {}) },
+      ai: { ...d.ai, ...(existing.ai ?? {}) },
     };
     // schema 升级链
     if ((existing.schemaVersion ?? 0) < CONFIG_SCHEMA_VERSION) {
@@ -202,6 +215,11 @@ export function saveConfig(patch: Partial<AppConfig>): AppConfig {
   writeJsonAtomic(butlerConfigPath(), next);
   cached = next;
   return next;
+}
+
+/** 仅供测试：清空进程内配置缓存（配合测试里的 HOME 覆盖做隔离，业务代码不要调）。 */
+export function resetConfigCacheForTest(): void {
+  cached = null;
 }
 
 /** 手动指定 DSH 源码目录。 */

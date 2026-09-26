@@ -14,6 +14,8 @@ import { STYLE_CSS } from "../web/styles.ts";
 import { STATS_CSS } from "../web/styles_stats.ts";
 import { CLIENT_JS } from "../web/client.ts";
 import { HELP_MD } from "../web/help.ts";
+import { aiChat, assembleSystemPrompt, buildSystemPrompt, type AiMessage } from "../domains/ai/ai.ts";
+import { maskSecrets } from "../util/redact.ts";
 import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
 import {
@@ -33,12 +35,11 @@ import {
 } from "../net/market.ts";
 import { checkUpdates } from "../net/npm-registry.ts";
 import { collectLogs, readTail } from "../domains/runtime/logs.ts";
-import { butlerConfigPath, downloadsDir, p } from "../util/paths.ts";
+import { butlerConfigPath, butlerLogFile, downloadsDir, p } from "../util/paths.ts";
 import { loadNotices, markNoticesSeen, unseenCount } from "../domains/state/notices.ts";
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
-import { maskSecrets } from "../util/redact.ts";
 import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
 import { log } from "../util/log.ts";
 
@@ -85,6 +86,42 @@ const SSE_HEADERS = {
  * 威胁模型没变差：本服务只监听 127.0.0.1，令牌挡的是「浏览器里的其它网页」这类跨源来源。
  */
 const AUTH_COOKIE = "butler_token";
+
+/** AI 助手：密钥在配置与界面之间只以掩码形态出现。 */
+function maskKey(k: string): string {
+  if (!k) return "";
+  return k.length <= 8 ? "••••" : k.slice(0, 4) + "••••" + k.slice(-4);
+}
+
+/** AI 助手的现场信息：概览摘要 + 管家日志尾部，整段脱敏并限长（启动不了 DSH 时的排障现场）。 */
+async function gatherAiContext(): Promise<string> {
+  const parts: string[] = [];
+  try {
+    const ov = await collectOverview(true);
+    parts.push(
+      "管家：" + ov.app.name + " v" + ov.app.version + "（" + ov.app.stage + "）\n" +
+        "DSH 本体：" + (ov.dsh.installed
+          ? "已安装 v" + (ov.dsh.version ?? "?") + "（提交 " + (ov.dsh.headShort ?? "?") + "）" + (ov.dsh.updateAvailable ? "，有可更新版本" : "")
+          : "未安装") + "\n" +
+        "DSH 服务：" + (ov.runtime.running
+          ? "运行中（端口 " + ov.runtime.port + "，PID " + ov.runtime.pid + "）"
+          : "未运行 ← 如果用户在排查启动问题，这是关键事实") + "\n" +
+        "插件：依赖 " + ov.plugins.declared + " / 生效 " + ov.plugins.active,
+    );
+  } catch {
+    parts.push("概览摘要获取失败");
+  }
+  try {
+    const tail = readTail(butlerLogFile(), 50);
+    if (tail.lines.length > 0) {
+      parts.push(
+        "管家日志（尾部 " + tail.lines.length + " 行" + (tail.truncated ? "，已截断" : "") + "）：\n" +
+          tail.lines.join("\n"),
+      );
+    }
+  } catch { /* 日志拿不到就不附 */ }
+  return maskSecrets(parts.join("\n\n"));
+}
 
 export function createApiServer(opts: { token: string; port?: number }): ServerHandle {
   const token = opts.token;
@@ -384,6 +421,85 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     if (req.method === "GET" && path === "/api/help") {
       return json({ markdown: HELP_MD });
     }
+
+    // ── AI 助手：用户自带的 OpenAI 兼容接口。密钥只存本地配置，GET 永远只给掩码 ──
+    if (req.method === "GET" && path === "/api/ai/config") {
+      const ai = loadConfig().ai;
+      return json({
+        ok: true,
+        baseUrl: ai.baseUrl,
+        model: ai.model,
+        attachDiagnostics: ai.attachDiagnostics,
+        hasKey: ai.apiKey.length > 0,
+        keyMasked: maskKey(ai.apiKey),
+      });
+    }
+    if (req.method === "POST" && path === "/api/ai/config") {
+      let body: Record<string, unknown>;
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const ai = { ...loadConfig().ai };
+      if (typeof body.baseUrl === "string") ai.baseUrl = body.baseUrl.trim();
+      if (typeof body.model === "string") ai.model = body.model.trim();
+      if (typeof body.attachDiagnostics === "boolean") ai.attachDiagnostics = body.attachDiagnostics;
+      // 密钥留空 = 保持不变（界面上明说）；clearKey = true 才真清除
+      if (typeof body.apiKey === "string" && body.apiKey.trim() !== "") ai.apiKey = body.apiKey.trim();
+      if (body.clearKey === true) ai.apiKey = "";
+      saveConfig({ ai });
+      return json({ ok: true, hasKey: ai.apiKey.length > 0, keyMasked: maskKey(ai.apiKey) });
+    }
+    if (req.method === "POST" && path === "/api/ai/chat") {
+      let body: { messages?: unknown };
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const raw = Array.isArray(body.messages) ? body.messages : [];
+      const history: AiMessage[] = [];
+      for (const m of raw.slice(-16)) {
+        const mm = m as Record<string, unknown>;
+        if ((mm.role === "user" || mm.role === "assistant") && typeof mm.content === "string" && mm.content.trim() !== "") {
+          history.push({ role: mm.role, content: mm.content.slice(0, 8000) });
+        }
+      }
+      const lastMsg = history[history.length - 1];
+      if (lastMsg === undefined || lastMsg.role !== "user") {
+        return json({ ok: false, error: "缺少要发送的消息" }, 400);
+      }
+      const ai = loadConfig().ai;
+      if (!ai.baseUrl.trim() || !ai.model.trim() || !ai.apiKey.trim()) {
+        return json({ ok: false, error: "先在上方填好 API 地址、模型与密钥并保存" }, 400);
+      }
+      const parts: string[] = [];
+      if (ai.attachDiagnostics) {
+        try {
+          parts.push(await gatherAiContext());
+        } catch { /* 采不到现场就只带基础提示词 */ }
+      }
+      const messages: AiMessage[] = [{ role: "system", content: assembleSystemPrompt(buildSystemPrompt(), parts) }, ...history];
+      try {
+        const reply = await aiChat(ai, messages);
+        return json({ ok: true, reply });
+      } catch (e) {
+        return json({ ok: false, error: (e as Error).message }, 502);
+      }
+    }
+    if (req.method === "POST" && path === "/api/ai/test") {
+      const ai = loadConfig().ai;
+      if (!ai.baseUrl.trim() || !ai.model.trim() || !ai.apiKey.trim()) {
+        return json({ ok: false, error: "先填好 API 地址、模型与密钥并保存" }, 400);
+      }
+      try {
+        const reply = await aiChat(ai, [{ role: "user", content: "只用四个字回复：连接正常" }]);
+        return json({ ok: true, reply });
+      } catch (e) {
+        return json({ ok: false, error: (e as Error).message }, 502);
+      }
+    }
     if (req.method === "GET" && path === "/api/settings") {
       const cfg = loadConfig();
       const auto = await autostartEnabled().catch(() => false);
@@ -476,7 +592,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       if (Object.keys(patch).length === 0) {
         return json({ ok: false, error: "没有任何可识别的设置项" }, 400);
       }
-      const saved = saveConfig(patch as Parameters<typeof saveConfig>[0]);
+      saveConfig(patch as Parameters<typeof saveConfig>[0]);
       const notes: string[] = [];
       if (typeof patch.autostart === "boolean") {
         const res = await setAutostart(patch.autostart);

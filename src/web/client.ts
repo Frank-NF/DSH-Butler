@@ -134,6 +134,7 @@ export const CLIENT_JS = `(function () {
     clipboard: SVG_OPEN + '<path d="M9 4h6v3H9z"/><path d="M15 5.5h2a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1h2"/><path d="M9 13.5l2 2 4-4"/></svg>',
     list: SVG_OPEN + '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>',
     history: SVG_OPEN + '<path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v4h4"/><path d="M12 8v4.5l3 1.5"/></svg>',
+    chat: SVG_OPEN + '<path d="M21 14a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z"/><path d="M8 9h8M8 12.5h5"/></svg>',
     sun: SVG_OPEN + '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"/></svg>',
     moon: SVG_OPEN + '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>',
     refresh: SVG_OPEN + '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 5v6h-6"/></svg>',
@@ -2422,6 +2423,131 @@ export const CLIENT_JS = `(function () {
 
   // ── 路由 ─────────────────────────────────────────────────────────
 
+  // ── AI 助手：自带 API 的对话（DSH 起不来时的排障通道） ────────────
+  // 转义纪律与本文件一致：不用反引号与插值，字符串一律单引号拼接。
+  var AI = { cfg: null, messages: [], busy: false };
+
+  function loadAiConfig() {
+    return api('/api/ai/config');
+  }
+
+  function renderAi(cfg) {
+    AI.cfg = cfg;
+    var keyPh = cfg.hasKey ? ('已保存（' + cfg.keyMasked + '）· 留空 = 不修改') : 'sk-…';
+    var html = pageHead('AI 助手', '自带 API 的对话助手：DSH 起不来的时候，管家还在 —— 把现场喂给它，照它说的修。密钥只存本机配置文件，绝不回传原文。', '');
+    html += '<div class="card"><div class="card-title">API 设置<span class="sub">OpenAI 兼容接口（DeepSeek / GLM / Kimi / Ollama 等都行）</span></div>'
+      + '<div class="field"><label class="field-label" for="ai-base">API 地址</label><input class="input" id="ai-base" placeholder="https://api.deepseek.com" value="' + esc(cfg.baseUrl) + '"></div>'
+      + '<div class="field"><label class="field-label" for="ai-key">API 密钥</label><input class="input" id="ai-key" type="password" placeholder="' + esc(keyPh) + '" autocomplete="off"></div>'
+      + '<div class="field"><label class="field-label" for="ai-model">模型名</label><input class="input" id="ai-model" placeholder="deepseek-chat" value="' + esc(cfg.model) + '"></div>'
+      + '<label class="check"><input type="checkbox" id="ai-diag"' + (cfg.attachDiagnostics ? ' checked' : '') + '><span>对话时自动附带诊断现场（管家状态 + 日志尾部，已脱敏）—— DSH 起不来时靠它排障，建议开着</span></label>'
+      + '<div class="btn-row" style="margin-top:12px">'
+      + '<button class="btn primary" id="ai-save">保存配置</button>'
+      + '<button class="btn" id="ai-test">测试连接</button>'
+      + (cfg.hasKey ? '<button class="btn" id="ai-clearkey">清除已存密钥</button>' : '')
+      + '</div></div>';
+    html += '<div class="card" style="margin-top:14px"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
+      + '<div id="ai-box" class="chat-box"></div>'
+      + '<div class="chat-row"><textarea id="ai-input" class="textarea" rows="2" placeholder="描述你的问题，回车发送（Shift+回车换行）…"></textarea>'
+      + '<button class="btn primary" id="ai-send">发送</button></div>'
+      + '<div class="btn-row" style="margin-top:8px"><button class="btn" id="ai-clear">清空对话</button>'
+      + '<span style="align-self:center;font-size:12px;color:var(--text-3)">AI 只给建议；真正动手仍走管家的计划确认。</span></div></div>';
+    return html;
+  }
+
+  function aiBubble(role, text) {
+    var box = $('ai-box');
+    if (!box) return;
+    var d = document.createElement('div');
+    d.className = 'msg ' + (role === 'user' ? 'user' : 'ai');
+    var w = document.createElement('div');
+    w.className = 'who';
+    w.textContent = role === 'user' ? '你' : 'AI 助手';
+    var b = document.createElement('div');
+    b.className = 'body';
+    b.textContent = text;
+    d.appendChild(w);
+    d.appendChild(b);
+    box.appendChild(d);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function aiRenderAll() {
+    var box = $('ai-box');
+    if (!box) return;
+    box.innerHTML = '';
+    if (!AI.messages.length) {
+      var d = document.createElement('div');
+      d.className = 'msg empty';
+      d.textContent = '还没有对话。试试：「DSH 服务起不来，端口 3081 被占用，怎么排查？」';
+      box.appendChild(d);
+      return;
+    }
+    for (var i = 0; i < AI.messages.length; i++) aiBubble(AI.messages[i].role, AI.messages[i].content);
+  }
+
+  function initAi() {
+    aiRenderAll();
+    var send = function () {
+      if (AI.busy) return;
+      var inp = $('ai-input');
+      var text = (inp.value || '').trim();
+      if (!text) return;
+      inp.value = '';
+      AI.messages.push({ role: 'user', content: text });
+      aiBubble('user', text);
+      AI.busy = true;
+      var btn = $('ai-send');
+      if (btn) { btn.disabled = true; btn.textContent = '思考中…'; }
+      api('/api/ai/chat', { method: 'POST', body: { messages: AI.messages.slice(-16) } }).then(function (r) {
+        AI.messages.push({ role: 'assistant', content: r.reply || '' });
+        aiRenderAll();
+      }).catch(function (e) {
+        toast('AI 对话失败：' + (e && e.message ? e.message : e), 'err');
+        aiRenderAll();
+      }).finally(function () {
+        AI.busy = false;
+        var b = $('ai-send');
+        if (b) { b.disabled = false; b.textContent = '发送'; }
+      });
+    };
+    var inp = $('ai-input');
+    inp.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+    });
+    $('ai-send').addEventListener('click', send);
+    $('ai-save').addEventListener('click', function () {
+      var body = { baseUrl: $('ai-base').value, model: $('ai-model').value, attachDiagnostics: $('ai-diag').checked };
+      var k = $('ai-key').value;
+      if (k) body.apiKey = k;
+      api('/api/ai/config', { method: 'POST', body: body }).then(function (r) {
+        AI.cfg = Object.assign({}, AI.cfg, { baseUrl: body.baseUrl, model: body.model, attachDiagnostics: body.attachDiagnostics, hasKey: r.hasKey, keyMasked: r.keyMasked });
+        toast('AI 配置已保存', 'ok');
+        go('ai', true);
+      }).catch(function (e) { toast('保存失败：' + (e && e.message ? e.message : e), 'err'); });
+    });
+    $('ai-test').addEventListener('click', function () {
+      var b = $('ai-test');
+      b.disabled = true;
+      b.textContent = '测试中…';
+      api('/api/ai/test', { method: 'POST', body: {} }).then(function (r) {
+        toast('连接正常：' + (r.reply || '').slice(0, 40), 'ok');
+      }).catch(function (e) { toast('连接失败：' + (e && e.message ? e.message : e), 'err'); }).finally(function () {
+        b.disabled = false;
+        b.textContent = '测试连接';
+      });
+    });
+    var ck = $('ai-clearkey');
+    if (ck) {
+      ck.addEventListener('click', function () {
+        api('/api/ai/config', { method: 'POST', body: { clearKey: true } }).then(function () {
+          toast('已清除本机保存的密钥', 'ok');
+          go('ai', true);
+        }).catch(function (e) { toast('清除失败：' + (e && e.message ? e.message : e), 'err'); });
+      });
+    }
+    $('ai-clear').addEventListener('click', function () { AI.messages = []; aiRenderAll(); });
+  }
+
   var PAGES = [
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
     { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
@@ -2435,6 +2561,7 @@ export const CLIENT_JS = `(function () {
     { id: 'plugins', label: '插件', group: '诊断', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
     { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集' },
     { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
+    { id: 'ai', label: 'AI 助手', group: '诊断', icon: 'chat', load: loadAiConfig, render: renderAi, title: 'AI 助手' },
     { id: 'stats', label: '统计', group: '诊断', icon: 'activity', action: 'diag.stats', render: renderStats, title: '运维统计' },
     { id: 'jobs', label: '任务', group: '记录', icon: 'list', load: loadJobs, render: renderJobs },
     { id: 'help', label: '帮助', group: '记录', icon: 'book', load: loadHelp, render: renderHelp },
@@ -2627,6 +2754,7 @@ export const CLIENT_JS = `(function () {
       initRegistryPicker();
       layoutSettingsSections();
     }
+    if (page === 'ai') initAi();
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
     // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，

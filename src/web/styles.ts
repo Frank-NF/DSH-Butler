@@ -569,4 +569,20 @@ button { cursor: pointer; }
 .set-num { width: 110px; }
 .check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
 .check input { width: 15px; height: 15px; accent-color: var(--brand-fill); }
+/* ── AI 助手（对话气泡与输入行）── */
+.chat-box {
+  display: flex; flex-direction: column; gap: 10px;
+  height: 340px; overflow-y: auto; padding: 12px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-2); margin-bottom: 10px;
+}
+.msg { max-width: 82%; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.6; }
+.msg .who { font-size: 11px; color: var(--text-3); margin-bottom: 3px; }
+.msg .body { white-space: pre-wrap; word-break: break-word; }
+.msg.user { align-self: flex-end; background: var(--brand-weak); border: 1px solid var(--border); }
+.msg.ai { align-self: flex-start; background: var(--surface); border: 1px solid var(--border-strong); }
+.msg.empty { align-self: center; color: var(--text-3); background: none; border: none; }
+.chat-row { display: flex; gap: 8px; align-items: flex-end; }
+.chat-row .textarea { flex: 1; resize: none; min-height: 56px; }
+
 `.trim();
