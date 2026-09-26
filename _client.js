@@ -1,23 +1,4 @@
-/**
- * 客户端脚本（内嵌字符串）。
- *
- * 约束（原样注入 <script>，违反即全站白屏）：
- *   - 不使用反引号；不出现 美元符加大括号 的插值写法；字符串一律用单引号拼接。
- *   - JS 里需要换行符的地方（如 join 的实参）在本文件里写成双反斜杠 n：
- *     TS 模板串吃掉一层，发出的 JS 里是标准的反斜杠 n。
- *
- * 令牌怎么来的：桌面态下【不能】依赖 URL —— 窗口是 deno desktop 运行时自己导航的，
- * 我们塞不进 query。服务端会在响应里下发一个 HttpOnly 的同源 cookie，浏览器自动携带
- * （EventSource 也一样），所以这里根本不需要知道令牌是什么。只有用浏览器打开
- * ?t=<令牌> 的开发场景才回退到读 query 并手动加请求头。
- *
- * 视觉与交互规范见 docs/UI-DESIGN-SYSTEM.md（v1.0）：
- *   - 写操作一律先 POST /api/plan 拿计划 → 弹窗摊开步骤与写前检查 → 勾选确认才执行；
- *   - 状态永远「色 + 字」双重编码，不靠颜色单独表意；
- *   - 空态 / 加载态 / 错误态三态齐全。
- */
-
-export const CLIENT_JS = `(function () {
+(function () {
   'use strict';
 
   var TOKEN = new URLSearchParams(location.search).get('t') || '';
@@ -64,7 +45,7 @@ export const CLIENT_JS = `(function () {
     if (s < 60) return s.toFixed(1) + ' 秒';
     return Math.floor(s / 60) + ' 分 ' + Math.round(s % 60) + ' 秒';
   }
-  function tail(p) { var a = String(p || '').split(/[\\\\/]/); return a[a.length - 1] || p; }
+  function tail(p) { var a = String(p || '').split(/[\\/]/); return a[a.length - 1] || p; }
   // 相对时间：时间线上「2 小时前」比裸时间戳好扫（绝对时间同时显示，两者不冲突）
   function fmtAgo(iso) {
     var t = new Date(iso).getTime();
@@ -367,7 +348,7 @@ export const CLIENT_JS = `(function () {
           'sm primary',
         ) + '</div>';
       }
-      if (f.evidence && f.evidence.length) html += '<div class="finding-evidence">' + esc(f.evidence.slice(0, 8).join('\\n')) + '</div>';
+      if (f.evidence && f.evidence.length) html += '<div class="finding-evidence">' + esc(f.evidence.slice(0, 8).join('\n')) + '</div>';
       html += '</div>';
     }
     return html;
@@ -636,7 +617,7 @@ export const CLIENT_JS = `(function () {
   function showResult(action, result) {
     var body = '';
     var lines = result && result.lines;
-    if (lines && lines.length) body += '<div class="logbox">' + esc(lines.join('\\n')) + '</div>';
+    if (lines && lines.length) body += '<div class="logbox">' + esc(lines.join('\n')) + '</div>';
     var warnings = result && result.warnings;
     if (warnings && warnings.length) {
       body += '<div style="height:12px"></div>';
@@ -865,7 +846,7 @@ export const CLIENT_JS = `(function () {
       for (var i = 0; i < (result.results || []).length; i++) {
         var x = result.results[i];
         body += '<div class="finding ' + (x.ok ? 'ok' : 'error') + '"><div class="finding-title"><span class="tag ' + (x.ok ? 'ok' : 'error') + '">' + (x.ok ? '通过' : '不通过') + '</span><span class="mono">' + esc(x.id) + '</span></div>'
-          + (x.problems && x.problems.length ? '<div class="finding-evidence">' + esc(x.problems.join('\\n')) + '</div>' : '') + '</div>';
+          + (x.problems && x.problems.length ? '<div class="finding-evidence">' + esc(x.problems.join('\n')) + '</div>' : '') + '</div>';
       }
       openModal({ title: esc(ACT_TITLE[action] || action), sub: '校验时间 ' + fmtTime(result.checkedAt), body: body || emptyBox('没有可校验的回滚点', ''), foot: '<span class="spacer"></span><button class="btn primary" id="modal-close">完成</button>' });
       $('modal-close').addEventListener('click', closeModal);
@@ -892,7 +873,7 @@ export const CLIENT_JS = `(function () {
       title: esc('离线安装（.tgz）'),
       sub: '填 .tgz 文件的完整路径，或一个装着若干 .tgz 的目录。不需要联网查元数据；包自身的依赖仍需本地已有或网络可达。',
       body: '<div class="field"><label class="field-label" for="offline-path">.tgz 路径</label>'
-        + '<input class="input" id="offline-path" placeholder="C:\\Users\\你\\Downloads\\dsh-xxx-1.0.0.tgz" spellcheck="false">'
+        + '<input class="input" id="offline-path" placeholder="C:\Users\你\Downloads\dsh-xxx-1.0.0.tgz" spellcheck="false">'
         + '<div class="field-help">动手前会先停服、留整批回滚点；装完重启体检，起不来自动整批回退。</div></div>',
       foot: '<button class="btn" id="modal-cancel">取消</button><span class="spacer"></span><button class="btn primary" id="offline-go">摊开计划</button>',
     });
@@ -944,7 +925,7 @@ export const CLIENT_JS = `(function () {
     $('bk-go').addEventListener('click', function () {
       var kind = $('bk-kind').value;
       var raw = $('bk-paths').value || '';
-      var paths = raw.split(/\\r?\\n/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
+      var paths = raw.split(/\r?\n/).map(function (s) { return s.trim(); }).filter(function (s) { return s.length > 0; });
       if (!paths.length) { toast('至少填一个文件路径', 'warn'); return; }
       closeModal();
       runWriteFlow('backup.create', { kind: kind, paths: paths, trigger: '界面手动创建' });
@@ -954,7 +935,7 @@ export const CLIENT_JS = `(function () {
       var el = $('bk-paths');
       var help = $('bk-help');
       if (!el) return;
-      el.value = dir + '/package.json' + '\\n' + dir + '/pnpm-lock.yaml';
+      el.value = dir + '/package.json' + '\n' + dir + '/pnpm-lock.yaml';
       if (help) help.textContent = '已按 profile 目录（' + dir + '）预填，可自行修改。';
     };
     if (state.cache.env && state.cache.env.dsh && state.cache.env.dsh.profileDir) {
@@ -1503,10 +1484,10 @@ export const CLIENT_JS = `(function () {
    * 为什么不上完整解析器：为一份自己写的文档引一个库不划算，而且它还要多一次构建。
    */
   function mdToHtml(md) {
-    // 【踩过的坑，连中两次】这个文件整体是一个模板字符串，任何反斜杠转义都会先被模板吃掉：
-    //   · 注释里写反斜杠加 r 会变成真的换行 —— 注释被截断，后半行变成代码 → 语法错；
-    //   · 正则字面量里的反斜杠同理，带斜杠的 URL 正则会被拆坏。
-    // 所以本段渲染一律不用正则、注释也不写反斜杠，全部改用字符切分。
+    // 【踩过的坑】这里不能用正则字面量：client.ts 整体是模板字符串， / s 这类转义
+    // 会被模板先吃掉（/?
+/ 会变成真的换行，正则串行 → 语法错 → 整页白屏）。
+    // 所以整段渲染一律不用正则，改用字符切分。
     var lines = String(md || '').split(String.fromCharCode(13)).join('').split(String.fromCharCode(10));
     var out = [];
     var inList = false;
@@ -2809,4 +2790,4 @@ export const CLIENT_JS = `(function () {
     $('onboarding-later').addEventListener('click', function () { done(false); });
     $('onboarding-done').addEventListener('click', function () { done(true); });
   }
-})();`;
+})();

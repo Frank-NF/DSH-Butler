@@ -12,6 +12,7 @@ import { collectOverview } from "./overview.ts";
 import { INDEX_HTML } from "../web/markup.ts";
 import { STYLE_CSS } from "../web/styles.ts";
 import { CLIENT_JS } from "../web/client.ts";
+import { HELP_MD } from "../web/help.ts";
 import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
 import {
@@ -378,6 +379,10 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       return json({ ok: true, notices: list, unseen: unseenCount(list) });
     }
 
+    // 帮助文档：内容随程序走（单文件 exe 里读不到 docs/），界面与官网用同一份 Markdown
+    if (req.method === "GET" && path === "/api/help") {
+      return json({ markdown: HELP_MD });
+    }
     if (req.method === "GET" && path === "/api/settings") {
       const cfg = loadConfig();
       const auto = await autostartEnabled().catch(() => false);
