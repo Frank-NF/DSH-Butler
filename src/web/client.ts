@@ -188,6 +188,7 @@ export const CLIENT_JS = `(function () {
     'profile.list': '多 profile 与端口', 'profile.switch': '切换目标 profile',
     'plugin.installOffline': '离线安装（.tgz）',
     'data.diagnose': '导出诊断包（脱敏）',
+    'data.audit': '写操作审计', 'data.auditExport': '导出写操作审计',
     'data.export': '导出搬移包', 'data.inspect': '检查搬移包',
     'data.restore': '从搬移包恢复', 'data.backup': '立即备份一次', 'data.backups': '备份列表',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
@@ -721,6 +722,27 @@ export const CLIENT_JS = `(function () {
       }
       toast('体检完成：' + result.summary.errors + ' 项错误 / ' + result.summary.warns + ' 项警告',
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
+      return;
+    }
+    if (action === 'data.audit') {
+      var auditRows = '';
+      var srcLabel = { ui: '界面', cli: '命令行', schedule: '定时', unknown: '未知' };
+      for (var ai = 0; ai < (result.rows || []).length; ai++) {
+        var rw = result.rows[ai];
+        auditRows += '<div class="finding ' + (rw.status === 'succeeded' ? 'info' : 'error') + '">'
+          + '<div class="finding-title"><span class="tag ' + (rw.status === 'succeeded' ? 'ok' : 'error') + '">'
+          + esc(srcLabel[rw.source] || rw.source) + '</span>' + esc(rw.title) + '</div>'
+          + '<div class="finding-row">' + esc(fmtTime(rw.at)) + ' · ' + esc(rw.summary)
+          + (rw.rollbackPointId ? ' · 回滚点 ' + esc(rw.rollbackPointId) : ' · 无回滚点') + '</div>'
+          + '</div>';
+      }
+      openModal({
+        title: '写操作审计',
+        sub: '写操作 ' + (result.summary ? result.summary.total : 0) + ' 条（历史任务共 ' + (result.totalJobs || 0) + ' 条）· 只列会改动系统的那种',
+        body: auditRows || emptyBox('还没有写操作', '装插件、批量更新、还原、导出这类改动会记在这里。'),
+        foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>',
+      });
+      $('modal-close').addEventListener('click', closeModal);
       return;
     }
     if (action === 'profile.list') {
@@ -1861,8 +1883,10 @@ export const CLIENT_JS = `(function () {
   function loadJobs() { return api('/api/jobs?limit=50'); }
 
   function renderJobs(list) {
-    var tools = '<button class="btn sm" id="btn-refresh-page">' + icon('refresh') + '<span>刷新</span></button>';
-    var html = pageHead('任务', '管家做过的每一件事都在这里，步骤、耗时与结果都可回看。', tools);
+    var tools = actBtn('list', '写操作审计', 'data.audit')
+      + writeBtn('box', '导出审计', 'data.auditExport')
+      + '<button class="btn sm" id="btn-refresh-page">' + icon('refresh') + '<span>刷新</span></button>';
+    var html = pageHead('任务', '管家做过的每一件事都在这里，步骤、耗时与结果都可回看。右上角可以只看【写操作】并导出。', tools);
     if (!list || !list.length) {
       return html + '<div class="card">' + emptyBox('还没有任何任务', '跑一次体检或装一个插件，这里就有记录了。') + '</div>';
     }

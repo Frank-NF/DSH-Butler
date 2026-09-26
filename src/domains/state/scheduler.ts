@@ -140,7 +140,7 @@ export function startScheduler(opts: SchedulerOptions = {}): SchedulerHandle {
           continue;
         }
         const spec = TASK_ACTIONS[t.id];
-        const created = await engine.create(spec.action, spec.params);
+        const created = await engine.create(spec.action, spec.params, { source: "schedule" });
         if (!created.ok || !created.jobId) {
           // 起不来就不记账 —— 下一轮再试（例如别的写操作正占着）
           log.warn("schedule", `${t.label}本轮未启动：${created.error ?? "未知原因"}`);

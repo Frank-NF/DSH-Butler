@@ -79,7 +79,11 @@ export class JobEngine {
 
   // ── 创建与执行 ─────────────────────────────────────────────────
 
-  async create(action: string, params: Record<string, unknown> = {}): Promise<CreateResult> {
+  async create(
+    action: string,
+    params: Record<string, unknown> = {},
+    opts: { source?: "ui" | "cli" | "schedule" } = {},
+  ): Promise<CreateResult> {
     const def = this.#defs.get(action);
     if (!def) {
       return { ok: false, error: `未知动作：${action}` };
@@ -105,6 +109,7 @@ export class JobEngine {
       action,
       actionTitle: def.title,
       params,
+      source: opts.source ?? "ui",
       status: "queued",
       createdAt: now,
       steps: (def.steps ?? []).map((title, i): JobStep => ({

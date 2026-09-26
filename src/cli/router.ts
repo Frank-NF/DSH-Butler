@@ -374,7 +374,7 @@ async function runOne(
   params: Record<string, unknown>,
   json: boolean,
 ): Promise<number> {
-  const created = await engine.create(action, params);
+  const created = await engine.create(action, params, { source: "cli" });
   if (!created.ok || !created.jobId) {
     console.error(created.error ?? "无法创建任务");
     return EXIT.PRECOND;

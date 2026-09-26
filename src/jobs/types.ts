@@ -39,6 +39,8 @@ export interface Job {
   action: string;
   actionTitle: string;
   params: Record<string, unknown>;
+  /** 谁触发的：ui = 界面点的，schedule = 定时任务，cli = 命令行。审计报告要用它说清「谁改的」。 */
+  source?: "ui" | "cli" | "schedule";
   status: JobStatus;
   createdAt: string;
   startedAt?: string;

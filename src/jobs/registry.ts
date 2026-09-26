@@ -31,6 +31,7 @@ import { pluginInstallOfflineAction } from "../domains/plugin/offline_install.ts
 import { networkSetRegistryAction, networkTestSourcesAction } from "../domains/net/sources.ts";
 import { profileListAction, profileSwitchAction } from "../domains/profile/manage.ts";
 import { dataDiagnoseAction } from "../domains/diag/package_actions.ts";
+import { dataAuditAction, dataAuditExportAction } from "../domains/data/audit_actions.ts";
 import {
   dataBackupAction,
   dataBackupsAction,
@@ -82,6 +83,8 @@ export function registerAllActions(): void {
     profileListAction,
     profileSwitchAction,
     dataDiagnoseAction,
+    dataAuditAction,
+    dataAuditExportAction,
     dataExportAction,
     dataInspectAction,
     dataRestoreAction,
