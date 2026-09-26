@@ -717,6 +717,30 @@ export const CLIENT_JS = `(function () {
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
       return;
     }
+    if (action === 'data.inspect') {
+      var rows = '';
+      for (var di = 0; di < (result.items || []).length; di++) {
+        var it = result.items[di];
+        rows += '<div class="finding ' + (it.overwrites ? 'warn' : 'info') + '">'
+          + '<div class="finding-title"><span class="tag ' + (it.overwrites ? 'warn' : 'plain') + '">' + (it.overwrites ? '会覆盖' : '新增') + '</span>' + esc(it.label) + '</div>'
+          + '<div class="finding-evidence">' + esc(it.target) + '</div></div>';
+      }
+      for (var bi = 0; bi < (result.blocked || []).length; bi++) {
+        var bk = result.blocked[bi];
+        rows += '<div class="finding error"><div class="finding-title"><span class="tag error">拦下</span>' + esc(bk.label) + '</div>'
+          + '<div class="finding-row">' + esc(bk.reason) + '</div></div>';
+      }
+      openModal({
+        title: '搬移包检查结果',
+        sub: '共 ' + (result.summary ? result.summary.total : 0) + ' 项：会覆盖 ' + (result.summary ? result.summary.overwrites : 0)
+          + '、新增 ' + (result.summary ? result.summary.news : 0) + '、拦下 ' + (result.summary ? result.summary.blocked : 0)
+          + '｜来自 ' + esc(result.manifest ? result.manifest.hostname : '') + '，生成于 ' + esc(result.manifest ? fmtTime(result.manifest.createdAt) : ''),
+        body: rows || emptyBox('包里没有可恢复的条目', '这份包的 MANIFEST 里没有任何条目。'),
+        foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>',
+      });
+      $('modal-close').addEventListener('click', closeModal);
+      return;
+    }
     if (action === 'plugin.deps') {
       state.extra.pluginDeps = result;
       toast(
@@ -1802,6 +1826,52 @@ export const CLIENT_JS = `(function () {
     return html;
   }
 
+  // ── 页面：数据搬家（P1-2） ───────────────────────────────────────
+
+  /** 带参数的只读按钮（检查某个搬移包）—— actBtn 不带参数，这里单独造。 */
+  function packBtn(iconName, label, action, dir, cls) {
+    return '<button class="btn ' + (cls || 'sm') + '" data-act="' + esc(action) + '" data-params="' +
+      esc(JSON.stringify({ dir: dir })) + '" title="' + esc(label) + '">' + icon(iconName) + '<span>' + esc(label) + '</span></button>';
+  }
+
+  function renderData(r) {
+    var tools = writeBtn('upload', '导出搬移包', 'data.export')
+      + writeBtn('box', '立即备份一次', 'data.backup')
+      + actBtn('shield', '检查最新包', 'data.inspect');
+    var list = r.backups || [];
+    var lim = r.limits || { maxBackups: 0, maxBackupBytes: 0 };
+    var html = pageHead('数据搬家', '把配置、插件清单与技能打成搬移包，换机时拷过去就能恢复；备份目录里的旧包按保留策略自动清理。', tools);
+    html += '<div class="card"><div class="stats">'
+      + stat('备份数量', list.length)
+      + stat('占用空间', humanSize(r.totalBytes || 0))
+      + stat('保留策略', lim.maxBackups + ' 个 / ' + Math.round((lim.maxBackupBytes || 0) / 1024 / 1024) + ' MB', '超出的旧备份会在下次备份时清理')
+      + stat('保存位置', r.root || '-', '', true)
+      + '</div></div>';
+    var plan = r.plan || { trim: [] };
+    if (plan.trim && plan.trim.length) {
+      html += '<div class="card"><div class="note-line">按当前保留策略，下次备份会清理 ' + plan.trim.length + ' 个最旧的包：'
+        + esc(plan.trim.map(function (x) { return x.stamp; }).join('、')) + '</div></div>';
+    }
+    if (!list.length) {
+      return html + '<div class="card">' + emptyBox('还没有备份', '点右上角「立即备份一次」做一份精简备份；或「导出搬移包」按预设导出到指定位置。') + '</div>';
+    }
+    html += '<div class="card"><div class="card-title">备份与搬移包<span class="sub">按时间倒序 · 共 ' + list.length + ' 个</span></div><div class="rows">';
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i];
+      var presetLabel = b.preset === 'full' ? '完整' : b.preset === 'with-skills' ? '含技能' : '精简';
+      html += '<div class="row"><div class="row-main">'
+        + '<div class="row-name">' + esc(fmtAgo(b.createdAt || b.stamp)) + '<span class="mono muted">' + esc(b.stamp) + '</span>'
+        + badge('plain', presetLabel) + '</div>'
+        + '<div class="row-meta"><span>' + esc(fmtTime(b.createdAt)) + '</span><span>' + humanSize(b.bytes || 0) + '</span><span>' + (b.fileCount || 0) + ' 个文件</span></div>'
+        + '<div class="row-actions">'
+        + packBtn('search', '检查', 'data.inspect', b.dir)
+        + writeBtn('history', '恢复', 'data.restore', { params: { dir: b.dir } }, 'sm danger')
+        + '</div></div></div>';
+    }
+    html += '</div></div>';
+    return html;
+  }
+
   // ── 页面：一键部署 ───────────────────────────────────────────────
 
   function verifyChecksCard(title, v) {
@@ -1959,7 +2029,8 @@ export const CLIENT_JS = `(function () {
     { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集' },
     { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
     { id: 'jobs', label: '任务', group: '记录', icon: 'list', load: loadJobs, render: renderJobs },
-    { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' }
+    { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' },
+    { id: 'data', label: '数据搬家', group: '记录', icon: 'box', action: 'data.backups', render: renderData, title: '数据搬家' }
   ];
 
   try {
