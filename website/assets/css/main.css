@@ -1,0 +1,340 @@
+/* ============================================================
+   DSH 官网 — 设计系统 v4「工程克制」
+   双主题（dark/light）+ 橙红品牌色 + hairline 边框
+   去玻璃拟态 / 去渐变 / 去 emoji 图标 / 数字一律等宽
+   ============================================================ */
+
+:root,
+[data-theme='dark'] {
+  /* 品牌色（与桌面客户端 --brand 同源，纯色使用） */
+  --brand: #f46123;
+  --brand-light: #f78a5e;
+  --brand-dim: rgba(244, 97, 35, 0.14);
+
+  /* 石墨底（暖灰一族，不再用蓝调 slate） */
+  --bg-primary: #0e1013;
+  --bg-secondary: #15181d;
+  --bg-tertiary: #1b1f26;
+
+  /* 文字 */
+  --text-primary: #e8eaed;
+  --text-secondary: #a8adb5;
+  --text-muted: #71777f;
+
+  /* hairline（替代玻璃边框） */
+  --line: #262b33;
+  --line-strong: #31363f;
+}
+
+[data-theme='light'] {
+  /* 品牌色 */
+  --brand: #f46123;
+  --brand-light: #e85a1c;
+  --brand-dim: rgba(244, 97, 35, 0.08);
+
+  /* 浅色底 */
+  --bg-primary: #fafafa;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f1f5f9;
+
+  /* 文字 */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+
+  /* hairline */
+  --line: #e2e8f0;
+  --line-strong: #cbd5e1;
+}
+
+/* 通用 token（两种主题共享） */
+:root,
+[data-theme='dark'],
+[data-theme='light'] {
+  /* 旧 token 兼容映射（页面存量引用，逐步收敛） */
+  --primary: var(--brand);
+  --primary-light: var(--brand-light);
+  --primary-dark: var(--brand);
+  --accent: #3fb27f;
+  --warning: #d9a03c;
+  --danger: #d65f5f;
+  --info: #58a6c9;
+  --glass-bg: var(--bg-secondary);
+  --glass-border: var(--line);
+  --glass-shadow: none;
+  --border: var(--line);
+
+  /* 圆角（收紧：外柔内锐） */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+
+  /* 动效 */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --dur: 0.18s;
+
+  /* 布局 */
+  --container: 1140px;
+}
+
+/* ---------- 基础 ---------- */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html,
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: var(--brand-light);
+  text-decoration: none;
+  transition: color var(--dur) var(--ease);
+}
+
+a:hover {
+  color: var(--brand-light);
+}
+
+code,
+pre,
+.mono {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 数字对齐（统计/版本/计数场景） */
+.num {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 焦点可见性（无障碍） */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+::selection {
+  background: rgba(244, 97, 35, 0.2);
+}
+
+/* ---------- 布局容器 ---------- */
+.container {
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+/* ---------- 玻璃（v3：实心面板，无模糊） ---------- */
+.glass {
+  background: var(--bg-secondary);
+  border: 1px solid var(--line);
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color var(--dur) var(--ease), border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background: var(--brand);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: #e85a1c;
+  color: #fff;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  color: var(--text-secondary);
+}
+
+.btn-outline:hover {
+  border-color: var(--line-strong);
+  color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 7px 14px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- 区块标题（左对齐，不再居中） ---------- */
+.section-title {
+  margin-bottom: 40px;
+}
+
+.section-title h2 {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.section-title p {
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* ---------- 卡片：实面 + hairline，hover 只亮边框 ---------- */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--dur) var(--ease);
+}
+
+.card:hover {
+  border-color: var(--line-strong);
+}
+
+/* ---------- 状态徽章（方角，去 pill） ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.badge-success {
+  color: #5cc394;
+  background: rgba(63, 178, 127, 0.12);
+  border: 1px solid rgba(63, 178, 127, 0.25);
+}
+
+.badge-warning {
+  color: var(--warning);
+  background: rgba(217, 160, 60, 0.12);
+  border: 1px solid rgba(217, 160, 60, 0.25);
+}
+
+.badge-primary {
+  color: var(--brand-light);
+  background: var(--brand-dim);
+  border: 1px solid rgba(244, 97, 35, 0.28);
+}
+
+.badge-muted {
+  color: var(--text-muted);
+  background: rgba(113, 119, 127, 0.12);
+  border: 1px solid var(--line-strong);
+}
+
+/* ---------- 工具类 ---------- */
+.text-muted {
+  color: var(--text-muted);
+}
+.text-secondary {
+  color: var(--text-secondary);
+}
+.text-accent {
+  color: var(--brand-light);
+}
+.text-warning {
+  color: var(--warning);
+}
+.mono {
+  font-family: 'JetBrains Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ---------- 骨架屏 ---------- */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    var(--line) 50%,
+    var(--bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- 页面标题（各子页 page-head 统一：左对齐） ---------- */
+.page-head {
+  padding: 72px 0 40px;
+}
+
+.page-head h1 {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.page-head p {
+  font-size: 14px;
+  color: var(--text-muted);
+}
