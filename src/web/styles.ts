@@ -280,6 +280,9 @@ button { cursor: pointer; }
   font-size: 11.5px; color: var(--text-2); max-height: 140px; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
 }
+/* 体检结论上的一键修按钮：与上面的文字留一点间距 */
+.finding-fix { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* 多行文本（错误翻译块等）：保留换行，长行也允许断行 */
 .explain-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; flex: none; }

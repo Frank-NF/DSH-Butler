@@ -210,16 +210,23 @@ export async function scanLocks(profileDir: string): Promise<LockInfo[]> {
  * 界面显示成「≥ x MB」，宁可说"至少"也不假装精确。
  * 各目录共享一个总预算，避免备份目录很多时总耗时线性膨胀。
  */
-export function scanProfileResidue(profileDir: string, totalBudgetMs = 250): ProfileResidue[] {
-  const KINDS: Array<{ pattern: RegExp; kind: string }> = [
+/**
+ * profile 目录里「历史备份」的识别表。
+ * 【为什么提成导出】体检（这里）与清理动作（plugin.cleanBackups）必须用同一份判据 ——
+ * 两处各写一份的话，早晚会出现「体检说有一类备份、清理动作却不认它」这种自相矛盾。
+ */
+export const PROFILE_RESIDUE_KINDS: Array<{ pattern: RegExp; kind: string }> = [
     { pattern: /^\.updater_backups$/, kind: "管家历史备份" },
     { pattern: /^\.cleanup_backup_/, kind: "清理备份" },
     { pattern: /^\.dual_lock_backup$/, kind: "双锁备份" },
     { pattern: /^\.abandoned_tgz_backup$/, kind: "废弃安装包备份" },
     { pattern: /^\.removed-plugins-/, kind: "已移除插件备份" },
     { pattern: /^package\.json\.bak/, kind: "清单备份文件" },
-    { pattern: /\.stale-\d+$/, kind: "僵尸锁改名残留" },
-  ];
+  { pattern: /\.stale-\d+$/, kind: "僵尸锁改名残留" },
+];
+
+export function scanProfileResidue(profileDir: string, totalBudgetMs = 250): ProfileResidue[] {
+  const KINDS = PROFILE_RESIDUE_KINDS;
 
   const deadline = Date.now() + totalBudgetMs;
   const out: ProfileResidue[] = [];
@@ -359,7 +366,9 @@ export async function collectRuntimeStatus(): Promise<RuntimeStatus> {
           cause:
             "历史清理动作留下的备份目录（旧版策略是只移动不删除，所以越积越多）—— 这些是当时有意保留的，不是意外产生的垃圾",
           impact: "占用磁盘空间；极端情况下残留包会被误当成模块参与打包，导致构建失败",
-          action: "确认无需回退后，清理这些备份",
+          action: "确认无需回退后，清理这些备份（会移入管家隔离区，可随时搬回）",
+          fixAction: "plugin.cleanBackups",
+          fixLabel: "清理这些历史备份",
           evidence: residue.map((r) =>
             `${r.kind} × ${r.count}（${r.sizeComplete ? "" : "≥ "}${humanSize(r.sizeBytes)}）`
           ),

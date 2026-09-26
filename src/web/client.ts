@@ -166,6 +166,9 @@ export const CLIENT_JS = `(function () {
     'runtime.start': '启动 DSH 服务', 'runtime.stop': '停止 DSH 服务', 'runtime.restart': '重启 DSH 服务',
     'plugin.scan': '插件扫描', 'plugin.diagnose': '插件诊断', 'plugin.install': '安装插件',
     'plugin.uninstall': '卸载插件', 'plugin.repair': '修复插件', 'plugin.cleanResidue': '清理安装残留',
+    'plugin.cleanBackups': '清理历史备份',
+    'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
+    'bootstrap.verify': '部署校验', 'bootstrap.discard': '放弃部署',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',
     'backup.delete': '删除回滚点', 'backup.verify': '校验回滚点'
   };
@@ -186,6 +189,14 @@ export const CLIENT_JS = `(function () {
   function paramsFor(action, el) {
     var name = el && el.getAttribute ? (el.getAttribute('data-name') || '') : '';
     var id = el && el.getAttribute ? (el.getAttribute('data-id') || '') : '';
+    // 先看有没有传现成的参数（一键修会带），有就以它为准
+    var raw = el && el.getAttribute ? (el.getAttribute('data-params') || '') : '';
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') return parsed;
+      } catch (e) { /* 解析不了就走下面的按动作取参 */ }
+    }
     if (action === 'plugin.install' || action === 'plugin.uninstall' || action === 'plugin.repair') return { name: name };
     if (action === 'backup.apply' || action === 'backup.delete' || action === 'backup.verify') return { id: id };
     if (action === 'core.rollback') return id ? { id: id } : {};
@@ -221,6 +232,11 @@ export const CLIENT_JS = `(function () {
     var attrs = ' data-write="' + esc(action) + '"';
     if (opts.name) attrs += ' data-name="' + esc(opts.name) + '"';
     if (opts.id) attrs += ' data-id="' + esc(opts.id) + '"';
+    // 任意参数（体检结论上的一键修会用）：JSON 塞进属性，读回来再解析。
+    // esc() 会把引号转成实体，HTML 解析时自动还原，不会破坏属性。
+    if (opts.params && Object.keys(opts.params).length) {
+      attrs += ' data-params="' + esc(JSON.stringify(opts.params)) + '"';
+    }
     return '<button class="btn ' + (cls || 'sm') + '"' + attrs + ' title="' + esc(label) + '">' + icon(iconName) + '<span>' + esc(label) + '</span></button>';
   }
   function navBtn(iconName, label, page, cls) {
@@ -297,6 +313,18 @@ export const CLIENT_JS = `(function () {
       if (f.cause) html += '<div class="finding-row"><b>原因：</b>' + esc(f.cause) + '</div>';
       if (f.impact) html += '<div class="finding-row"><b>影响：</b>' + esc(f.impact) + '</div>';
       if (f.action) html += '<div class="finding-row"><b>建议：</b>' + esc(f.action) + '</div>';
+      // 【P0-1 · 2026-09-25】结论上自带修复入口时，直接给一个按钮 ——
+      // 以前只印一句「建议…」，用户得自己找地方点；现在点下去就走 plan→确认→执行，
+      // 执行完本页会自动重载并重新体检（复检），形成「发现问题 → 一键修 → 再看一遍」的闭环。
+      if (f.fixAction) {
+        html += '<div class="finding-fix">' + writeBtn(
+          'wrench',
+          f.fixLabel || ACT_TITLE[f.fixAction] || '一键修',
+          f.fixAction,
+          { params: f.fixParams || {} },
+          'sm primary',
+        ) + '</div>';
+      }
       if (f.evidence && f.evidence.length) html += '<div class="finding-evidence">' + esc(f.evidence.slice(0, 8).join('\\n')) + '</div>';
       html += '</div>';
     }

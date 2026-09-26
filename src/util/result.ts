@@ -39,6 +39,10 @@ export interface Finding {
   action?: string;
   /** 一键执行入口：注册表里的 action 名，如 "runtime.repair"。 */
   fixAction?: string;
+  /** 一键修的按钮文案；不填就用动作自己的标题（界面里有 ACT_TITLE 映射）。 */
+  fixLabel?: string;
+  /** 一键修要带的参数（多数修复动作不需要；需要时会随按钮一起传给计划接口）。 */
+  fixParams?: Record<string, unknown>;
   /** 支撑证据：原始输出、文件路径、日志行。 */
   evidence?: string[];
   /** 附加数据，供 UI 渲染。 */
