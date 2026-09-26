@@ -189,6 +189,7 @@ export const CLIENT_JS = `(function () {
     'plugin.installOffline': '离线安装（.tgz）',
     'data.diagnose': '导出诊断包（脱敏）',
     'data.audit': '写操作审计', 'data.auditExport': '导出写操作审计',
+    'data.snapshot': '技能快照（本地 Git）', 'data.snapshots': '查看技能快照', 'data.snapshotRestore': '回退到某次快照',
     'data.export': '导出搬移包', 'data.inspect': '检查搬移包',
     'data.restore': '从搬移包恢复', 'data.backup': '立即备份一次', 'data.backups': '备份列表',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
@@ -2030,6 +2031,8 @@ export const CLIENT_JS = `(function () {
   function renderData(r) {
     var tools = writeBtn('upload', '导出搬移包', 'data.export')
       + writeBtn('box', '立即备份一次', 'data.backup')
+      + writeBtn('history', '技能快照', 'data.snapshot')
+      + actBtn('list', '查看快照', 'data.snapshots')
       + actBtn('shield', '检查最新包', 'data.inspect');
     var list = r.backups || [];
     var lim = r.limits || { maxBackups: 0, maxBackupBytes: 0 };
