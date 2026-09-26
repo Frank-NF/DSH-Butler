@@ -1559,7 +1559,8 @@ export const CLIENT_JS = `(function () {
     var tools = actBtn('refresh', '重新统计', 'diag.stats');
     var html = pageHead('统计', '管家自己的账本：任务成功率与耗时、最常跑的动作、失败原因、数据目录体积，以及按天的趋势（每次打开都会补记今天的采样）。', tools);
 
-    var daily = (j.daily || []).map(function (d) { return { label: d.date.slice(5), value: d.count }; });
+    // 只看近 14 天：历史任务本来只有最近几天，拉 30 天会显得大片空白
+    var daily = (j.daily || []).slice(-14).map(function (d) { return { label: d.date.slice(5), value: d.count }; });
     html += '<div class="stats-hero">'
       + '<div class="stat-card"><div class="stat-k">任务总数</div><div class="stat-v">' + (j.total || 0) + '</div><div class="stat-s">近 ' + (j.rangeDays || 30) + ' 天</div></div>'
       + '<div class="stat-card span2">' + bulletStat('成功率', (j.successRate || 0) + '%　成功 ' + (j.ok || 0) + ' · 失败 ' + (j.failed || 0), j.successRate || 0, 95) + '</div>'
