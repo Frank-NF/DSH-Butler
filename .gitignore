@@ -18,13 +18,6 @@
 .env.*
 !.env.example
 
-# 官网（Nuxt）的依赖与构建产物：源码入库，产物不入库
-website/node_modules/
-website/.nuxt/
-website/.output/
-website/dist/
-website/_build_bak/
-website/.data/
 
 # 密钥绝不入库（旧工程 scripts/ 里带出来的）
 *.pem
