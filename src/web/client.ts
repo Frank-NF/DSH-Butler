@@ -949,17 +949,48 @@ export const CLIENT_JS = `(function () {
 
   // ── 页面：总览 ───────────────────────────────────────────────────
 
+  /**
+   * 管家提醒卡片：定时任务发现问题时留下的痕迹（体检有错误/警告、备份失败、有插件可更新）。
+   * 全绿时这张卡不出现 —— 没事就别占用户的地方。
+   */
+  function noticesCard() {
+    var list = state.notices || [];
+    if (!list.length) return '';
+    var unseen = 0;
+    for (var i = 0; i < list.length; i++) if (!list[i].seen) unseen++;
+    var html = '<div class="card"><div class="card-title">管家提醒'
+      + '<span class="sub">' + (unseen ? unseen + ' 条未读' : '全部已读') + '</span></div>';
+    html += '<div class="rows">';
+    var show = Math.min(list.length, 5);
+    for (var j = 0; j < show; j++) {
+      var n = list[j];
+      var tone = n.level === 'error' ? 'error' : n.level === 'warn' ? 'warn' : 'info';
+      html += '<div class="finding ' + tone + '"><div class="finding-title">'
+        + '<span class="tag ' + tone + '">' + (n.level === 'error' ? '错误' : n.level === 'warn' ? '警告' : '提示') + '</span>'
+        + esc(n.title) + (n.seen ? '' : ' <span class="tag warn">新</span>') + '</div>'
+        + '<div class="finding-row"><b>来自：</b>' + esc(n.source) + ' · ' + esc(fmtAgo(n.at)) + '</div>'
+        + (n.detail ? '<div class="finding-row">' + esc(n.detail) + '</div>' : '')
+        + '</div>';
+    }
+    html += '</div>';
+    if (unseen) html += '<div class="btn-row" style="margin-top:10px"><button class="btn sm" id="btn-notices-seen">全部标记已读</button></div>';
+    return html + '</div>';
+  }
+
   function pageOverview() {
     // 两张卡并行取：管家自己的总览 + 外壳状态（该不该直接进 DSH）
     return Promise.all([
       api('/api/state/overview'),
       api('/api/shell/state').catch(function () { return null; }),
+      api('/api/notices').catch(function () { return null; }),
     ]).then(function (res) {
       var ov = res[0];
       state.shell = res[1] && res[1].state ? res[1].state : null;
+      if (res[2] && res[2].notices) state.notices = res[2].notices;
       var html = pageHead('总览', 'DSH 本体、服务与插件的当前状况。', '<button class="btn sm" id="btn-refresh-page">' + icon('refresh') + '<span>刷新</span></button>');
       // 第一眼就该看到"现在能不能直接用"——这一屏的主行动只有一件事
       html += shellCard();
+      html += noticesCard();
       html += '<div class="card"><div class="stats">'
         + stat('本体', ov.dsh.installed ? (ov.dsh.version || '已安装') : '未安装', ov.dsh.headShort ? '提交 ' + ov.dsh.headShort : '', true)
         + stat('上游最新版', ov.dsh.latestVersion || '未查到',
@@ -2120,6 +2151,15 @@ export const CLIENT_JS = `(function () {
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
     if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
+    var seenBtn = hit('#btn-notices-seen');
+    if (seenBtn) {
+      api('/api/notices/seen', { method: 'POST' }).then(function (r) {
+        state.notices = r && r.notices ? r.notices : [];
+        toast('已全部标记为已读');
+        go(state.page, true);
+      }).catch(function (e) { toast('标记失败：' + (e && e.message ? e.message : e), 'err'); });
+      return;
+    }
     if (hit('#btn-refresh') || hit('#btn-refresh-page')) { state.cache = {}; state.extra = {}; go(state.page, true); return; }
     if (hit('#btn-theme')) { toggleTheme(); return; }
     if (hit('#market-pick-all')) {

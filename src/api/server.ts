@@ -31,6 +31,7 @@ import {
 import { checkUpdates } from "../net/npm-registry.ts";
 import { collectLogs, readTail } from "../domains/runtime/logs.ts";
 import { butlerConfigPath, downloadsDir, p } from "../util/paths.ts";
+import { loadNotices, markNoticesSeen, unseenCount } from "../domains/state/notices.ts";
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
@@ -366,6 +367,16 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     // 设置项一律落 ~/.dsh-butler/config.json（管家自己的文件，绝不碰 DSH）。
     // 只有"开机自启"这一项有系统副作用（写用户级 Run 注册表项），所以它单独处理并回报结果。
 
+    // ── 管家提醒（定时任务发现问题时留痕） ────────────────────────────
+    if (req.method === "GET" && path === "/api/notices") {
+      const list = loadNotices();
+      return json({ ok: true, notices: list, unseen: unseenCount(list) });
+    }
+    if (req.method === "POST" && path === "/api/notices/seen") {
+      const list = markNoticesSeen();
+      return json({ ok: true, notices: list, unseen: unseenCount(list) });
+    }
+
     if (req.method === "GET" && path === "/api/settings") {
       const cfg = loadConfig();
       const auto = await autostartEnabled().catch(() => false);
@@ -403,6 +414,32 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       ] as const;
       for (const k of bools) {
         if (typeof body[k] === "boolean") patch[k] = body[k];
+      }
+      // 定时任务：数字必须是有限非负数（0 = 不做这件事），布尔照收。
+      if (body.schedule && typeof body.schedule === "object") {
+        const src = body.schedule as Record<string, unknown>;
+        const cur = loadConfig().schedule;
+        const next = { ...cur };
+        for (const k of ["healthEveryHours", "backupEveryHours", "checkUpdatesEveryHours"] as const) {
+          const v = src[k];
+          if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 24 * 30) next[k] = Math.round(v);
+        }
+        if (typeof src.enabled === "boolean") next.enabled = src.enabled;
+        if (typeof src.notify === "boolean") next.notify = src.notify;
+        patch.schedule = next;
+      }
+      // 备份保留策略：同样只收合理数字
+      if (body.retention && typeof body.retention === "object") {
+        const src = body.retention as Record<string, unknown>;
+        const cur = loadConfig().retention;
+        const next = { ...cur };
+        if (typeof src.maxBackups === "number" && Number.isFinite(src.maxBackups) && src.maxBackups >= 1 && src.maxBackups <= 500) {
+          next.maxBackups = Math.round(src.maxBackups);
+        }
+        if (typeof src.maxBackupBytes === "number" && Number.isFinite(src.maxBackupBytes) && src.maxBackupBytes >= 1024 * 1024) {
+          next.maxBackupBytes = Math.round(src.maxBackupBytes);
+        }
+        patch.retention = next;
       }
       if (typeof body.theme === "string" && ["light", "dark", "auto"].includes(body.theme)) {
         patch.theme = body.theme;
