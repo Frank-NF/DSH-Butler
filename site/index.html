@@ -1,282 +1,405 @@
-<!DOCTYPE html>
-<html lang="zh-CN" class="no-js">
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="utf-8">
+<script>(function(){try{var t=localStorage.getItem("site-theme");if(t!=="light"&&t!=="dark")t="dark";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();</script>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DSH管家 · 让 DSH 始终好用</title>
-<meta name="description" content="DSH管家是 DSH Desktop 的本地增强外壳：一键部署、环境体检、插件管理、更新与回滚，都在一个窗口里完成。">
-<meta name="theme-color" content="#F06A3D">
-<link rel="icon" href="assets/favicon.ico" sizes="any">
-<link rel="icon" type="image/png" href="assets/favicon-32.png" sizes="32x32">
-<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
-<meta property="og:type" content="website">
+<meta name="description" content="DSH管家是 DSH Desktop 的本地运维台：一键部署、插件市场、智能体检、自动更新与回滚，写操作先出计划，数据不出本机。">
+<meta name="theme-color" content="#12100E">
 <meta property="og:title" content="DSH管家 · 让 DSH 始终好用">
-<meta property="og:description" content="DSH Desktop 的本地增强外壳：一键部署、环境体检、插件管理、更新与回滚。">
+<meta property="og:description" content="一键部署、插件市场、智能体检、自动更新与回滚，都在一个本地窗口里。">
 <meta property="og:image" content="assets/og-cover.png">
-<link rel="stylesheet" href="styles.css">
-<script>document.documentElement.className = "js";</script>
+<link rel="icon" href="/assets/favicon-32.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"DSH管家","operatingSystem":"Windows 10, Windows 11","applicationCategory":"UtilitiesApplication","offers":{"@type":"Offer","price":"0","priceCurrency":"CNY"},"softwareVersion":"2.0.0-rc.1","author":{"@type":"Person","name":"Frank-NF"}}
+</script>
+<link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<a class="skip-link" href="#main">跳到主要内容</a>
+<a class="skip" href="#main">跳到主要内容</a>
 
-<header class="site-head">
-  <div class="wrap head-inner">
-    <a class="brand" href="#top">
-      <img class="brand-mark" src="assets/logo.png" alt="" width="512" height="512" decoding="async">
-      <span class="brand-name">DSH管家</span>
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="#top" aria-label="DSH管家 首页">
+      <img src="/assets/logo.png" alt="DSH管家标志">
+      <span>DSH管家</span>
     </a>
-
-    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
-      <span class="sr-only">打开导航菜单</span>
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
-    </button>
-
-    <nav class="site-nav" id="site-nav" aria-label="主导航">
-      <a href="#ui">界面</a>
-      <a href="#how">工作方式</a>
-      <a href="#more">更多能力</a>
-      <a href="/docs.html">使用文档</a>
-        <a href="#download">关于下载</a>
-      <a class="btn btn-primary" href="#features">看看它能做什么</a>
+    <nav class="nav-links" aria-label="主导航">
+      <a href="#features" data-spy>功能</a>
+      <a href="#ui" data-spy>界面</a>
+      <a href="#how" data-spy>工作方式</a>
+      <a href="#why" data-spy>优势</a>
+      <a href="#faq" data-spy>常见问题</a>
     </nav>
+    <div class="nav-right">
+      <a class="gh" href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="17" height="17" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.66.41.35.77 1.05.77 2.12v3.15c0 .3.21.67.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+        GitHub
+      </a>
+      <button class="theme-btn" id="themeBtn" aria-label="切换浅色 / 深色主题">
+        <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+        <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      </button>
+      <a class="btn btn-primary btn-sm" href="#download"><span class="sheen"></span>下载</a>
+      <button class="burger" id="burger" aria-label="打开菜单" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
   </div>
 </header>
 
+<div class="mobile-menu" id="mmenu">
+  <a href="#features">功能</a>
+  <a href="#ui">界面</a>
+  <a href="#how">工作方式</a>
+  <a href="#why">优势</a>
+  <a href="#faq">常见问题</a>
+  <a href="/docs.html">使用文档</a>
+  <div class="mm-cta">
+    <a class="btn btn-primary" href="#download"><span class="sheen"></span>下载 Windows 版</a>
+    <a class="btn btn-ghost" href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">GitHub 仓库</a>
+  </div>
+</div>
+
 <main id="main">
-
-  <section class="hero" id="top">
-    <div class="wrap hero-grid">
-      <div class="hero-copy">
-        <h1>让 DSH <em>始终好用</em></h1>
-        <p class="hero-lead">
-          <span>轻松管理插件，智能修复问题，</span>
-          <span>自动更新保持最新，稳定守护你的每一次使用。</span>
-        </p>
-        <p class="btn-row">
-          <a class="btn btn-primary btn-lg" href="#features">看看它能做什么</a>
-          <a class="btn btn-ghost btn-lg" href="#how">了解工作方式</a>
-        </p>
-      </div>
-
-      <div class="hero-plate">
-        <!-- 粒子层：铺满整块 hero-plate，压在最底下；鼠标在这里移动会被粒子"推开" -->
-        <canvas class="hero-particles" aria-hidden="true"></canvas>
-        <img class="hero-mark" src="assets/logo.png" alt="DSH管家 标志：一只橙红色的 D 字鲸鱼" width="512" height="512" decoding="async">
-        <span class="hero-plate-name">DSH管家</span>
-      </div>
+<section class="hero" id="top">
+  <div class="hero-bg" aria-hidden="true">
+    <div class="hero-grid"></div>
+    <div class="hero-glow" id="heroGlow"></div>
+    <div class="hero-noise"></div>
+  </div>
+  <h1 id="heroTitle">让 DSH <span class="acc">始终好用</span></h1>
+  <p class="hero-sub" id="heroSub">部署、体检、插件、更新与回滚，一个本地窗口全搞定。每一步都先摊开计划，你确认了才动手。</p>
+  <div class="hero-cta" id="heroCta">
+    <a class="btn btn-primary" href="/butler/DSH-Butler-v2.0.0-rc.1-win-x64.zip"><span class="sheen"></span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+      下载 Windows 版
+    </a>
+    <a class="btn btn-ghost" href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.66.41.35.77 1.05.77 2.12v3.15c0 .3.21.67.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+      GitHub 仓库
+    </a>
+  </div>
+  <div class="hero-shot" id="heroShot">
+    <div class="frame">
+      <img src="/assets/ui-overview.png" alt="DSH管家总览页：本体、服务与插件状态一屏可见" width="2160" height="1350" fetchpriority="high">
     </div>
+  </div>
+</section>
 
-    <div class="wrap">
-      <ul class="facts">
-        <li><span class="fact-k">平台</span><span class="fact-v">Windows 桌面程序</span></li>
-        <li><span class="fact-k">技术栈</span><span class="fact-v">Deno + WebView2</span></li>
-        <li><span class="fact-k">服务</span><span class="fact-v">只在本机回环地址上跑，不对外开放端口</span></li>
-        <li><span class="fact-k">命令行</span><span class="fact-v">doctor、env probe 等只读诊断，可加 --json</span></li>
-      </ul>
+<div class="ticker" aria-hidden="true">
+  <div class="ticker-row" id="tickerRow">
+    <span>一键部署</span><span>插件市场 2000+</span><span>全面体检</span><span>一键修</span><span>回滚时间线</span><span>定时守护</span><span>数据搬家</span><span>写操作审计</span><span>多 Profile</span><span>镜像测速</span><span>僵尸锁清理</span><span>Git 化快照</span>
+  </div>
+</div>
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="eyebrow">核心能力</span>
+      <h2>装、修、管、护，<br>四件事一个窗口</h2>
+      <p>从零安装到日常使用，覆盖 DSH 的完整生命周期；写操作先出计划，危险动作要确认。</p>
     </div>
-  </section>
-
-  <section class="section" id="features">
-    <div class="wrap">
-      <h2>它能做什么</h2>
-      <p class="lead">装、修、更新、守护，四件事覆盖从零安装到日常使用的全部环节。</p>
-
-      <div class="bento">
-        <article class="cell cell-plugins reveal">
-          <span class="cell-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="3" y="3" width="7" height="7" rx="1.5"/>
-              <rect x="14" y="3" width="7" height="7" rx="1.5"/>
-              <rect x="3" y="14" width="7" height="7" rx="1.5"/>
-              <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-            </svg>
-          </span>
-          <h3>插件管理</h3>
-          <p>扫一遍本机插件，依赖、生效、作层资格、实体一起看；来源可追踪，装了什么、从哪来，一眼就有答案。</p>
-          <ul class="cell-list">
-            <li>启用、禁用、更新、卸载都在同一处</li>
-            <li>卸载先摘名单再隔离目录，不留「启动即崩」的半成品</li>
-            <li>安装前建回滚点，失败自动还原</li>
-          </ul>
-        </article>
-
-        <article class="cell cell-repair reveal">
-          <span class="cell-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="3" y="3" width="18" height="18" rx="3"/>
-              <path d="M8 12.4l2.6 2.6L16.4 9.4"/>
-            </svg>
-          </span>
-          <h3>智能修复</h3>
-          <p>环境体检覆盖 Deno、Node、Git、磁盘和网络；出问题时，日志与体检报告把原因、影响、建议分开写。</p>
-          <ul class="cell-list">
-            <li>运行时诊断分进程、服务、插件树三层，逐条给结论</li>
-            <li>僵尸写锁一键清理，改名留证，不动正常锁</li>
-          </ul>
-        </article>
-
-        <article class="cell cell-update reveal">
-          <span class="cell-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M20 12a8 8 0 1 1-2.7-6"/>
-              <path d="M20.5 4.5v5h-5"/>
-            </svg>
-          </span>
-          <h3>自动更新</h3>
-          <p>默认自动检查更新，有新版本就告诉你；真要动手时先给计划，确认之后才执行。</p>
-          <ul class="cell-list">
-            <li>更新本体前先留回滚点</li>
-            <li>步骤链：停服、拉取、清残留、装依赖、重建、核对、重启</li>
-          </ul>
-          <p class="cell-note">整链大约 5 到 30 分钟，取决于网络和磁盘。</p>
-        </article>
-
-        <article class="cell cell-guard reveal">
-          <span class="cell-icon">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z"/>
-              <path d="M9.2 12.3l2 2 3.6-4.1"/>
-            </svg>
-          </span>
-          <h3>稳定守护</h3>
-          <p>托盘常驻，服务状态随时能看；单窗口外壳打开就是 DSH，还没装就是部署向导。</p>
-          <ul class="cell-list">
-            <li>托盘里四项：打开管家、打开 DSH、重启服务、退出</li>
-            <li>DSH 页面右下角还有一条悬浮条，回管家、看状态、一键重启</li>
-          </ul>
-        </article>
-      </div>
+    <div class="bento">
+      <article class="cell cell-a reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 5v10"/><path d="M19 19H5"/></svg></div>
+        <h3>一键部署</h3>
+        <p>从零把 DSH 装起来：环境探测、生成计划、拉源码、装依赖、全量构建、起服务、三连验证。装完直接进 DSH 界面。</p>
+        <div class="c-shot"><div class="imgwrap"><img src="/assets/ui-deploy.png" alt="一键部署页：部署计划与验证步骤" loading="lazy" width="2160" height="1350"></div></div>
+      </article>
+      <article class="cell cell-b reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3h2l2.2 12.4a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.6L21 7H6"/><circle cx="9.5" cy="20" r="1"/><circle cx="17" cy="20" r="1"/></svg></div>
+        <h3>插件市场</h3>
+        <p>2000+ 插件在线目录，分类、Star、下载量、中文简介一目了然。一键安装、批量更新，离线 tgz 也能装。</p>
+        <div class="c-shot"><div class="imgwrap"><img src="/assets/ui-market.png" alt="插件市场页：2192 个插件的分类目录与安装按钮" loading="lazy" width="2160" height="1350"></div></div>
+      </article>
+      <article class="cell cell-c reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/><path d="m9 13 2 2 4-4"/></svg></div>
+        <h3>智能体检与一键修</h3>
+        <p>每条问题写清「为什么、影响、怎么办」，多数带一键修。</p>
+        <ul>
+          <li>环境体检覆盖 Deno、Node、Git、磁盘和网络</li>
+          <li>三层诊断：进程、服务、插件树</li>
+        </ul>
+      </article>
+      <article class="cell cell-d reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg></div>
+        <h3>自动更新</h3>
+        <p>有新版本先告诉你，真要动手先出计划。</p>
+        <ul>
+          <li>更新前自动留回滚点</li>
+          <li>步骤链全程可看、可取消</li>
+        </ul>
+      </article>
+      <article class="cell cell-e reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/><path d="M12 7v5l3 3"/></svg></div>
+        <h3>回滚时间线</h3>
+        <p>每次写操作自动留还原点，回退前先给影响预览。更新失败或任务被杀，重启后回到操作前状态。</p>
+        <div class="c-shot"><div class="imgwrap"><img src="/assets/ui-backups.png" alt="回滚点页：时间线列出 36 个已验证还原点" loading="lazy" width="2160" height="1350"></div></div>
+      </article>
+      <article class="cell cell-f reveal">
+        <div class="c-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z"/><path d="m9 12 2 2 4-4"/></svg></div>
+        <h3>稳定守护</h3>
+        <p>托盘常驻、悬浮条随叫随到，异常自己会说话。</p>
+        <ul>
+          <li>关窗收进托盘，DSH 一直在线</li>
+          <li>右下角悬浮条，随时回管家</li>
+          <li>僵尸写锁一键清理，留证不动好锁</li>
+        </ul>
+      </article>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section class="section" id="ui">
-    <div class="wrap">
-      <h2>界面</h2>
-      <p class="lead">两张浅色主题的界面图。总览页把本体、服务与插件放在一屏，结论永远在最上面；运行状态页把进程、HTTP 健康检查、僵尸锁和残留物分开列。</p>
-
-      <div class="shots">
-        <figure class="shot shot-main">
-          <img src="assets/ui-overview.png" alt="DSH管家 总览页：DSH 本体、服务与插件状态一屏看完，结论卡在最上面" width="2560" height="1640" loading="lazy" decoding="async">
-        </figure>
-        <figure class="shot shot-side">
-          <img src="assets/ui-runtime.png" alt="DSH管家 运行状态页：进程、HTTP 健康检查、僵尸锁与 profile 残留物分行列出" width="2560" height="1640" loading="lazy" decoding="async">
-        </figure>
+<section class="section theater" id="ui">
+  <div class="container">
+    <div class="section-head reveal">
+      <span class="eyebrow">真实界面</span>
+      <h2>长什么样，一眼看到</h2>
+      <p>下面全是管家跑在真实机器上的样子，不是设计稿。左右拖动查看。</p>
+    </div>
+  </div>
+  <div class="theater-pin" id="theaterPin">
+    <div class="theater-trackwrap" id="theaterWrap">
+      <div class="theater-track" id="theaterTrack">
+        <figure class="shot"><div class="frame"><img src="/assets/ui-overview.png" alt="总览页" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">总览</span><span class="d">本体、服务与插件状态一屏可见，结论永远在最上面</span></figcaption></figure>
+        <figure class="shot"><div class="frame"><img src="/assets/ui-market.png" alt="插件市场" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">插件市场</span><span class="d">2192 个插件按分类筛，装了什么、从哪来，一眼有答案</span></figcaption></figure>
+        <figure class="shot"><div class="frame"><img src="/assets/ui-plugins.png" alt="插件管理" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">插件</span><span class="d">依赖名单与生效名单对照，装了没生效藏不住</span></figcaption></figure>
+        <figure class="shot"><div class="frame"><img src="/assets/ui-report.png" alt="体检报告" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">体检报告</span><span class="d">结论先行，问题按「原因、影响、建议」拆开写</span></figcaption></figure>
+        <figure class="shot"><div class="frame"><img src="/assets/ui-backups.png" alt="回滚点" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">回滚点</span><span class="d">36 个已验证还原点，还原前先看影响预览</span></figcaption></figure>
+        <figure class="shot"><div class="frame"><img src="/assets/ui-runtime.png" alt="运行状态" loading="lazy" width="2160" height="1350"></div><figcaption><span class="t">运行状态</span><span class="d">进程、健康检查、写锁与残留物分开列，异常藏不住</span></figcaption></figure>
       </div>
     </div>
-  </section>
+    <div class="theater-progress" id="theaterDots" aria-hidden="true"></div>
+  </div>
+</section>
 
-  <section class="section section-alt" id="how">
-    <div class="wrap">
-      <h2>工作方式</h2>
-      <p class="lead">每一步都先摊开给你看，你确认了才动手。</p>
-
-      <ol class="steps">
-        <li class="step reveal">
-          <span class="step-n">01</span>
-          <h3>部署</h3>
+<section class="section" id="how">
+  <div class="container">
+    <div class="section-head reveal" style="margin-inline:auto;text-align:center;max-width:560px">
+      <h2>每一步都先摊开给你看</h2>
+      <p>动手前看得见后果，动手后回得了头。</p>
+    </div>
+    <div class="steps">
+      <article class="step reveal" style="--i:0">
+        <div class="num">01</div>
+        <div>
+          <h3>部署<span class="s-tag">bootstrap</span></h3>
           <p>从零装 DSH：先出计划，再拉源码、装依赖、全量构建、起服务，最后做三连验证。装完直接进 DSH 界面。</p>
-        </li>
-        <li class="step reveal">
-          <span class="step-n">02</span>
-          <h3>体检</h3>
+          <div class="s-foot"><em>环境探测</em><em>计划确认</em><em>全量构建</em><em>三连验证</em></div>
+        </div>
+      </article>
+      <article class="step reveal" style="--i:1">
+        <div class="num">02</div>
+        <div>
+          <h3>体检<span class="s-tag">diag</span></h3>
           <p>只读诊断先跑一遍：全面体检、环境体检、本体状态、服务状态。这一步不动任何文件，也不会改配置。</p>
-        </li>
-        <li class="step reveal">
-          <span class="step-n">03</span>
-          <h3>计划</h3>
+          <div class="s-foot"><em>全面体检</em><em>环境体检</em><em>只读不改</em><em>--json 可接入脚本</em></div>
+        </div>
+      </article>
+      <article class="step reveal" style="--i:2">
+        <div class="num">03</div>
+        <div>
+          <h3>计划<span class="s-tag">plan</span></h3>
           <p>所有写操作先出计划：要改什么、有什么风险、失败了怎么办。危险动作要勾选确认，没确认就只给预览。</p>
-        </li>
-        <li class="step reveal">
-          <span class="step-n">04</span>
-          <h3>回滚</h3>
-          <p>写之前先建回滚点。更新失败或者任务中途被杀，重启之后回到操作前的状态，绝不静默成功。</p>
-        </li>
-      </ol>
+          <div class="s-foot"><em>49 个动作全走计划</em><em>危险动作勾选确认</em><em>绝不静默成功</em></div>
+        </div>
+      </article>
+      <article class="step reveal" style="--i:3">
+        <div class="num">04</div>
+        <div>
+          <h3>回滚<span class="s-tag">rollback</span></h3>
+          <p>写之前先建回滚点。更新失败或者任务中途被杀，重启之后回到操作前的状态。</p>
+          <div class="s-foot"><em>自动还原点</em><em>影响预览</em><em>跨进程写锁</em></div>
+        </div>
+      </article>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section class="section" id="more">
-    <div class="wrap">
-      <h2>更多能力</h2>
-      <p class="lead">窗口里能做的，命令行里同样能做；只读命令加 <code>--json</code> 就能接进脚本。</p>
-
-      <div class="clusters">
-        <div class="cluster reveal">
-          <h3>运行时管理</h3>
-          <ul>
-            <li>启动、停止、重启 DSH 服务，走同一套计划确认</li>
-            <li>清理僵尸或失效写锁，不用停服</li>
-          </ul>
+<section class="section" id="why" style="background:var(--bg1);border-block:1px solid var(--line)">
+  <div class="container">
+    <div class="why-grid">
+      <div>
+        <div class="section-head reveal">
+          <h2>为什么放心<br>把 DSH 交给它</h2>
+          <p>本地工具的本分：数据不出门、动手先商量、坏了能回头、走了不留痕。</p>
         </div>
-        <div class="cluster reveal">
-          <h3>证据链</h3>
-          <ul>
-            <li>日志收集与错误定位，命中已知问题就直接给建议</li>
-            <li>体检报告、任务历史、回滚点列表，都能回头查</li>
-          </ul>
-        </div>
-        <div class="cluster reveal">
-          <h3>使用形态</h3>
-          <ul>
-            <li>单窗口外壳，打开就是 DSH；关窗收进托盘</li>
-            <li>顶栏看状态，底部任务条看进度，可以取消</li>
-          </ul>
-        </div>
-        <div class="cluster reveal">
-          <h3>命令行</h3>
-          <ul>
-            <li><code>dsh-butler doctor</code> 全面体检</li>
-            <li><code>dsh-butler core status</code> 本体状态</li>
-            <li><code>dsh-butler runtime logs -n 200</code> 日志收集</li>
-          </ul>
+        <div class="why-list">
+          <div class="why-item reveal">
+            <div class="w-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 15v2"/></svg></div>
+            <div><h3>数据不出本机</h3><p>只监听 127.0.0.1，不对外开端口；对外文件全部深度脱敏并回读自检，有残留直接判失败。</p></div>
+          </div>
+          <div class="why-item reveal">
+            <div class="w-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></svg></div>
+            <div><h3>动手前先摊牌</h3><p>写操作全部走「计划确认」，危险动作还要勾选确认，绝不静默成功。</p></div>
+          </div>
+          <div class="why-item reveal">
+            <div class="w-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9"/><path d="M3 3v6h6"/><path d="M12 7v5l3 3"/></svg></div>
+            <div><h3>坏了能回头</h3><p>每次写操作自动留回滚点，回退前先看影响预览；跨进程写锁防止并发损坏。</p></div>
+          </div>
+          <div class="why-item reveal">
+            <div class="w-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></div>
+            <div><h3>免安装零残留</h3><p>单文件 zip 解压即用，不写注册表、不装系统服务，数据都在你自己的用户目录。</p></div>
+          </div>
         </div>
       </div>
+      <figure class="why-shot reveal">
+        <div class="frame"><img src="/assets/ui-report.png" alt="体检报告页：结论正常，问题按原因、影响、建议拆开" loading="lazy" width="2160" height="1350"></div>
+        <figcaption>体检报告：每条问题都是「原因、影响、建议」三段式</figcaption>
+      </figure>
     </div>
-  </section>
+    <div class="stats">
+      <div class="stat reveal"><b data-count="302">302</b><span>项测试全部通过</span></div>
+      <div class="stat reveal"><b data-count="49">49</b><span>个写操作动作全走计划</span></div>
+      <div class="stat reveal"><b data-count="2000" data-suffix="+">2000+</b><span>插件市场目录收录</span></div>
+      <div class="stat reveal"><b data-count="21">21</b><span>条错误翻译规则</span></div>
+    </div>
+  </div>
+</section>
 
-  <section class="section" id="download">
-    <div class="wrap">
-      <div class="dl-panel reveal">
-        <img class="dl-mark" src="assets/logo.png" alt="" width="512" height="512" decoding="async">
-        <div class="dl-copy">
-          <h2>下载 DSH 管家 v2.0.0-rc.1</h2>
-          <p>免安装：下载 zip → 解压到任意目录 → 双击 <code>dsh-butler.exe</code> 就能用。数据都放在你自己的用户目录里，不写注册表、不装服务、不留后台驻留。</p>
-          <p class="btn-row">
-            <a class="btn btn-primary btn-lg" href="/butler/DSH-Butler-v2.0.0-rc.1-win-x64.zip" download>下载 zip · 32.3 MB</a>
-            <a class="btn btn-ghost btn-lg" href="/butler/version.json">版本清单</a>
-            <a class="btn btn-ghost btn-lg" href="/butler/DSH-Butler-v2.0.0-rc.1-source.zip" download>下载源码 · 16.4 MB</a>
-          </p>
-          <p class="dl-meta">Windows 10/11 x64 ｜ MIT 开源 ｜ 程序包 SHA256 <code>3efd11fc…115f85b</code> ｜ 源码包 SHA256 <code>839f6e82…884d97e6</code></p>
-          <p class="dl-meta">源码仓库：<a href="https://github.com/Frank-NF/DSH-Butler" data-open-url="https://github.com/Frank-NF/DSH-Butler">github.com/Frank-NF/DSH-Butler</a>（也可直接 git clone 或从 GitHub 下载源码包）</p>
-        </div>
+<section class="section" id="faq">
+  <div class="container">
+    <div class="section-head reveal" style="margin-inline:auto;text-align:center;max-width:520px">
+      <h2>常见问题</h2>
+      <p>没找到答案？GitHub Issues 或使用文档里见。</p>
+    </div>
+    <div class="faq reveal">
+      <div class="qa">
+        <button aria-expanded="false"><span>管家是免费的吗？开源吗？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>免费，MIT 开源。源码在 GitHub 仓库 Frank-NF/DSH-Butler，可以自己审、自己编。</p></div></div>
+      </div>
+      <div class="qa">
+        <button aria-expanded="false"><span>和官方桌面端会冲突吗？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>不会。检测到官方桌面端在跑时，管家自动退成运维模式，不抢窗口、不抢托盘；也可以在设置里强制完整模式。</p></div></div>
+      </div>
+      <div class="qa">
+        <button aria-expanded="false"><span>我的 DSH 数据安全吗？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>服务只监听本机回环地址，接口带一次性令牌；对外导出的内容全部脱敏并回读复扫。管家不采集、不上报任何使用数据。</p></div></div>
+      </div>
+      <div class="qa">
+        <button aria-expanded="false"><span>支持哪些系统？怎么装？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>Windows 10 / 11（需要 WebView2 运行时，系统一般自带）。免安装 zip 解压即用，双击 dsh-butler.exe 就能跑。</p></div></div>
+      </div>
+      <div class="qa">
+        <button aria-expanded="false"><span>自动更新会搞坏我的 DSH 吗？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>更新前自动留回滚点，计划确认后才执行；更新失败或任务中途被杀，重启后回到操作前状态，绝不静默成功。</p></div></div>
+      </div>
+      <div class="qa">
+        <button aria-expanded="false"><span>装插件翻车了怎么办？</span><span class="q-ic"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span></button>
+        <div class="a"><div><p>卸载先摘名单再隔离目录，安装前先建回滚点；插件诊断、依赖冲突体检、残留清理都有专门入口，多半一键就修好。</p></div></div>
       </div>
     </div>
-  </section>
+  </div>
+</section>
 
+<section class="download" id="download">
+  <div class="hero-bg" aria-hidden="true"><div class="hero-glow"></div></div>
+  <div class="container" style="position:relative">
+    <h2 class="reveal">把 DSH 交给管家</h2>
+    <p class="reveal">解压即用，双击就能跑。不写注册表、不装服务，随时能删干净。</p>
+    <div class="dl-btns reveal">
+      <a class="btn btn-primary" href="/butler/DSH-Butler-v2.0.0-rc.1-win-x64.zip"><span class="sheen"></span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>
+        下载 v2.0.0-rc.1 · zip · 32.3 MB
+      </a>
+      <a class="btn btn-ghost" href="/butler/version.json" target="_blank" rel="noopener">版本清单与 SHA256</a>
+      <a class="btn btn-ghost" href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.55v-2.17c-3.2.7-3.87-1.36-3.87-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.04-.71.08-.7.08-.7 1.15.08 1.76 1.18 1.76 1.18 1.03 1.76 2.7 1.25 3.35.96.1-.75.4-1.25.72-1.54-2.55-.29-5.23-1.28-5.23-5.68 0-1.26.45-2.28 1.18-3.09-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.83 1.18 3.09 0 4.41-2.69 5.38-5.25 5.66.41.35.77 1.05.77 2.12v3.15c0 .3.21.67.8.55A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"/></svg>
+        GitHub 仓库
+      </a>
+    </div>
+    <p class="dl-meta reveal">Windows 10 / 11 · x64 · 免安装 · 源码只在 GitHub 仓库</p>
+  </div>
+</section>
 </main>
 
-<footer class="site-foot">
-  <div class="wrap foot-top">
-    <div class="foot-brand">
-      <img class="foot-mark" src="assets/logo.png" alt="" width="512" height="512" decoding="async">
-      <span class="foot-name">DSH管家</span>
-      <p class="foot-tagline">让 DSH 始终好用</p>
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <img src="/assets/logo.png" alt="DSH管家标志">
+        <div class="fb-name">DSH管家</div>
+        <p>让 DSH 始终好用。一个本地桌面运维台，把「装 DSH、修 DSH、管插件、护数据」收进一个窗口。</p>
+        <button class="btn btn-ghost btn-sm tip-btn" id="tipBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4"/><path d="M7 4h10v6a5 5 0 0 1-10 0Z"/><path d="M17 5h2a2 2 0 0 1-1 3.9M7 5H5a2 2 0 0 0 1 3.9"/></svg>
+          请作者喝杯咖啡
+        </button>
+      </div>
+      <div>
+        <h4>产品</h4>
+        <ul>
+          <li><a href="#features">核心能力</a></li>
+          <li><a href="#ui">真实界面</a></li>
+          <li><a href="#how">工作方式</a></li>
+          <li><a href="#download">下载</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>资源</h4>
+        <ul>
+          <li><a href="/docs.html">使用文档</a></li>
+          <li><a href="/butler/version.json" target="_blank" rel="noopener">版本清单</a></li>
+          <li><a href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">GitHub 仓库</a></li>
+          <li><a href="https://github.com/Frank-NF/DSH-Butler/issues" target="_blank" rel="noopener">问题反馈</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>友情链接</h4>
+        <ul>
+          <li><a href="https://www.deepseek.com/harness" target="_blank" rel="noopener">DSH 官网</a></li>
+          <li><a href="https://www.deepseek.com" target="_blank" rel="noopener">DeepSeek</a></li>
+        </ul>
+        <p class="foot-note">想交换友链？<a href="https://github.com/Frank-NF/DSH-Butler/issues" target="_blank" rel="noopener" style="color:var(--brand-text)">GitHub Issue</a> 找我。</p>
+      </div>
+      <div>
+        <h4>自媒体</h4>
+        <div class="soc-list">
+          <span class="soc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="m10 9 5 3-5 3Z"/></svg>B站<em>即将上线</em></span>
+          <span class="soc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m22 8-6 4 6 4V8Z"/><rect x="2" y="6" width="14" height="12" rx="3"/></svg>抖音<em>即将上线</em></span>
+          <span class="soc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L7 20"/></svg>小红书<em>即将上线</em></span>
+          <span class="soc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-8 8H4l2.5-2.5A8 8 0 1 1 21 12Z"/><path d="M9 11h6M9 14h4"/></svg>公众号<em>即将上线</em></span>
+        </div>
+      </div>
     </div>
-    <nav class="foot-nav" aria-label="页脚导航">
-      <a href="#features">它能做什么</a>
-      <a href="#ui">界面</a>
-      <a href="#how">工作方式</a>
-      <a href="#more">更多能力</a>
-      <a href="/docs.html">使用文档</a>
-        <a href="#download">关于下载</a>
-    </nav>
-  </div>
-  <div class="wrap foot-bottom">
-    <p>DSH管家是 DSH Desktop（DeepSeek 桌面 AI 助手）的本地增强外壳，界面与诊断都在本机运行。</p>
-    <p>© 2026 DSH管家</p>
+    <div class="foot-bottom">
+      <span>MIT License © 2026 Frank-NF（昊天）</span>
+      <span class="mono">dsh.huilinsh.cn</span>
+    </div>
   </div>
 </footer>
 
-<script src="app.js" defer></script>
+<div class="modal" id="tipModal" role="dialog" aria-modal="true" aria-labelledby="tipTitle" hidden>
+  <div class="modal-mask" data-close></div>
+  <div class="modal-card">
+    <button class="modal-x" data-close aria-label="关闭">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+    <h3 id="tipTitle">请作者喝杯咖啡</h3>
+    <p class="m-sub">管家常年免费开源，赏一杯咖啡就是最大的鼓励。</p>
+    <div class="tip-grid">
+      <figure>
+        <div class="tip-qr">微信赞赏码<br>占位 · 待替换</div>
+        <figcaption>微信赞赏</figcaption>
+      </figure>
+      <figure>
+        <div class="tip-qr">支付宝收款码<br>占位 · 待替换</div>
+        <figcaption>支付宝</figcaption>
+      </figure>
+    </div>
+    <p class="tip-note">占位说明：替换为真实二维码图片即可（建议 300×300）</p>
+  </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollToPlugin.min.js"></script>
+<script src="/app.js"></script>
 </body>
 </html>

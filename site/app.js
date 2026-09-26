@@ -1,146 +1,186 @@
-/* DSH管家 落地页交互：移动端菜单 + 进场动效。两件事，别的不做。 */
-(function () {
+(function(){
   "use strict";
-
-  var toggle = document.querySelector(".nav-toggle");
-  var nav = document.getElementById("site-nav");
-
-  function closeNav() {
-    if (!nav || !toggle) return;
-    nav.classList.remove("is-open");
-    toggle.setAttribute("aria-expanded", "false");
-  }
-
-  if (toggle && nav) {
-    toggle.addEventListener("click", function () {
-      var open = nav.classList.toggle("is-open");
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-    });
-    nav.addEventListener("click", function (e) {
-      if (e.target && e.target.tagName === "A") closeNav();
-    });
-    document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape") closeNav();
-    });
-    window.addEventListener("resize", function () {
-      if (window.innerWidth > 760) closeNav();
-    });
-  }
-
+  var SHOT = /[?&]shot=1/.test(location.search);
+  if (SHOT) document.documentElement.classList.add("shot-mode");
   var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  var targets = Array.prototype.slice.call(document.querySelectorAll(".reveal"));
+  var desktop = window.matchMedia("(min-width: 900px)").matches;
 
-  if (reduced || !("IntersectionObserver" in window)) {
-    targets.forEach(function (el) { el.classList.add("is-in"); });
-    return;
-  }
-
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (entry) {
-      if (!entry.isIntersecting) return;
-      entry.target.classList.add("is-in");
-      io.unobserve(entry.target);
-    });
-  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
-
-  targets.forEach(function (el) { io.observe(el); });
-})();
-/* ── 第 7 条：hero 粒子（点阵 + 连线 + 鼠标斥力）───────────────────
-   为什么手写而不是引库：需求就这一处，二十来行搞定，引一个粒子库要多几十 KB 与一次构建。
-   细节：HiDPI 按 devicePixelRatio 放大画布、宽度变化重算点数、滚出视口暂停、
-   系统偏好"减少动态效果"时完全不跑动画（只静态画一帧）。 */
-(function () {
-  var plate = document.querySelector('.hero-plate');
-  if (!plate) return;
-  var canvas = plate.querySelector('.hero-particles');
-  if (!canvas || !canvas.getContext) return;
-  var ctx = canvas.getContext('2d');
-  var reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  var LINK = 130;          // 连线距离阈值（px）
-  var PUSH = 110;          // 鼠标斥力半径（px）
-  var COLOR = '#F06A3D';   // 品牌橙红，和 LOGO 同色
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
-  var W = 0, H = 0, pts = [], raf = 0, visible = true;
-  var mouse = { x: -9999, y: -9999 };
-
-  function resize() {
-    var r = plate.getBoundingClientRect();
-    W = Math.max(1, Math.round(r.width));
-    H = Math.max(1, Math.round(r.height));
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    canvas.style.width = W + 'px';
-    canvas.style.height = H + 'px';
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    var count = Math.max(26, Math.min(80, Math.round(W * H / 11000)));
-    pts = [];
-    for (var i = 0; i < count; i++) {
-      pts.push({
-        x: Math.random() * W, y: Math.random() * H,
-        vx: (Math.random() - 0.5) * 0.35, vy: (Math.random() - 0.5) * 0.35,
-        r: 1 + Math.random() * 1.3
-      });
-    }
-  }
-
-  function draw() {
-    var i, j, p, dx, dy, d2, d;
-    ctx.clearRect(0, 0, W, H);
-    for (i = 0; i < pts.length; i++) {
-      p = pts[i];
-      dx = p.x - mouse.x; dy = p.y - mouse.y; d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 0.01 && d < PUSH) {
-        var f = ((PUSH - d) / PUSH) * 0.85;
-        p.vx += (dx / d) * f; p.vy += (dy / d) * f;
-      }
-      p.x += p.vx; p.y += p.vy;
-      p.vx *= 0.982; p.vy *= 0.982;
-      if (p.x < 0) { p.x = 0; p.vx = -p.vx * 0.6; } else if (p.x > W) { p.x = W; p.vx = -p.vx * 0.6; }
-      if (p.y < 0) { p.y = 0; p.vy = -p.vy * 0.6; } else if (p.y > H) { p.y = H; p.vy = -p.vy * 0.6; }
-    }
-    for (i = 0; i < pts.length; i++) {
-      for (j = i + 1; j < pts.length; j++) {
-        dx = pts[i].x - pts[j].x; dy = pts[i].y - pts[j].y; d2 = dx * dx + dy * dy;
-        if (d2 < LINK * LINK) {
-          ctx.globalAlpha = (1 - Math.sqrt(d2) / LINK) * 0.3;
-          ctx.strokeStyle = COLOR;
-          ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
-        }
-      }
-    }
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = COLOR;
-    for (i = 0; i < pts.length; i++) {
-      ctx.beginPath(); ctx.arc(pts[i].x, pts[i].y, pts[i].r, 0, 6.2832); ctx.fill();
-    }
-  }
-
-  function loop() {
-    raf = 0;
-    if (!visible) return;
-    draw();
-    raf = requestAnimationFrame(loop);
-  }
-
-  function start() { if (!raf) raf = requestAnimationFrame(loop); }
-  function stop() { if (raf) { cancelAnimationFrame(raf); raf = 0; } }
-
-  plate.addEventListener('pointermove', function (e) {
-    var r = plate.getBoundingClientRect();
-    mouse.x = e.clientX - r.left;
-    mouse.y = e.clientY - r.top;
+  /* 主题切换（任何模式都可用） */
+  var themeBtn = document.getElementById("themeBtn");
+  themeBtn.addEventListener("click", function(){
+    var next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("site-theme", next); } catch (e) { /* 忽略 */ }
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", next === "light" ? "#FAF8F5" : "#12100E");
   });
-  plate.addEventListener('pointerleave', function () { mouse.x = -9999; mouse.y = -9999; });
-  window.addEventListener('resize', function () { resize(); if (reduce) draw(); }, { passive: true });
 
-  resize();
-  if (reduce) { draw(); return; }
-  if (window.IntersectionObserver) {
-    new IntersectionObserver(function (es) {
-      visible = es[0].isIntersecting;
-      if (visible) start(); else stop();
-    }, { threshold: 0.05 }).observe(plate);
+  /* 打赏弹窗（任何模式都可用） */
+  var tipModal = document.getElementById("tipModal");
+  var tipBtn = document.getElementById("tipBtn");
+  function openTip(){
+    tipModal.hidden = false;
+    document.body.style.overflow = "hidden";
+    var x = tipModal.querySelector(".modal-x");
+    if (x) x.focus();
   }
-  start();
+  function closeTip(){
+    tipModal.hidden = true;
+    document.body.style.overflow = "";
+    if (tipBtn) tipBtn.focus();
+  }
+  if (tipBtn) tipBtn.addEventListener("click", openTip);
+  tipModal.querySelectorAll("[data-close]").forEach(function(el){
+    el.addEventListener("click", closeTip);
+  });
+  document.addEventListener("keydown", function(e){
+    if (e.key === "Escape" && !tipModal.hidden) closeTip();
+  });
+
+  /* FAQ 手风琴（无依赖，始终可用） */
+  document.querySelectorAll(".qa").forEach(function(qa){
+    var btn = qa.querySelector("button");
+    btn.addEventListener("click", function(){
+      var open = qa.classList.toggle("on");
+      btn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  });
+
+  /* 移动端菜单 */
+  var burger = document.getElementById("burger");
+  var mmenu = document.getElementById("mmenu");
+  burger.addEventListener("click", function(){
+    var open = mmenu.classList.toggle("open");
+    burger.setAttribute("aria-expanded", open ? "true" : "false");
+    document.body.style.overflow = open ? "hidden" : "";
+  });
+  mmenu.querySelectorAll("a").forEach(function(a){
+    a.addEventListener("click", function(){
+      mmenu.classList.remove("open");
+      document.body.style.overflow = "";
+    });
+  });
+
+  if (SHOT || reduced || typeof gsap === "undefined") return;
+
+  gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
+  document.documentElement.classList.add("js");
+
+  /* 锚点平滑滚动 */
+  document.querySelectorAll('a[href^="#"]').forEach(function(a){
+    a.addEventListener("click", function(e){
+      var id = a.getAttribute("href");
+      if (id.length < 2) return;
+      var t = document.querySelector(id);
+      if (!t) return;
+      e.preventDefault();
+      gsap.to(window, { scrollTo: { y: t, offsetY: 76 }, duration: 0.85, ease: "expo.inOut" });
+    });
+  });
+
+  /* 首屏入场（标题整行揭示；渐变字拆成逐字会丢色，不能拆） */
+  var tl = gsap.timeline({ defaults: { ease: "expo.out" } });
+  tl.from("#heroTitle", { opacity: 0, y: 34, duration: 0.9 });
+  tl.from("#heroSub", { opacity: 0, y: 24, duration: 0.7 }, "-=0.55")
+    .from("#heroCta .btn", { opacity: 0, y: 18, duration: 0.6, stagger: 0.08 }, "-=0.5")
+    .from("#heroShot", { opacity: 0, y: 90, rotateX: 14, duration: 1.2, transformOrigin: "top center" }, "-=0.45")
+    .from("#heroGlow", { opacity: 0, scale: 0.7, duration: 1.4 }, 0);
+
+  /* 首屏滚动视差 */
+  gsap.to("#heroShot", {
+    yPercent: -6, scale: 0.97, ease: "none",
+    scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: true }
+  });
+  gsap.to("#heroGlow", {
+    opacity: 0.25, ease: "none",
+    scrollTrigger: { trigger: ".hero", start: "top top", end: "bottom top", scrub: true }
+  });
+
+  /* 跑马灯 */
+  var row = document.getElementById("tickerRow");
+  row.innerHTML += row.innerHTML;
+  var tick = gsap.to(row, { xPercent: -50, ease: "none", duration: 30, repeat: -1 });
+  row.parentElement.addEventListener("mouseenter", function(){ tick.pause(); });
+  row.parentElement.addEventListener("mouseleave", function(){ tick.resume(); });
+
+  /* 滚动显现 */
+  document.querySelectorAll(".reveal").forEach(function(el){
+    gsap.from(el, {
+      opacity: 0, y: 28, duration: 0.75, ease: "power2.out",
+      scrollTrigger: { trigger: el, start: "top 88%", toggleActions: "play none none none" }
+    });
+  });
+
+  /* 界面剧场：桌面端钉住横向擦除 */
+  var wrap = document.getElementById("theaterWrap");
+  var track = document.getElementById("theaterTrack");
+  var dots = document.getElementById("theaterDots");
+  var shots = track.querySelectorAll(".shot");
+  shots.forEach(function(){ dots.insertAdjacentHTML("beforeend", "<i></i>"); });
+  var dotEls = dots.querySelectorAll("i");
+  function markDot(p){
+    var idx = Math.min(shots.length - 1, Math.round(p * (shots.length - 1)));
+    dotEls.forEach(function(d, i){ d.classList.toggle("on", i === idx); });
+  }
+  if (desktop && !SHOT) {
+    var getDist = function(){ return Math.max(0, track.scrollWidth - wrap.clientWidth); };
+    gsap.to(track, {
+      x: function(){ return -getDist(); },
+      ease: "none",
+      scrollTrigger: {
+        trigger: "#theaterPin", start: "top 120px", end: function(){ return "+=" + (getDist() + 200); },
+        pin: true, scrub: 0.6, invalidateOnRefresh: true,
+        onUpdate: function(self){ markDot(self.progress); }
+      }
+    });
+  } else {
+    wrap.addEventListener("scroll", function(){
+      var max = wrap.scrollWidth - wrap.clientWidth;
+      markDot(max > 0 ? wrap.scrollLeft / max : 0);
+    }, { passive: true });
+  }
+
+  /* 工作方式：被盖住的卡片轻微后退 */
+  var steps = document.querySelectorAll(".step");
+  steps.forEach(function(step, i){
+    if (i === steps.length - 1) return;
+    gsap.to(step, {
+      scale: 0.95, opacity: 0.55, ease: "none",
+      scrollTrigger: { trigger: steps[i + 1], start: "top 92%", end: "top 45%", scrub: true }
+    });
+  });
+
+  /* 数字滚动 */
+  document.querySelectorAll(".stat b").forEach(function(el){
+    var target = parseInt(el.getAttribute("data-count"), 10);
+    var suffix = el.getAttribute("data-suffix") || "";
+    var obj = { v: 0 };
+    ScrollTrigger.create({
+      trigger: el, start: "top 90%", once: true,
+      onEnter: function(){
+        gsap.to(obj, {
+          v: target, duration: 1.6, ease: "power2.out",
+          onUpdate: function(){ el.textContent = Math.round(obj.v) + suffix; }
+        });
+      }
+    });
+  });
+
+  /* 导航：滚动方向显隐 + 当前区块高亮 */
+  var nav = document.getElementById("nav");
+  ScrollTrigger.create({
+    start: "top top-=10", end: 99999,
+    onUpdate: function(self){
+      nav.classList.toggle("scrolled", self.scroll() > 30);
+      nav.classList.toggle("hide", self.direction === 1 && self.scroll() > 500);
+    }
+  });
+  document.querySelectorAll("[data-spy]").forEach(function(link){
+    var sec = document.querySelector(link.getAttribute("href"));
+    if (!sec) return;
+    ScrollTrigger.create({
+      trigger: sec, start: "top 45%", end: "bottom 45%",
+      onToggle: function(self){ link.classList.toggle("active", self.isActive); }
+    });
+  });
 })();
