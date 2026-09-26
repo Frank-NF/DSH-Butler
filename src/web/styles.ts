@@ -280,6 +280,8 @@ button { cursor: pointer; }
   font-size: 11.5px; color: var(--text-2); max-height: 140px; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
 }
+/* 多行文本（错误翻译块等）：保留换行，长行也允许断行 */
+.explain-text { white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
 .tag { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 12px; border: 1px solid currentColor; flex: none; }
 .tag.error { color: var(--err); }
 .tag.warn { color: var(--warn); }

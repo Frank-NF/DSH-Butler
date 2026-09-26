@@ -485,7 +485,7 @@ export const CLIENT_JS = `(function () {
     openModal({
       title: esc(title),
       sub: sub || '',
-      body: '<div class="finding error"><div class="finding-title"><span class="tag error">失败</span>操作未完成</div><div class="finding-row">' + esc(msg) + '</div></div>',
+      body: '<div class="finding error"><div class="finding-title"><span class="tag error">失败</span>操作未完成</div><div class="finding-row explain-text">' + esc(msg) + '</div></div>',
       foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>'
     });
     $('modal-close').addEventListener('click', closeModal);
@@ -1653,7 +1653,7 @@ export const CLIENT_JS = `(function () {
       } else {
         body += emptyBox('这个任务没有步骤记录', '');
       }
-      if (job.error) body += '<div style="height:12px"></div><div class="finding error"><div class="finding-title"><span class="tag error">错误</span>任务没有成功</div><div class="finding-row">' + esc(job.error) + '</div></div>';
+      if (job.error) body += '<div style="height:12px"></div><div class="finding error explain-text"><div class="finding-title"><span class="tag error">错误</span>任务没有成功</div><div class="finding-row">' + esc(job.error) + '</div></div>';
       if (job.result) body += '<div class="card-title" style="margin-top:16px">结果</div><div class="logbox">' + esc(JSON.stringify(job.result, null, 2)) + '</div>';
       openModal({
         title: esc(job.actionTitle) + '<span class="sub" style="font-size:12.5px;font-weight:400"> ' + esc(job.action) + '</span>',

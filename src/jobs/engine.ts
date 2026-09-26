@@ -21,6 +21,7 @@ import {
   type JobStep,
 } from "./types.ts";
 import { butlerJobsDir, p } from "../util/paths.ts";
+import { appendExplanation } from "../util/error-translate.ts";
 import { listDir, readJson, removeRecursive, writeJsonAtomic } from "../host/fs.ts";
 import { type Finding, healthOf } from "../util/result.ts";
 import { log } from "../util/log.ts";
@@ -294,7 +295,10 @@ export class JobEngine {
   #finish(job: Job, status: Job["status"], error?: string, persist = false): void {
     job.status = status;
     job.endedAt = new Date().toISOString();
-    job.error = error;
+    // 【2026-09-25 P0-2】失败信息统一过一遍错误翻译器：
+    // 认得出就附上「怎么回事/为什么/影响/怎么办」，认不出就原样保留（绝不硬凑解释）。
+    // 放在这里是单点收口 —— 所有动作的失败路径都会经过 #finish。
+    job.error = error ? appendExplanation(error) : error;
     if (status === "succeeded") job.progress = 1;
     if (persist) this.#persist(job);
     this.#emit({
