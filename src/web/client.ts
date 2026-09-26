@@ -187,6 +187,7 @@ export const CLIENT_JS = `(function () {
     'network.testSources': '测安装源速度', 'network.setRegistry': '切换安装源',
     'profile.list': '多 profile 与端口', 'profile.switch': '切换目标 profile',
     'plugin.installOffline': '离线安装（.tgz）',
+    'data.diagnose': '导出诊断包（脱敏）',
     'data.export': '导出搬移包', 'data.inspect': '检查搬移包',
     'data.restore': '从搬移包恢复', 'data.backup': '立即备份一次', 'data.backups': '备份列表',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
@@ -1425,7 +1426,8 @@ export const CLIENT_JS = `(function () {
         + '<div class="logbox" id="report-text" style="background:var(--surface-2);color:var(--text);max-height:none">' + esc(r) + '</div></div>';
     }
     var v = r.verdict === 'error' ? '错误' : r.verdict === 'warn' ? '警告' : '正常';
-    var html = pageHead('体检报告', '生成于 ' + fmtTime(r.generatedAt) + ' · 耗时 ' + r.durationMs + ' ms');
+    var html = pageHead('体检报告', '生成于 ' + fmtTime(r.generatedAt) + ' · 耗时 ' + r.durationMs + ' ms',
+      writeBtn('box', '导出诊断包（脱敏）', 'data.diagnose'));
     html += '<div class="card hero ' + healthClass(r.verdict) + '"><div class="hero-title">结论：' + esc(v) + '</div><div class="hero-desc">错误 ' + r.summary.errors + ' 项 · 警告 ' + r.summary.warns + ' 项 · 提示 ' + r.summary.infos + ' 项</div>'
       + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制 Markdown 报告</span></button></div></div>';
     for (var i = 0; i < r.sections.length; i++) {
@@ -2293,6 +2295,7 @@ export const CLIENT_JS = `(function () {
     var nav = document.createElement('div');
     nav.className = 'set-nav';
     nav.setAttribute('role', 'tablist');
+    nav.innerHTML = '<div class="set-nav-head">设置分组</div>';
     var pane = document.createElement('div');
     pane.className = 'set-pane';
 
@@ -2317,7 +2320,8 @@ export const CLIENT_JS = `(function () {
       btn.setAttribute('data-sec-go', String(j));
       btn.setAttribute('role', 'tab');
       btn.setAttribute('aria-selected', j === idx ? 'true' : 'false');
-      btn.innerHTML = '<span>' + esc(title) + '</span><span class="set-nav-sub">' + esc(settingsSummaryOf(title, card)) + '</span>';
+      btn.innerHTML = '<span>' + esc(title) + '</span><span class="set-nav-sub">' + esc(settingsSummaryOf(title, card))
+        + '</span><span class="set-nav-go">' + icon('chevron') + '</span>';
       nav.appendChild(btn);
 
       card.setAttribute('data-sec-panel', String(j));

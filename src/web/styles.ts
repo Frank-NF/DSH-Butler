@@ -281,13 +281,18 @@ button { cursor: pointer; }
   white-space: pre-wrap; word-break: break-all;
 }
 /* ── 设置页：左侧分组导航 + 右侧内容（长页面整理） ─────────────── */
-.set-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: start; }
-.set-nav { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 10px; }
-.set-nav-item { width: 100%; text-align: left; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid transparent; background: none; color: var(--text-2); cursor: pointer; font: inherit; }
-.set-nav-item:hover { background: var(--surface-2); }
-.set-nav-item:focus-visible { outline: 2px solid var(--accent, #c14a20); outline-offset: -2px; }
-.set-nav-item.active { background: var(--surface-2); border-color: var(--border); color: var(--text); font-weight: 600; }
+/* 导航做成「有边框的控制面板」而不是几行文字：看得出是可点的分组，选中的那个用品牌色实底 */
+.set-layout { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 14px; align-items: start; }
+.set-nav { display: flex; flex-direction: column; gap: 2px; padding: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); position: sticky; top: 10px; }
+.set-nav-head { padding: 4px 8px 8px; font-size: 11.5px; letter-spacing: .05em; color: var(--text-3); }
+.set-nav-item { position: relative; display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 9px 26px 9px 11px; border: 1px solid transparent; border-radius: var(--radius-sm); background: none; color: var(--text-2); cursor: pointer; font: inherit; }
+.set-nav-item:hover { background: var(--surface); color: var(--text); }
+.set-nav-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.set-nav-item.active { background: var(--brand-weak); border-color: var(--brand); color: var(--brand-text); font-weight: 600; }
 .set-nav-sub { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 400; color: var(--text-3); line-height: 1.4; }
+.set-nav-item.active .set-nav-sub { color: var(--brand-text); opacity: .8; }
+.set-nav-go { position: absolute; right: 8px; top: 50%; transform: translateY(-50%) rotate(-90deg); color: var(--text-3); display: flex; }
+.set-nav-item.active .set-nav-go { color: var(--brand); }
 .set-pane > .card { margin-top: 0; }
 @media (max-width: 860px) { .set-layout { grid-template-columns: 1fr; } .set-nav { position: static; flex-direction: row; flex-wrap: wrap; } }
 

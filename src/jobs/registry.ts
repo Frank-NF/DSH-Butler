@@ -30,6 +30,7 @@ import { pluginBatchUpdateAction } from "../domains/plugin/batch_update.ts";
 import { pluginInstallOfflineAction } from "../domains/plugin/offline_install.ts";
 import { networkSetRegistryAction, networkTestSourcesAction } from "../domains/net/sources.ts";
 import { profileListAction, profileSwitchAction } from "../domains/profile/manage.ts";
+import { dataDiagnoseAction } from "../domains/diag/package_actions.ts";
 import {
   dataBackupAction,
   dataBackupsAction,
@@ -80,6 +81,7 @@ export function registerAllActions(): void {
     networkSetRegistryAction,
     profileListAction,
     profileSwitchAction,
+    dataDiagnoseAction,
     dataExportAction,
     dataInspectAction,
     dataRestoreAction,

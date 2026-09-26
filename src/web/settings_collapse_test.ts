@@ -25,8 +25,8 @@ Deno.test("设置页：左导航分组，右侧只显示当前一组", () => {
     "分组排版必须从 .wrap 里找卡片，否则会静默不生效",
   );
   // 顺序约束：必须先插布局、再搬卡片（搬完锚点就不在文档里了，会抛 not-a-child）
-  var iInsert = CLIENT_JS.indexOf("scope.insertBefore(layout, anchor);");
-  var iMove = CLIENT_JS.indexOf("pane.appendChild(card);");
+  const iInsert = CLIENT_JS.indexOf("scope.insertBefore(layout, anchor);");
+  const iMove = CLIENT_JS.indexOf("pane.appendChild(card);");
   assertEquals(iInsert > 0, true, "没有把布局插进 .wrap");
   assertEquals(iMove > 0, true, "没有把卡片搬进 pane");
   assertEquals(iInsert < iMove, true, "必须先 insertBefore 再 appendChild，否则 insertBefore 会抛错、整页报检测失败");
