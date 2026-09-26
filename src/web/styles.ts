@@ -280,6 +280,20 @@ button { cursor: pointer; }
   font-size: 11.5px; color: var(--text-2); max-height: 140px; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
 }
+/* ── 回滚点时间线（P0-4） ───────────────────────────────────── */
+.timeline { position: relative; padding-left: 18px; }
+.timeline::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 1px; background: var(--border); }
+.tl-item { position: relative; padding: 0 0 14px 14px; }
+.tl-item:last-child { padding-bottom: 2px; }
+.tl-dot { position: absolute; left: -18px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--text-3); box-shadow: 0 0 0 3px var(--surface); }
+.tl-dot.ok { background: var(--ok); }
+.tl-dot.warn { background: var(--warn); }
+.tl-body { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; background: var(--surface-2); }
+.tl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-when { margin-left: auto; color: var(--text-3); font-size: 12px; }
+.tl-meta { margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap; color: var(--text-2); font-size: 12.5px; }
+.tl-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* 体检结论上的一键修按钮：与上面的文字留一点间距 */
 .finding-fix { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
 

@@ -36,6 +36,7 @@ import {
   backupCreateAction,
   backupDeleteAction,
   backupListAction,
+  backupPreviewAction,
   backupVerifyAction,
 } from "../domains/backup/actions.ts";
 import { bootstrapPlanAction } from "../domains/bootstrap/plan.ts";
@@ -64,6 +65,7 @@ export function registerAllActions(): void {
     runtimeStartAction,
     runtimeStopAction,
     backupListAction,
+    backupPreviewAction,
     backupVerifyAction,
     backupCreateAction,
     backupApplyAction,

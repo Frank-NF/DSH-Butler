@@ -170,6 +170,7 @@ export const CLIENT_JS = `(function () {
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
     'bootstrap.verify': '部署校验', 'bootstrap.discard': '放弃部署',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',
+    'backup.preview': '影响预览',
     'backup.delete': '删除回滚点', 'backup.verify': '校验回滚点'
   };
   var ACT_DANGER = {
@@ -693,6 +694,26 @@ export const CLIENT_JS = `(function () {
       }
       toast('体检完成：' + result.summary.errors + ' 项错误 / ' + result.summary.warns + ' 项警告',
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
+      return;
+    }
+    if (action === 'backup.preview') {
+      var rows = '';
+      for (var pi = 0; pi < (result.artifacts || []).length; pi++) {
+        var a = result.artifacts[pi];
+        var stateTag = a.state === 'to-overwrite' ? 'warn' : a.state === 'to-restore' ? 'ok' : 'error';
+        var stateText = a.state === 'to-overwrite' ? '覆盖' : a.state === 'to-restore' ? '补回' : '缺失';
+        rows += '<div class="finding ' + (a.state === 'backup-missing' ? 'error' : 'info') + '">'
+          + '<div class="finding-title"><span class="tag ' + stateTag + '">' + stateText + '</span>' + esc(tail(a.path)) + '</div>'
+          + '<div class="finding-row">' + esc(a.text) + '</div>'
+          + '<div class="finding-evidence">' + esc(a.path) + '</div></div>';
+      }
+      openModal({
+        title: '回滚影响预览',
+        sub: esc(result.headline) + '｜' + esc(result.effect),
+        body: rows || emptyBox('没有文件记录', '这个回滚点没有记录任何文件，回滚不会改动磁盘。'),
+        foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>',
+      });
+      $('modal-close').addEventListener('click', closeModal);
       return;
     }
     if (action === 'backup.verify') {
@@ -1709,19 +1730,30 @@ export const CLIENT_JS = `(function () {
     if (!pt.length) {
       return html + '<div class="card">' + emptyBox('还没有回滚点', '写操作会自动创建；也可以点右上角「创建回滚点」手动留一个。') + '</div>';
     }
-    html += '<div class="card"><div class="card-title">回滚点列表</div><div class="rows">';
+    // 【P0-4 · 2026-09-25】列表改成时间线：按时间倒序，一眼看出「谁在什么时候改了什么」；
+    // 每条都能先点「影响预览」看清会覆盖什么，再决定要不要还原。
+    html += '<div class="card"><div class="card-title">时间线'
+      + '<span class="sub">按时间倒序 · 共 ' + pt.length + ' 个</span></div>'
+      + '<div class="timeline">';
     for (var i = 0; i < pt.length; i++) {
       var p = pt[i];
       var files = (p.artifacts || []).length;
-      html += '<div class="row"><div class="row-main">'
-        + '<div class="row-name">' + esc(KIND_LABEL[p.kind] || p.kind) + '<span class="mono muted">' + esc(p.id) + '</span>'
-        + (p.verified ? badge('ok', '已验证') : badge('warn', '未验证')) + '</div>'
-        + '<div class="row-meta"><span>' + esc(p.trigger || '') + '</span><span>' + fmtTime(p.createdAt) + '</span><span>' + files + ' 个文件</span><span>' + humanSize(p.sizeBytes) + '</span></div>'
-        + '</div><div class="row-actions">'
+      html += '<div class="tl-item">'
+        + '<span class="tl-dot ' + (p.verified ? 'ok' : 'warn') + '"></span>'
+        + '<div class="tl-body">'
+        + '<div class="tl-head"><b>' + esc(KIND_LABEL[p.kind] || p.kind) + '</b>'
+        + (p.verified ? badge('ok', '已验证') : badge('warn', '未验证'))
+        + '<span class="tl-when">' + esc(fmtAgo(p.createdAt)) + ' · ' + esc(fmtTime(p.createdAt)) + '</span></div>'
+        + '<div class="tl-meta"><span>由「' + esc(p.trigger || '未知') + '」创建</span>'
+        + '<span>' + files + ' 个文件</span>'
+        + '<span>' + humanSize(p.sizeBytes) + '</span>'
+        + '<span class="mono muted">' + esc(p.id) + '</span></div>'
+        + '<div class="tl-actions">'
+        + '<button class="btn sm" data-act="backup.preview" data-id="' + esc(p.id) + '">' + icon('search') + '<span>影响预览</span></button>'
         + writeBtn('history', '还原', 'backup.apply', { id: p.id }, 'sm danger')
         + '<button class="btn sm" data-act="backup.verify" data-id="' + esc(p.id) + '">' + icon('shield') + '<span>校验</span></button>'
         + writeBtn('trash', '删除', 'backup.delete', { id: p.id }, 'sm')
-        + '</div></div>';
+        + '</div></div></div>';
     }
     html += '</div></div>';
     return html;

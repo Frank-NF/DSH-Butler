@@ -13,6 +13,7 @@
 
 import type { ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding } from "../../util/result.ts";
+import { previewRollbackPoint, type RollbackPreview } from "./preview.ts";
 import { isFile } from "../../host/fs.ts";
 import {
   applyRollbackPoint,
@@ -103,6 +104,31 @@ export const backupVerifyAction: ActionDef<{ id?: string }, BackupVerifyReport> 
       allOk: results.every((r) => r.ok),
       results,
     };
+  },
+};
+
+// ── backup.preview（只读，P0-4 新增） ───────────────────────────
+
+export const backupPreviewAction: ActionDef<{ id?: string }, RollbackPreview> = {
+  name: "backup.preview",
+  domain: "backup",
+  title: "回滚影响预览",
+  description:
+    "只读：逐条对比备份副本与当前磁盘状态，告诉你回滚会覆盖哪些文件、补回哪些文件、有没有备份副本已经缺失。不改动任何东西。",
+  readonly: true,
+  steps: ["定位回滚点", "逐条对比备份与当前状态"],
+  run: async (ctx, params): Promise<RollbackPreview> => {
+    ctx.step("s1", "定位回滚点");
+    const id = typeof params.id === "string" ? params.id : "";
+    if (!id) throw new Error("未指定要预览哪个回滚点");
+    const pv = previewRollbackPoint(id);
+    if (!pv) throw new Error(`回滚点不存在：${id}`);
+    ctx.detail(`回滚点 ${id}：${pv.artifacts.length} 个文件`);
+    ctx.progress(0.6);
+    ctx.step("s2", "逐条对比备份与当前状态");
+    ctx.detail(pv.headline);
+    ctx.progress(1);
+    return pv;
   },
 };
 
@@ -208,7 +234,7 @@ export interface BackupApplyParams {
   id?: string;
 }
 
-function applyPreflight(params: BackupApplyParams): Finding[] {
+export function applyPreflight(params: BackupApplyParams): Finding[] {
   const out: Finding[] = [];
   const id = typeof params.id === "string" ? params.id : "";
   if (!id) {
@@ -232,6 +258,27 @@ function applyPreflight(params: BackupApplyParams): Finding[] {
       }),
     );
     return out;
+  }
+  // 【P0-4 · 2026-09-25】把「影响预览」挂进写前检查：确认弹窗里就能看到会改什么、
+  // 哪些文件会被覆盖，而不是点下去之后才知道（回滚是唯一能把系统拉回过去的动作，
+  // 最该让人看清楚再点）。
+  const pv = previewRollbackPoint(id);
+  if (pv) {
+    out.push(
+      finding(
+        "backup.impact-preview",
+        pv.summary.backupMissing > 0 ? "warn" : "info",
+        `${pv.headline}｜${pv.effect}`,
+        {
+          cause: `这个回滚点由「${pt.trigger}」在 ${new Date(pt.createdAt).toLocaleString("zh-CN")} 创建`,
+          impact: pv.summary.toOverwrite > 0
+            ? "覆盖会把当前内容替换成备份里的版本，这一步不可逆"
+            : "只补回缺失的文件，不会动其它内容",
+          action: "确认这就是你想要的结果，再点执行",
+          evidence: pv.artifacts.slice(0, 8).map((a) => `${a.path} — ${a.text}`),
+        },
+      ),
+    );
   }
   return out; // 完整性校验在 apply 内部是硬闸；preflight 只负责把「不存在」提前拦掉
 }
