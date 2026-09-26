@@ -2276,9 +2276,12 @@ export const CLIENT_JS = `(function () {
   function layoutSettingsSections() {
     var host = $('main');
     if (!host) return;
+    // 【踩过的坑】setMain 会把页面内容包进 #main > .wrap，卡片是 .wrap 的子节点而不是 #main 的 ——
+    // 一开始按 host.children 找卡片，一个都找不到，函数静默 return，界面看起来「完全没改」。
+    var scope = host.querySelector('.wrap') || host;
     var cards = [];
-    for (var i = 0; i < host.children.length; i++) {
-      var el = host.children[i];
+    for (var i = 0; i < scope.children.length; i++) {
+      var el = scope.children[i];
       if (el.classList && el.classList.contains('card') && el.querySelector(':scope > .card-title')) cards.push(el);
     }
     if (!cards.length) return;
@@ -2292,6 +2295,12 @@ export const CLIENT_JS = `(function () {
     nav.setAttribute('role', 'tablist');
     var pane = document.createElement('div');
     pane.className = 'set-pane';
+
+    // 【踩过的坑】必须【先】把布局插到第一张卡的位置，再搬卡片：
+    // 循环里卡片已经被 appendChild 到 pane（此时 pane 还不在文档里），
+    // 循环后再拿 cards[0] 当锚点会抛 insertBefore 的 not-a-child 错误，整页报「检测失败」。
+    var anchor = cards[0];
+    scope.insertBefore(layout, anchor);
 
     for (var j = 0; j < cards.length; j++) {
       var card = cards[j];
@@ -2317,7 +2326,6 @@ export const CLIENT_JS = `(function () {
     }
     layout.appendChild(nav);
     layout.appendChild(pane);
-    host.insertBefore(layout, cards[0]);
   }
 
   function afterRender(page) {
