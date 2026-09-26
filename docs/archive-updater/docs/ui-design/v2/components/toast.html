@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Toast 通知组件</title>
+<style>
+:root{--primary:#6366F1;--accent:#10B981;--warning:#F59E0B;--danger:#EF4444;--bg:#0F172A;--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:40px;min-height:100vh}
+/* Toast 容器 */
+.toast-container{position:fixed;top:20px;right:20px;z-index:1000;display:flex;flex-direction:column;gap:12px}
+/* Toast 样式 */
+.toast{display:flex;align-items:flex-start;gap:12px;padding:16px 20px;border-radius:12px;min-width:320px;max-width:400px;animation:slideIn 0.3s ease}
+.toast.success{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3)}
+.toast.error{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3)}
+.toast.warning{background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3)}
+.toast.info{background:rgba(99,102,241,0.15);border:1px solid rgba(99,102,241,0.3)}
+.toast-icon{font-size:20px;flex-shrink:0}
+.toast-content{flex:1}
+.toast-title{font-size:14px;font-weight:600;margin-bottom:4px}
+.toast-message{font-size:13px;color:var(--muted);line-height:1.5}
+.toast-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+.toast-close:hover{color:var(--text)}
+.toast-progress{position:absolute;bottom:0;left:0;height:3px;background:currentColor;border-radius:0 0 12px 12px;animation:progress 3s linear forwards}
+@keyframes slideIn{from{transform:translateX(100%);opacity:0}to{transform:translateX(0);opacity:1}}
+@keyframes progress{from{width:100%}to{width:0%}}
+/* 控制按钮 */
+.controls{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+.btn{padding:10px 20px;border-radius:10px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid rgba(255,255,255,0.1);background:rgba(30,41,59,0.8);color:var(--text);backdrop-filter:blur(8px);transition:all 0.2s}
+.btn:hover{background:rgba(99,102,241,0.3);border-color:var(--primary)}
+</style>
+</head>
+<body>
+<div class="toast-container" id="toastContainer"></div>
+<div class="controls">
+  <button class="btn" onclick="showToast('success','更新成功','插件已成功更新到最新版本')">成功</button>
+  <button class="btn" onclick="showToast('error','更新失败','网络错误，请稍后重试')">失败</button>
+  <button class="btn" onclick="showToast('warning','空间不足','磁盘空间不足，请清理后重试')">警告</button>
+  <button class="btn" onclick="showToast('info','开始扫描','正在扫描插件目录...')">信息</button>
+</div>
+<script>
+function showToast(type, title, message) {
+  const container = document.getElementById('toastContainer');
+  const icons = { success: '✅', error: '❌', warning: '⚠️', info: 'ℹ️' };
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <span class="toast-icon">${icons[type]}</span>
+    <div class="toast-content">
+      <div class="toast-title">${title}</div>
+      <div class="toast-message">${message}</div>
+    </div>
+    <button class="toast-close">×</button>
+  `;
+  toast.style.position = 'relative';
+  toast.style.overflow = 'hidden';
+  const progress = document.createElement('div');
+  progress.className = 'toast-progress';
+  if(type === 'success' || type === 'error') progress.style.background = type === 'success' ? 'var(--accent)' : 'var(--danger)';
+  else if(type === 'warning') progress.style.background = 'var(--warning)';
+  else progress.style.background = 'var(--primary)';
+  toast.appendChild(progress);
+  toast.querySelector('.toast-close').onclick = () => removeToast(toast);
+  container.appendChild(toast);
+  setTimeout(() => removeToast(toast), 3000);
+}
+function removeToast(toast) {
+  toast.style.animation = 'slideIn 0.3s ease reverse';
+  setTimeout(() => toast.remove(), 300);
+}
+// 自动演示
+setTimeout(() => showToast('info', '系统就绪', '正在检查插件更新...'), 500);
+</script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>DSH 插件升级管理 - 全新设计 v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#6366F1;--primary-light:#818CF8;--primary-dark:#4F46E5;
+  --accent:#10B981;--warning:#F59E0B;--danger:#EF4444;
+  --bg-primary:#0F172A;--bg-secondary:#1E293B;--bg-tertiary:#334155;
+  --text-primary:#F8FAFC;--text-secondary:#CBD5E1;--text-muted:#94A3B8;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg-primary);color:var(--text-primary);min-height:100vh}
+.glass{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+a{color:var(--primary-light);text-decoration:none;transition:all 0.2s}
+a:hover{color:var(--primary)}
+
+/* Header */
+.header{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 24px}
+.header-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none}
+.logo-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--primary),var(--primary-light));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:var(--text-primary)}
+.nav{display:flex;align-items:center;gap:32px}
+.nav a{color:var(--text-secondary);font-size:15px;font-weight:500}
+.nav a:hover,.nav a.active{color:var(--primary-light)}
+.btn{padding:10px 24px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;border:none;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,0.4)}
+.btn-outline{background:transparent;color:var(--text-primary);border:1px solid rgba(255,255,255,0.2)}
+.btn-outline:hover{background:rgba(255,255,255,0.1);border-color:rgba(255,255,255,0.4)}
+
+/* Hero */
+.hero{padding:160px 24px 80px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:'';position:absolute;top:-50%;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(99,102,241,0.15) 0%,transparent 70%);pointer-events:none}
+.hero-content{position:relative;z-index:1;max-width:800px;margin:0 auto}
+.hero h1{font-size:56px;font-weight:800;line-height:1.1;margin-bottom:24px;background:linear-gradient(135deg,var(--text-primary) 0%,var(--primary-light) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:18px;color:var(--text-secondary);line-height:1.6;margin-bottom:40px}
+.hero-buttons{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+
+/* Features */
+.features{padding:80px 24px;max-width:1200px;margin:0 auto}
+.section-title{text-align:center;margin-bottom:48px}
+.section-title h2{font-size:32px;font-weight:700;margin-bottom:12px}
+.section-title p{font-size:16px;color:var(--text-muted)}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.feature-card{padding:32px;border-radius:20px;transition:all 0.3s}
+.feature-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.4)}
+.feature-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:20px}
+.feature-icon.blue{background:linear-gradient(135deg,#6366F1,#818CF8)}
+.feature-icon.green{background:linear-gradient(135deg,#10B981,#34D399)}
+.feature-icon.orange{background:linear-gradient(135deg,#F59E0B,#FBBF24)}
+.feature-icon.purple{background:linear-gradient(135deg,#8B5CF6,#A78BFA)}
+.feature-icon.red{background:linear-gradient(135deg,#EF4444,#F87171)}
+.feature-icon.cyan{background:linear-gradient(135deg,#06B6D4,#22D3EE)}
+.feature-card h3{font-size:18px;font-weight:600;margin-bottom:8px}
+.feature-card p{font-size:14px;color:var(--text-secondary);line-height:1.6}
+
+/* Download */
+.download-section{padding:80px 24px;background:linear-gradient(180deg,transparent,rgba(99,102,241,0.05));}
+.download-content{max-width:1000px;margin:0 auto}
+.download-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:24px;margin-top:48px}
+.download-card{padding:40px;text-align:center;border-radius:20px}
+.download-card:hover{transform:translateY(-4px)}
+.download-icon{font-size:56px;margin-bottom:16px}
+.download-card h3{font-size:22px;font-weight:600;margin-bottom:8px}
+.download-card .version{font-size:14px;color:var(--text-muted);margin-bottom:24px}
+
+/* Footer */
+.footer{padding:40px 24px;text-align:center;color:var(--text-muted);font-size:13px;border-top:1px solid rgba(255,255,255,0.05)}
+</style>
+</head>
+<body>
+<!-- Header -->
+<header class='header glass'>
+  <div class='header-inner'>
+    <a href='#' class='logo'>
+      <div class='logo-icon'>DSH</div>
+      <span class='logo-text'>插件升级管理</span>
+    </a>
+    <nav class='nav'>
+      <a href='#' class='active'>首页</a>
+      <a href='#'>插件市场</a>
+      <a href='#'>下载</a>
+      <a href='#'>文档</a>
+    </nav>
+    <a href='#' class='btn btn-primary'>立即下载</a>
+  </div>
+</header>
+
+<!-- Hero -->
+<section class='hero'>
+  <div class='hero-content'>
+    <h1>DSH 插件升级管理工具</h1>
+    <p>独立运行的插件管理工具，一键扫描、更新、启用、禁用、卸载所有插件。官方加速，访问 GitHub 无障碍。</p>
+    <div class='hero-buttons'>
+      <a href='#' class='btn btn-primary' style='padding:14px 32px;font-size:16px'>立即下载</a>
+      <a href='#' class='btn btn-outline' style='padding:14px 32px;font-size:16px'>浏览插件</a>
+    </div>
+  </div>
+</section>
+
+<!-- Features -->
+<section class='features'>
+  <div class='section-title'>
+    <h2>核心功能</h2>
+    <p>专为 DSH 生态打造的插件管理解决方案</p>
+  </div>
+  <div class='features-grid'>
+    <div class='feature-card glass'>
+      <div class='feature-icon blue'>🔍</div>
+      <h3>智能扫描</h3>
+      <p>自动扫描指定插件目录，识别所有已安装插件和 Agent 本体，展示完整的插件信息列表。</p>
+    </div>
+    <div class='feature-card glass'>
+      <div class='feature-icon green'>⬆️</div>
+      <h3>一键更新</h3>
+      <p>通过网络代理快速检测 GitHub 最新版本，一键下载更新，自动备份旧版本，支持回滚。</p>
+    </div>
+    <div class='feature-card glass'>
+      <div class='feature-icon orange'>🎛️</div>
+      <h3>启停管理</h3>
+      <p>轻松启用或禁用插件，无需删除文件。修改配置后重启 Agent 即可生效，灵活管理插件组合。</p>
+    </div>
+    <div class='feature-card glass'>
+      <div class='feature-icon purple'>🗑️</div>
+      <h3>安全卸载</h3>
+      <p>卸载前自动备份，可随时恢复。Agent 本体受保护，禁止误卸载，确保系统稳定运行。</p>
+    </div>
+    <div class='feature-card glass'>
+      <div class='feature-icon red'>📂</div>
+      <h3>目录直达</h3>
+      <p>一键打开插件所在文件夹，快速定位插件文件，方便手动修改配置或查看插件内容。</p>
+    </div>
+    <div class='feature-card glass'>
+      <div class='feature-icon cyan'>🚀</div>
+      <h3>官方加速</h3>
+      <p>所有 GitHub 请求通过代理中转，解决访问限制问题，大幅提升下载和检测速度。</p>
+    </div>
+  </div>
+</section>
+
+<!-- Download -->
+<section class='download-section'>
+  <div class='download-content'>
+    <div class='section-title'>
+      <h2>立即下载</h2>
+      <p>支持 Windows 和 Linux 平台，单文件运行，无需安装</p>
+    </div>
+    <div class='download-grid'>
+      <div class='download-card glass'>
+        <div class='download-icon'>🪟</div>
+        <h3>Windows</h3>
+        <p class='version'>v1.0.0 · 64位 · EXE 单文件</p>
+        <a href='#' class='btn btn-primary' style='margin-top:16px'>下载 Windows 版</a>
+      </div>
+      <div class='download-card glass'>
+        <div class='download-icon'>🐧</div>
+        <h3>Linux</h3>
+        <p class='version'>v1.0.0 · AppImage · 64位</p>
+        <a href='#' class='btn btn-primary' style='margin-top:16px'>下载 Linux 版</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class='footer'>
+  <p>&copy; 2026 DSH Plugin Updater. All rights reserved. | 官方加速</p>
+</footer>
+</body>
+</html>

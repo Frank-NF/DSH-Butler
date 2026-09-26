@@ -1,0 +1,11 @@
+{
+  "id": "dsh-plugin-example",
+  "name": "示例插件",
+  "description": "这是一个 DSH 插件示例，展示 plugin.manifest.json 的标准格式。插件可以扩展 DSH Agent 的能力，提供额外的功能模块。",
+  "github_repo": "Frank-NF/dsh-plugin-example",
+  "current_version": "1.0.0",
+  "enabled": true,
+  "type": "plugin",
+  "author": "DSH Team",
+  "homepage": "https://dsh.huilinsh.cn/plugins/dsh-plugin-example"
+}

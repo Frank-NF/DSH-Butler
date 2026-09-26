@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>空状态与错误状态</title>
+<style>
+:root{--primary:#6366F1;--bg:#0F172A;--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:40px}
+.glass{background:rgba(30,41,59,0.7);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,0.1);border-radius:20px;padding:32px}
+.state-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.state-card{padding:40px;text-align:center}
+.state-icon{font-size:64px;margin-bottom:16px;opacity:0.6}
+.state-title{font-size:18px;font-weight:600;margin-bottom:8px}
+.state-desc{font-size:14px;color:var(--muted);line-height:1.6;margin-bottom:24px}
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all 0.2s}
+.btn-primary{background:linear-gradient(135deg,var(--primary),#818CF8);color:#fff}
+.btn-primary:hover{box-shadow:0 4px 16px rgba(99,102,241,0.4);transform:translateY(-2px)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.1)}
+.btn-ghost:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+/* 错误详情 */
+.error-details{background:rgba(0,0,0,0.3);border-radius:10px;padding:16px;margin:16px 0;text-align:left;font-family:'JetBrains Mono',monospace;font-size:12px;color:#EF4444}
+.error-code{color:var(--muted);margin-bottom:8px}
+</style>
+</head>
+<body>
+<div class="state-grid">
+  <!-- 空状态：无插件 -->
+  <div class="state-card glass">
+    <div class="state-icon">📭</div>
+    <h3 class="state-title">暂无插件</h3>
+    <p class="state-desc">指定的插件目录下未检测到任何插件。请确认路径是否正确，或手动添加插件。</p>
+    <button class="btn btn-primary">选择目录</button>
+    <button class="btn btn-ghost" style="margin-left:8px">扫描其他路径</button>
+  </div>
+  
+  <!-- 空状态：无更新 -->
+  <div class="state-card glass">
+    <div class="state-icon">✅</div>
+    <h3 class="state-title">已是最新版本</h3>
+    <p class="state-desc">所有插件都已更新到最新版本，无需操作。</p>
+    <button class="btn btn-ghost">刷新状态</button>
+  </div>
+  
+  <!-- 错误状态：网络错误 -->
+  <div class="state-card glass">
+    <div class="state-icon">🌐</div>
+    <h3 class="state-title">网络连接失败</h3>
+    <p class="state-desc">无法连接到 GitHub 或代理服务器。请检查网络连接和代理配置。</p>
+    <div class="error-details">
+      <div class="error-code">ERROR: ECONNREFUSED 127.0.0.1:8080</div>
+      <div>请求超时，代理服务器可能未启动</div>
+    </div>
+    <button class="btn btn-primary">重试</button>
+    <button class="btn btn-ghost" style="margin-left:8px">检查设置</button>
+  </div>
+  
+  <!-- 错误状态：权限不足 -->
+  <div class="state-card glass">
+    <div class="state-icon">🔒</div>
+    <h3 class="state-title">权限不足</h3>
+    <p class="state-desc">当前用户没有访问该目录的权限。请以管理员身份运行或修改目录权限。</p>
+    <button class="btn btn-primary">以管理员运行</button>
+    <button class="btn btn-ghost" style="margin-left:8px">更改路径</button>
+  </div>
+</div>
+</body>
+</html>

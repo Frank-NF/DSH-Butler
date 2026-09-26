@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>DSH 插件升级管理 - 全新设计 v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#6366F1;--primary-light:#818CF8;--primary-dark:#4F46E5;
+  --accent:#10B981;--warning:#F59E0B;--danger:#EF4444;
+  --bg-primary:#0F172A;--bg-secondary:#1E293B;--bg-tertiary:#334155;
+  --text-primary:#F8FAFC;--text-secondary:#CBD5E1;--text-muted:#94A3B8;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg-primary);color:var(--text-primary);min-height:100vh}
+.glass{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+
+/* Header */
+.header{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.header-inner{display:flex;align-items:center;gap:24px;width:100%}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none}
+.logo-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--primary),var(--primary-light));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff}
+.logo-text h1{font-size:18px;font-weight:600;color:var(--text-primary);margin:0}
+.logo-text span{font-size:12px;color:var(--text-muted)}
+
+/* Search */
+.search-box{flex:1;max-width:600px;position:relative}
+.search-box input{width:100%;padding:12px 16px 12px 44px;background:var(--bg-tertiary);border:1px solid rgba(255,255,255,0.1);border-radius:12px;color:var(--text-primary);font-size:14px;outline:none;transition:all 0.2s}
+.search-box input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(99,102,241,0.2)}
+.search-box input::placeholder{color:var(--text-muted)}
+.search-icon{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:18px}
+
+/* Buttons */
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;border:none;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(99,102,241,0.4)}
+.btn-ghost{background:transparent;color:var(--text-secondary);border:1px solid rgba(255,255,255,0.1)}
+.btn-ghost:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.btn-icon{padding:10px;width:40px;justify-content:center}
+
+/* Stats */
+.stats-bar{margin-top:80px;padding:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.stat-card{padding:20px;border-radius:16px;text-align:center}
+.stat-value{font-size:32px;font-weight:700;color:var(--primary-light);margin-bottom:4px}
+.stat-label{font-size:13px;color:var(--text-muted)}
+.stat-card.update .stat-value{color:var(--warning)}
+
+/* Main */
+.main{padding:24px;max-width:1400px;margin:0 auto}
+
+/* Table */
+.table-container{border-radius:16px;overflow:hidden}
+.table-header{padding:20px 24px;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;align-items:center;justify-content:space-between}
+.table-title{font-size:16px;font-weight:600}
+.table-actions{display:flex;gap:8px}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;padding:14px 24px;font-size:12px;font-weight:500;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid rgba(255,255,255,0.05)}
+td{padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.03);vertical-align:middle}
+tr:hover td{background:rgba(99,102,241,0.05)}
+tr.update-row td{background:rgba(245,158,11,0.08)}
+tr.core-row td{background:rgba(99,102,241,0.08)}
+tr.disabled-row td{opacity:0.6}
+
+.plugin-name{display:flex;align-items:center;gap:12px}
+.plugin-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px}
+.plugin-icon.core{background:linear-gradient(135deg,var(--primary),var(--primary-light))}
+.plugin-icon.plugin{background:linear-gradient(135deg,var(--accent),#34D399)}
+.plugin-info h4{font-size:14px;font-weight:500;color:var(--text-primary);margin-bottom:2px}
+.plugin-info span{font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+
+.status-badge{padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500}
+.status-badge.latest{background:rgba(16,185,129,0.2);color:var(--accent)}
+.status-badge.update{background:rgba(245,158,11,0.2);color:var(--warning)}
+.status-badge.error{background:rgba(239,68,68,0.2);color:var(--danger)}
+.status-badge.disabled{background:rgba(148,163,184,0.2);color:var(--text-muted)}
+
+.version-info{font-family:'JetBrains Mono',monospace;font-size:13px}
+.version-info .current{color:var(--text-secondary)}
+.version-info .latest{color:var(--warning);font-weight:600}
+.version-info .arrow{color:var(--text-muted);margin:0 4px}
+
+.action-btns{display:flex;gap:6px;flex-wrap:wrap}
+.action-btn{padding:6px 12px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;transition:all 0.2s;border:none}
+.action-btn.update{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff}
+.action-btn.update:hover{transform:scale(1.05)}
+.action-btn.secondary{background:var(--bg-tertiary);color:var(--text-secondary)}
+.action-btn.secondary:hover{background:rgba(255,255,255,0.1);color:var(--text-primary)}
+.action-btn.danger{background:rgba(239,68,68,0.2);color:var(--danger)}
+.action-btn.danger:hover{background:rgba(239,68,68,0.3)}
+
+/* Empty State */
+.empty-state{text-align:center;padding:80px 20px;color:var(--text-muted)}
+.empty-state .icon{font-size:64px;margin-bottom:16px;opacity:0.5}
+.empty-state h3{font-size:18px;color:var(--text-secondary);margin-bottom:8px}
+
+/* Progress */
+.progress-bar{height:4px;background:var(--bg-tertiary);border-radius:2px;overflow:hidden;margin-top:8px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--primary-light));border-radius:2px;transition:width 0.3s}
+
+/* Footer */
+.footer{padding:24px;text-align:center;color:var(--text-muted);font-size:13px;border-top:1px solid rgba(255,255,255,0.05);margin-top:40px}
+</style>
+</head>
+<body>
+<!-- Header -->
+<header class='header glass'>
+  <div class='header-inner'>
+    <a href='#' class='logo'>
+      <div class='logo-icon'>DSH</div>
+      <div class='logo-text'>
+        <h1>插件升级管理</h1>
+        <span>独立运行 · 官方加速</span>
+      </div>
+    </a>
+    
+    <div class='search-box'>
+      <span class='search-icon'>🔍</span>
+      <input type='text' placeholder='输入插件目录路径...'>
+    </div>
+    
+    <div style='display:flex;gap:8px'>
+      <button class='btn btn-ghost btn-icon'>⚙️</button>
+      <button class='btn btn-ghost'>🌐 官网</button>
+      <button class='btn btn-primary'>📁 扫描</button>
+    </div>
+  </div>
+</header>
+
+<!-- Stats -->
+<div class='stats-bar'>
+  <div class='stat-card glass'>
+    <div class='stat-value'>12</div>
+    <div class='stat-label'>总插件数</div>
+  </div>
+  <div class='stat-card glass update'>
+    <div class='stat-value'>3</div>
+    <div class='stat-label'>可更新</div>
+  </div>
+  <div class='stat-card glass'>
+    <div class='stat-value'>10</div>
+    <div class='stat-label'>已启用</div>
+  </div>
+  <div class='stat-card glass'>
+    <div class='stat-value'>2</div>
+    <div class='stat-label'>已禁用</div>
+  </div>
+</div>
+
+<!-- Main -->
+<main class='main'>
+  <div class='table-container glass'>
+    <div class='table-header'>
+      <span class='table-title'>插件列表</span>
+      <div class='table-actions'>
+        <button class='btn btn-ghost' style='padding:8px 16px;font-size:13px'>刷新</button>
+        <button class='btn btn-primary' style='padding:8px 16px;font-size:13px'>检查更新</button>
+      </div>
+    </div>
+    
+    <table>
+      <thead>
+        <tr>
+          <th>状态</th>
+          <th>插件名称</th>
+          <th>功能介绍</th>
+          <th>GitHub</th>
+          <th>版本</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class='core-row'>
+          <td><span class='status-badge latest'>本体</span></td>
+          <td>
+            <div class='plugin-name'>
+              <div class='plugin-icon core'>🖥️</div>
+              <div class='plugin-info'>
+                <h4>DSH Agent 本体</h4>
+                <span>dsh-agent-core</span>
+              </div>
+            </div>
+          </td>
+          <td style='color:var(--text-secondary);font-size:13px'>核心程序，提供基础运行环境</td>
+          <td><a href='#' style='color:var(--primary-light);font-size:13px'>Frank-NF/DSH-Agent</a></td>
+          <td><div class='version-info'><span class='current'>v1.0.0</span></div></td>
+          <td><div class='action-btns'><button class='action-btn secondary'>目录</button></div></td>
+        </tr>
+        
+        <tr class='update-row'>
+          <td><span class='status-badge update'>可更新</span></td>
+          <td>
+            <div class='plugin-name'>
+              <div class='plugin-icon plugin'>🎨</div>
+              <div class='plugin-info'>
+                <h4>ComfyUI 集成插件</h4>
+                <span>dsh-plugin-comfyui</span>
+              </div>
+            </div>
+          </td>
+          <td style='color:var(--text-secondary);font-size:13px'>集成 ComfyUI 工作流</td>
+          <td><a href='#' style='color:var(--primary-light);font-size:13px'>Frank-NF/dsh-plugin-comfyui</a></td>
+          <td><div class='version-info'><span class='current'>v0.9.0</span><span class='arrow'>→</span><span class='latest'>v1.0.0</span></div></td>
+          <td><div class='action-btns'><button class='action-btn update'>更新</button><button class='action-btn secondary'>目录</button></div></td>
+        </tr>
+        
+        <tr class='disabled-row'>
+          <td><span class='status-badge disabled'>已禁用</span></td>
+          <td>
+            <div class='plugin-name'>
+              <div class='plugin-icon plugin'>🧠</div>
+              <div class='plugin-info'>
+                <h4>长期记忆插件</h4>
+                <span>dsh-plugin-memory</span>
+              </div>
+            </div>
+          </td>
+          <td style='color:var(--text-secondary);font-size:13px'>向量数据库支持</td>
+          <td><a href='#' style='color:var(--primary-light);font-size:13px'>Frank-NF/dsh-plugin-memory</a></td>
+          <td><div class='version-info'><span class='current'>v0.8.0</span></div></td>
+          <td><div class='action-btns'><button class='action-btn secondary'>启用</button><button class='action-btn danger'>卸载</button></div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<footer class='footer'>
+  <p>DSH Plugin Updater v1.0.0 · 官方加速</p>
+</footer>
+</body>
+</html>

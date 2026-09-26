@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>移动端响应式导航</title>
+<style>
+:root{--primary:#6366F1;--bg:#0F172A;--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0}
+.glass{background:rgba(30,41,59,0.8);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,0.1)}
+/* 桌面导航 */
+.desktop-nav{padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:36px;height:36px;background:linear-gradient(135deg,var(--primary),#818CF8);border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
+.logo-text{font-size:18px;font-weight:600}
+.nav-links{display:flex;gap:32px;align-items:center}
+.nav-links a{color:var(--muted);text-decoration:none;font-size:15px;transition:color 0.2s}
+.nav-links a:hover,.nav-links a.active{color:var(--text)}
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all 0.2s}
+.btn-primary{background:linear-gradient(135deg,var(--primary),#818CF8);color:#fff}
+.btn-primary:hover{box-shadow:0 4px 16px rgba(99,102,241,0.4)}
+/* 汉堡按钮 */
+.hamburger{display:none;flex-direction:column;gap:5px;cursor:pointer;padding:8px}
+.hamburger span{width:24px;height:2px;background:var(--text);transition:all 0.3s;border-radius:2px}
+/* 移动端菜单 */
+.mobile-menu{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(15,23,42,0.98);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;opacity:0;pointer-events:none;transition:opacity 0.3s}
+.mobile-menu.open{opacity:1;pointer-events:all}
+.mobile-menu a{font-size:24px;color:var(--text);text-decoration:none;font-weight:500}
+.mobile-menu .close-btn{position:absolute;top:20px;right:20px;font-size:32px;color:var(--muted);cursor:pointer;background:none;border:none}
+/* 响应式 */
+@media(max-width:768px){
+  .desktop-nav{padding:12px 16px}
+  .nav-links,.btn-primary{display:none}
+  .hamburger{display:flex}
+}
+</style>
+</head>
+<body>
+<nav class="glass">
+  <div class="desktop-nav">
+    <div class="logo">
+      <div class="logo-icon">DSH</div>
+      <span class="logo-text">插件升级管理</span>
+    </div>
+    <div class="nav-links">
+      <a href="#" class="active">首页</a>
+      <a href="#">插件市场</a>
+      <a href="#">下载</a>
+      <a href="#">文档</a>
+    </div>
+    <button class="btn btn-primary">立即下载</button>
+    <div class="hamburger" onclick="toggleMenu()">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+</nav>
+<div class="mobile-menu" id="mobileMenu">
+  <button class="close-btn" onclick="toggleMenu()">×</button>
+  <a href="#" onclick="toggleMenu()">首页</a>
+  <a href="#" onclick="toggleMenu()">插件市场</a>
+  <a href="#" onclick="toggleMenu()">下载</a>
+  <a href="#" onclick="toggleMenu()">文档</a>
+  <button class="btn btn-primary" style="margin-top:20px">立即下载</button>
+</div>
+<script>
+function toggleMenu(){
+  document.getElementById('mobileMenu').classList.toggle('open');
+}
+</script>
+</body>
+</html>

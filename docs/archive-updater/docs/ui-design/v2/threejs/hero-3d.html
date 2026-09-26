@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DSH 插件升级管理 - Three.js 3D 效果</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--primary:#6366F1;--primary-light:#818CF8;--accent:#10B981;--warning:#F59E0B;--danger:#EF4444;--bg-primary:#0F172A;--bg-secondary:#1E293B;--text-primary:#F8FAFC;--text-secondary:#CBD5E1;--text-muted:#94A3B8}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--bg-primary);color:var(--text-primary);margin:0;overflow-x:hidden}
+.three-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#hero{position:relative;z-index:1;padding:160px 24px 80px;text-align:center;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.hero-content{position:relative;z-index:2;max-width:800px}
+.hero h1{font-size:56px;font-weight:800;margin-bottom:24px;background:linear-gradient(135deg,var(--text-primary) 0%,var(--primary-light) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero p{font-size:18px;color:var(--text-secondary);line-height:1.6;margin-bottom:40px}
+.btn{padding:14px 32px;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;transition:all 0.3s;border:none;display:inline-flex;align-items:center;gap:8px;text-decoration:none}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff;box-shadow:0 4px 20px rgba(99,102,241,0.4)}
+.btn-primary:hover{transform:translateY(-2px) scale(1.02);box-shadow:0 8px 32px rgba(99,102,241,0.6)}
+.features{position:relative;z-index:1;padding:80px 24px;max-width:1200px;margin:0 auto}
+.features-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px}
+.feature-card{padding:32px;border-radius:20px;background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);transition:all 0.3s}
+.feature-card:hover{transform:translateY(-8px);box-shadow:0 20px 40px rgba(0,0,0,0.4);border-color:var(--primary)}
+.feature-icon{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:20px}
+.feature-icon.blue{background:linear-gradient(135deg,#6366F1,#818CF8)}
+.feature-icon.green{background:linear-gradient(135deg,#10B981,#34D399)}
+.feature-icon.orange{background:linear-gradient(135deg,#F59E0B,#FBBF24)}
+.feature-card h3{font-size:18px;font-weight:600;margin-bottom:8px}
+.feature-card p{font-size:14px;color:var(--text-secondary);line-height:1.6}
+</style>
+</head>
+<body>
+<div id="three-container" class="three-container"></div>
+
+<div id="hero">
+  <div class="hero-content">
+    <h1>DSH 插件升级管理工具</h1>
+    <p>独立运行的插件管理工具，一键扫描、更新、启用、禁用、卸载所有插件。官方加速，访问 GitHub 无障碍。</p>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      <a href="#" class="btn btn-primary">立即下载</a>
+      <a href="#" class="btn" style="background:rgba(255,255,255,0.1);color:var(--text-primary);border:1px solid rgba(255,255,255,0.2)">浏览插件</a>
+    </div>
+  </div>
+</div>
+
+<section class="features">
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon blue">🔍</div>
+      <h3>智能扫描</h3>
+      <p>自动扫描指定插件目录，识别所有已安装插件和 Agent 本体</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon green">⬆️</div>
+      <h3>一键更新</h3>
+      <p>通过网络代理快速检测 GitHub 最新版本</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon orange">🎛️</div>
+      <h3>启停管理</h3>
+      <p>轻松启用或禁用插件，无需删除文件</p>
+    </div>
+  </div>
+</section>
+
+<script>
+// Three.js 粒子背景
+const container = document.getElementById('three-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// 粒子系统
+const particleCount = 1500;
+const particles = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount * 3);
+const colors = new Float32Array(particleCount * 3);
+
+for(let i = 0; i < particleCount; i++) {
+  positions[i * 3] = (Math.random() - 0.5) * 20;
+  positions[i * 3 + 1] = (Math.random() - 0.5) * 20;
+  positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+  
+  // 靛蓝色调
+  colors[i * 3] = 0.39 + Math.random() * 0.2;
+  colors[i * 3 + 1] = 0.4 + Math.random() * 0.2;
+  colors[i * 3 + 2] = 0.95 + Math.random() * 0.05;
+}
+
+particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+const particleMaterial = new THREE.PointsMaterial({
+  size: 0.03,
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.8,
+  blending: THREE.AdditiveBlending
+});
+
+const particleSystem = new THREE.Points(particles, particleMaterial);
+scene.add(particleSystem);
+
+// 连接线
+const lineMaterial = new THREE.LineBasicMaterial({ 
+  color: 0x6366F1, 
+  transparent: true, 
+  opacity: 0.15 
+});
+
+camera.position.z = 5;
+
+// 鼠标交互
+let mouseX = 0, mouseY = 0;
+document.addEventListener('mousemove', (e) => {
+  mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+  mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+});
+
+// 动画循环
+function animate() {
+  requestAnimationFrame(animate);
+  
+  particleSystem.rotation.x += 0.0003;
+  particleSystem.rotation.y += 0.0005;
+  
+  // 鼠标跟随
+  particleSystem.rotation.x += mouseY * 0.0002;
+  particleSystem.rotation.y += mouseX * 0.0002;
+  
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// 响应式
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

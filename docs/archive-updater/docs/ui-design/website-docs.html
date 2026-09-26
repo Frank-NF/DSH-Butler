@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>文档中心 - DSH 插件升级管理工具 - 原型</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif; color: #303133; background: #f5f7fa; }
+a { color: #409eff; text-decoration: none; }
+a:hover { color: #66b1ff; }
+.container { max-width: 1200px; margin: 0 auto; padding: 0 24px; }
+
+.site-header { background: #fff; border-bottom: 1px solid #e4e7ed; position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.04); }
+.header-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.logo { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 700; color: #303133; }
+.logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #409eff 0%, #66b1ff 100%); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 14px; }
+.nav-links { display: flex; align-items: center; gap: 32px; }
+.nav-link { color: #606266; font-size: 15px; font-weight: 500; transition: color 0.2s; }
+.nav-link:hover, .nav-link.active { color: #409eff; }
+
+.docs-section { padding: 40px 0; background: #fff; min-height: calc(100vh - 64px); }
+.docs-container { display: flex; gap: 40px; align-items: flex-start; }
+.docs-sidebar { width: 240px; flex-shrink: 0; position: sticky; top: 100px; }
+.docs-sidebar h3 { font-size: 16px; font-weight: 600; color: #303133; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #409eff; }
+.docs-sidebar ul { list-style: none; padding: 0; }
+.docs-sidebar li { margin-bottom: 4px; }
+.docs-sidebar a { display: block; padding: 8px 12px; color: #606266; font-size: 14px; border-radius: 4px; transition: all 0.2s; }
+.docs-sidebar a:hover, .docs-sidebar a.active { background: #ecf5ff; color: #409eff; }
+.docs-content { flex: 1; min-width: 0; }
+.docs-content article { margin-bottom: 60px; }
+.docs-content h1 { font-size: 28px; font-weight: 700; color: #303133; margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid #ebeef5; }
+.docs-content h2 { font-size: 20px; font-weight: 600; color: #303133; margin: 28px 0 16px; }
+.docs-content h3 { font-size: 16px; font-weight: 600; color: #409eff; margin: 24px 0 12px; }
+.docs-content p { font-size: 15px; line-height: 1.8; color: #606266; margin-bottom: 16px; }
+.docs-content ul, .docs-content ol { padding-left: 24px; margin-bottom: 16px; }
+.docs-content li { font-size: 15px; line-height: 1.8; color: #606266; margin-bottom: 8px; }
+.docs-content code { background: #f5f7fa; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #e6a23c; font-family: Consolas, monospace; }
+.docs-content pre { background: #1a1a2e; padding: 16px 20px; border-radius: 8px; overflow-x: auto; margin: 16px 0; }
+.docs-content pre code { background: none; color: #a0cfff; padding: 0; font-size: 13px; line-height: 1.6; }
+.warning-box { background: #fdf6ec; border-left: 4px solid #e6a23c; padding: 16px 20px; border-radius: 0 8px 8px 0; margin: 16px 0; }
+.warning-box strong { color: #e6a23c; }
+.field-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+.field-table th, .field-table td { padding: 10px 14px; text-align: left; border: 1px solid #ebeef5; font-size: 14px; }
+.field-table th { background: #f5f7fa; font-weight: 600; color: #303133; }
+.field-table td { color: #606266; }
+
+.site-footer { background: #1a1a2e; color: rgba(255,255,255,0.7); padding: 48px 0 24px; }
+.footer-content { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 40px; margin-bottom: 32px; }
+.footer-brand h3 { color: #fff; font-size: 20px; margin-bottom: 12px; }
+.footer-brand p { font-size: 14px; line-height: 1.6; }
+.footer-column h4 { color: #fff; font-size: 15px; margin-bottom: 16px; }
+.footer-column ul { list-style: none; }
+.footer-column li { margin-bottom: 8px; }
+.footer-column a { color: rgba(255,255,255,0.7); font-size: 14px; transition: color 0.2s; }
+.footer-column a:hover { color: #409eff; }
+.footer-bottom { text-align: center; padding-top: 24px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 13px; }
+
+@media (max-width: 900px) {
+  .docs-container { flex-direction: column; }
+  .docs-sidebar { width: 100%; position: static; }
+  .footer-content { grid-template-columns: 1fr; gap: 24px; }
+}
+</style>
+</head>
+<body>
+<div class='app'>
+  <header class='site-header'>
+    <div class='container header-inner'>
+      <a href='website-index.html' class='logo'>
+        <div class='logo-icon'>DSH</div>
+        <span>插件升级管理</span>
+      </a>
+      <nav class='nav-links'>
+        <a href='website-index.html' class='nav-link'>首页</a>
+        <a href='website-plugins.html' class='nav-link'>插件市场</a>
+        <a href='website-download.html' class='nav-link'>下载</a>
+        <a href='website-docs.html' class='nav-link active'>文档</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class='main-content'>
+    <section class='docs-section'>
+      <div class='container docs-container'>
+        <aside class='docs-sidebar'>
+          <h3>文档目录</h3>
+          <ul>
+            <li><a href='#quick-start' class='active'>快速开始</a></li>
+            <li><a href='#installation'>安装指南</a></li>
+            <li><a href='#basic-usage'>基本使用</a></li>
+            <li><a href='#plugin-manifest'>插件清单规范</a></li>
+            <li><a href='#proxy-setup'>代理服务部署</a></li>
+            <li><a href='#faq'>常见问题</a></li>
+          </ul>
+        </aside>
+
+        <div class='docs-content'>
+          <article id='quick-start'>
+            <h1>快速开始</h1>
+            <p>DSH 插件升级管理工具是一个独立运行的桌面程序，不依赖 DSH Agent 本体。它可以扫描您的插件目录，管理所有已安装插件的更新、启用、禁用和卸载。</p>
+            <h2>系统要求</h2>
+            <ul>
+              <li><strong>Windows:</strong> Windows 10 或更高版本（64位）</li>
+              <li><strong>Linux:</strong> Ubuntu 20.04+ / Debian 11+（x86_64）</li>
+              <li><strong>网络:</strong> 可访问网络代理服务器</li>
+            </ul>
+          </article>
+
+          <article id='installation'>
+            <h1>安装指南</h1>
+            <h2>Windows 安装</h2>
+            <ol>
+              <li>从<a href='website-download.html'>下载页面</a>获取最新的 .exe 安装包</li>
+              <li>双击运行安装程序</li>
+              <li>按照安装向导完成安装</li>
+              <li>从桌面快捷方式或开始菜单启动程序</li>
+            </ol>
+            <h2>Linux 安装</h2>
+            <ol>
+              <li>下载 .AppImage 文件</li>
+              <li>打开终端，添加执行权限：<code>chmod +x DSH-PluginUpdater_*.AppImage</code></li>
+              <li>运行程序：<code>./DSH-PluginUpdater_*.AppImage</code></li>
+            </ol>
+          </article>
+
+          <article id='basic-usage'>
+            <h1>基本使用</h1>
+            <h2>1. 指定插件目录</h2>
+            <p>在顶部输入框中输入您的 DSH 插件目录路径，例如：<code>C:\DSH\plugins</code></p>
+            <h2>2. 扫描插件</h2>
+            <p>点击「扫描」按钮，工具将遍历目录下的所有子文件夹，读取每个插件的 <code>plugin.manifest.json</code> 文件，列出所有已安装插件。</p>
+            <h2>3. 检查更新</h2>
+            <p>点击「检查更新」按钮，工具将通过网络代理访问 GitHub，检测每个插件的最新版本。有可用更新的插件将高亮显示。</p>
+            <h2>4. 更新插件</h2>
+            <p>对于有可用更新的插件，点击「更新」按钮即可开始更新。更新前会自动备份旧版本，更新过程中显示进度条。</p>
+            <div class='warning-box'>
+              <strong>注意：</strong>更新插件前建议关闭 DSH Agent 本体，避免文件占用导致更新失败。
+            </div>
+          </article>
+
+          <article id='plugin-manifest'>
+            <h1>插件清单规范</h1>
+            <p>每个插件目录下需要包含一个 <code>plugin.manifest.json</code> 文件，用于描述插件的基本信息。</p>
+            <h2>字段说明</h2>
+            <table class='field-table'>
+              <thead>
+                <tr><th>字段</th><th>类型</th><th>必填</th><th>说明</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><code>id</code></td><td>string</td><td>是</td><td>插件唯一标识符</td></tr>
+                <tr><td><code>name</code></td><td>string</td><td>是</td><td>插件显示名称</td></tr>
+                <tr><td><code>description</code></td><td>string</td><td>否</td><td>插件功能介绍</td></tr>
+                <tr><td><code>github_repo</code></td><td>string</td><td>否</td><td>GitHub 仓库地址</td></tr>
+                <tr><td><code>current_version</code></td><td>string</td><td>否</td><td>当前版本号</td></tr>
+                <tr><td><code>enabled</code></td><td>boolean</td><td>否</td><td>是否启用，默认 true</td></tr>
+                <tr><td><code>type</code></td><td>string</td><td>否</td><td>类型: plugin 或 agent-core</td></tr>
+              </tbody>
+            </table>
+          </article>
+
+          <article id='faq'>
+            <h1>常见问题</h1>
+            <h3>Q: 工具提示"检查更新失败"怎么办？</h3>
+            <p>A: 请检查网络连接是否正常，网络代理服务是否可访问。</p>
+            <h3>Q: 更新插件时提示"文件被占用"？</h3>
+            <p>A: 请先关闭 DSH Agent 本体，再执行更新操作。</p>
+            <h3>Q: 如何恢复被误删的插件？</h3>
+            <p>A: 工具在卸载和更新前都会自动备份，可在设置中恢复。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class='site-footer'>
+    <div class='container'>
+      <div class='footer-content'>
+        <div class='footer-brand'>
+          <h3>DSH 插件升级管理工具</h3>
+          <p>独立运行的插件升级管理工具，支持扫描、更新、启用、禁用、卸载插件。</p>
+        </div>
+        <div class='footer-column'>
+          <h4>产品</h4>
+          <ul>
+            <li><a href='website-index.html'>首页</a></li>
+            <li><a href='website-plugins.html'>插件市场</a></li>
+            <li><a href='website-download.html'>下载</a></li>
+          </ul>
+        </div>
+        <div class='footer-column'>
+          <h4>资源</h4>
+          <ul>
+            <li><a href='website-docs.html'>使用文档</a></li>
+            <li><a href='#'>GitHub</a></li>
+          </ul>
+        </div>
+        <div class='footer-column'>
+          <h4>联系</h4>
+          <ul>
+            <li><a href='#'>support@dsh.huilinsh.cn</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class='footer-bottom'>
+        <p>&copy; 2026 DSH Plugin Updater. All rights reserved.</p>
+      </div>
+    </div>
+  </footer>
+</div>
+</body>
+</html>

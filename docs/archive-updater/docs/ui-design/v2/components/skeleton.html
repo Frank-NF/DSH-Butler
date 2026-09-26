@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>骨架屏 Loading 状态</title>
+<style>
+:root{--bg:#0F172A;--card:#1E293B;--border:rgba(255,255,255,0.1);--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:40px}
+.glass{background:rgba(30,41,59,0.7);border:1px solid var(--border);border-radius:16px;overflow:hidden}
+/* 骨架动画 */
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.skeleton{background:linear-gradient(90deg,rgba(255,255,255,0.05) 25%,rgba(255,255,255,0.1) 50%,rgba(255,255,255,0.05) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite}
+/* 表格骨架 */
+.table-skeleton{padding:24px}
+.skeleton-row{display:flex;align-items:center;gap:16px;padding:16px 0;border-bottom:1px solid var(--border)}
+.skeleton-row:last-child{border-bottom:none}
+.skeleton-circle{width:40px;height:40px;border-radius:10px}
+.skeleton-line{height:14px;border-radius:4px;flex:1}
+.skeleton-line.short{flex:0.5}
+.skeleton-line.medium{flex:0.7}
+/* 卡片骨架 */
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;padding:24px}
+.card-skeleton{height:160px;border-radius:16px}
+/* Header骨架 */
+.header-skeleton{padding:16px 24px;display:flex;align-items:center;gap:24px;border-bottom:1px solid var(--border)}
+.header-logo{width:120px;height:20px;border-radius:4px}
+.header-search{flex:1;height:40px;border-radius:10px}
+.header-btn{width:80px;height:36px;border-radius:8px}
+</style>
+</head>
+<body>
+<div class="glass" style="margin-bottom:24px">
+  <div class="header-skeleton">
+    <div class="skeleton header-logo"></div>
+    <div class="skeleton header-search"></div>
+    <div class="skeleton header-btn"></div>
+  </div>
+  <div class="table-skeleton">
+    <div class="skeleton-row">
+      <div class="skeleton skeleton-circle"></div>
+      <div class="skeleton skeleton-line"></div>
+      <div class="skeleton skeleton-line medium"></div>
+      <div class="skeleton skeleton-line short"></div>
+    </div>
+    <div class="skeleton-row">
+      <div class="skeleton skeleton-circle"></div>
+      <div class="skeleton skeleton-line"></div>
+      <div class="skeleton skeleton-line medium"></div>
+      <div class="skeleton skeleton-line short"></div>
+    </div>
+    <div class="skeleton-row">
+      <div class="skeleton skeleton-circle"></div>
+      <div class="skeleton skeleton-line"></div>
+      <div class="skeleton skeleton-line medium"></div>
+      <div class="skeleton skeleton-line short"></div>
+    </div>
+  </div>
+</div>
+<div class="card-grid">
+  <div class="skeleton card-skeleton"></div>
+  <div class="skeleton card-skeleton"></div>
+  <div class="skeleton card-skeleton"></div>
+</div>
+</body>
+</html>

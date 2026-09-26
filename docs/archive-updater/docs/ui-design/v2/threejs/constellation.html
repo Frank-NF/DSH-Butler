@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Three.js 星座粒子效果</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+:root{--primary:#6366F1;--primary-light:#818CF8;--accent:#10B981;--bg-primary:#0F172A;--text-primary:#F8FAFC;--text-secondary:#CBD5E1}
+body{font-family:'Inter',sans-serif;background:var(--bg-primary);color:var(--text-primary);margin:0;overflow:hidden}
+#canvas-container{position:fixed;top:0;left:0;width:100%;height:100%;z-index:0}
+.hero{position:relative;z-index:1;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center}
+.hero-content h1{font-size:48px;font-weight:800;margin-bottom:16px;background:linear-gradient(135deg,var(--text-primary),var(--primary-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.hero-content p{font-size:18px;color:var(--text-secondary);margin-bottom:32px}
+.controls{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:10;display:flex;gap:12px}
+.btn{padding:10px 20px;border-radius:8px;background:rgba(30,41,59,0.8);border:1px solid rgba(255,255,255,0.1);color:var(--text-secondary);cursor:pointer;font-size:13px;backdrop-filter:blur(8px)}
+.btn:hover{background:rgba(99,102,241,0.3);color:var(--text-primary)}
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<div class="hero">
+  <div class="hero-content">
+    <h1>DSH 插件升级管理</h1>
+    <p>移动鼠标与粒子交互</p>
+  </div>
+</div>
+<div class="controls">
+  <button class="btn" onclick="toggleConstellation()">星座连线</button>
+  <button class="btn" onclick="toggleRotation()">自动旋转</button>
+  <button class="btn" onclick="resetCamera()">重置视角</button>
+</div>
+<script>
+const container = document.getElementById('canvas-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+// 粒子
+const particleCount = 800;
+const geometry = new THREE.BufferGeometry();
+const positions = new Float32Array(particleCount*3);
+const colors = new Float32Array(particleCount*3);
+for(let i=0;i<particleCount;i++){
+  positions[i*3]=(Math.random()-0.5)*30;
+  positions[i*3+1]=(Math.random()-0.5)*30;
+  positions[i*3+2]=(Math.random()-0.5)*30;
+  colors[i*3]=0.39+Math.random()*0.2;
+  colors[i*3+1]=0.4+Math.random()*0.2;
+  colors[i*3+2]=0.95+Math.random()*0.05;
+}
+geometry.setAttribute('position', new THREE.BufferAttribute(positions,3));
+geometry.setAttribute('color', new THREE.BufferAttribute(colors,3));
+
+const material = new THREE.PointsMaterial({
+  size:0.08,vertexColors:true,transparent:true,opacity:0.9,
+  blending:THREE.AdditiveBlending
+});
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+// 星座连线
+let constellationLines = null;
+let showConstellation = true;
+let autoRotate = true;
+
+function createConstellation(){
+  if(constellationLines) scene.remove(constellationLines);
+  const linePositions = [];
+  const lineColors = [];
+  const maxDist = 3;
+  for(let i=0;i<particleCount;i++){
+    for(let j=i+1;j<particleCount;j++){
+      const dx=positions[i*3]-positions[j*3];
+      const dy=positions[i*3+1]-positions[j*3+1];
+      const dz=positions[i*3+2]-positions[j*3+2];
+      const dist=Math.sqrt(dx*dx+dy*dy+dz*dz);
+      if(dist<maxDist){
+        linePositions.push(positions[i*3],positions[i*3+1],positions[i*3+2]);
+        linePositions.push(positions[j*3],positions[j*3+1],positions[j*3+2]);
+        lineColors.push(0.4,0.45,0.9,0.4,0.45,0.9);
+      }
+    }
+  }
+  const lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions,3));
+  lineGeo.setAttribute('color', new THREE.Float32BufferAttribute(lineColors,3));
+  const lineMat = new THREE.LineBasicMaterial({
+    vertexColors:true,transparent:true,opacity:0.15
+  });
+  constellationLines = new THREE.LineSegments(lineGeo, lineMat);
+  scene.add(constellationLines);
+}
+createConstellation();
+
+camera.position.z = 8;
+let mouseX=0, mouseY=0;
+document.addEventListener('mousemove',(e)=>{
+  mouseX=(e.clientX/window.innerWidth-0.5)*2;
+  mouseY=(e.clientY/window.innerHeight-0.5)*2;
+});
+
+function animate(){
+  requestAnimationFrame(animate);
+  if(autoRotate){
+    particles.rotation.y += 0.001;
+    if(constellationLines) constellationLines.rotation.y += 0.001;
+  }
+  particles.rotation.x += mouseY*0.0001;
+  particles.rotation.y += mouseX*0.0001;
+  renderer.render(scene, camera);
+}
+animate();
+
+window.toggleConstellation = ()=>{
+  showConstellation = !showConstellation;
+  if(constellationLines) constellationLines.visible = showConstellation;
+};
+window.toggleRotation = ()=>{ autoRotate = !autoRotate; };
+window.resetCamera = ()=>{
+  camera.position.set(0,0,8);
+  particles.rotation.set(0,0,0);
+};
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth,window.innerHeight);
+});
+</script>
+</body>
+</html>

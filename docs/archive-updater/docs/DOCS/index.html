@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DSH插件管家 — 原型预览</title>
+  <style>
+    :root {
+      --brand: #F46123;
+      --brand-light: #F78A5E;
+      --brand-dim: rgba(244, 97, 35, 0.14);
+      --bg-primary: #0E1013;
+      --bg-secondary: #15181D;
+      --bg-tertiary: #1B1F26;
+      --text-primary: #E8EAED;
+      --text-secondary: #A8ADB5;
+      --text-muted: #71777F;
+      --line: #262B33;
+      --line-strong: #31363F;
+      --accent: #3FB27F;
+      --warning: #D9A03C;
+      --radius-md: 8px;
+      --radius-lg: 10px;
+      --ease: cubic-bezier(0.2, 0, 0, 1);
+      --dur: 0.18s;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+      line-height: 1.6;
+    }
+    .container { max-width: 1140px; margin: 0 auto; padding: 0 24px; }
+
+    /* Header */
+    header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--bg-primary);
+      border-bottom: 1px solid var(--line);
+    }
+    header .container {
+      display: flex; align-items: center; justify-content: space-between;
+      height: 60px;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+    .logo-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #4a1c6f 100%);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; color: #fff;
+    }
+    nav { display: flex; gap: 24px; }
+    nav a { color: var(--text-secondary); font-size: 14px; text-decoration: none; transition: color var(--dur) var(--ease); }
+    nav a:hover { color: var(--brand-light); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 20px; border-radius: var(--radius-md); font-size: 14px;
+      font-weight: 500; cursor: pointer; border: 1px solid transparent;
+      transition: all var(--dur) var(--ease); text-decoration: none;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn-primary { background: var(--brand); color: #fff; }
+    .btn-primary:hover { background: #e85a1c; }
+    .btn-outline { background: transparent; border-color: var(--line-strong); color: var(--text-secondary); }
+    .btn-outline:hover { border-color: #454b55; color: var(--text-primary); }
+    .btn-sm { padding: 7px 14px; font-size: 13px; border-radius: 6px; }
+
+    /* Hero */
+    .hero { padding: 80px 0 64px; }
+    .hero-kicker {
+      display: inline-flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--text-muted); margin-bottom: 20px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .kicker-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+    .hero h1 {
+      font-size: 48px; font-weight: 700; letter-spacing: -0.025em;
+      line-height: 1.2; margin-bottom: 20px; max-width: 640px;
+    }
+    .hero h1 span { color: var(--brand); }
+    .hero-desc {
+      font-size: 16px; color: var(--text-secondary); max-width: 560px;
+      margin-bottom: 32px; line-height: 1.75;
+    }
+    .hero-buttons { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 48px; }
+    .stats-line {
+      display: flex; align-items: center; gap: 32px; flex-wrap: wrap;
+      padding-top: 24px; border-top: 1px solid var(--line); max-width: 720px;
+    }
+    .stat { display: flex; flex-direction: column; gap: 2px; }
+    .stat-value { font-size: 24px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+    .stat-label { font-size: 12px; color: var(--text-muted); }
+    .stat-sep { width: 1px; height: 28px; background: var(--line); }
+
+    /* Section */
+    .section { padding: 64px 0; }
+    .section-title { margin-bottom: 32px; }
+    .section-title h2 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .section-title p { font-size: 14px; color: var(--text-muted); }
+
+    /* Rank Grid */
+    .rank-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 10px; }
+    .rank-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; background: var(--bg-secondary);
+      border: 1px solid var(--line); border-radius: var(--radius-lg);
+      text-decoration: none; color: inherit;
+      transition: border-color var(--dur) var(--ease);
+    }
+    .rank-card:hover { border-color: var(--line-strong); }
+    .rank-num {
+      flex-shrink: 0; width: 28px; height: 28px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 600; font-size: 12px; font-family: 'JetBrains Mono', monospace;
+      background: var(--bg-tertiary); border: 1px solid var(--line); color: var(--text-muted);
+    }
+    .rank-num.rank-1 { color: var(--warning); border-color: rgba(217,160,60,0.4); background: rgba(217,160,60,0.08); }
+    .rank-info h3 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+    .rank-info p { font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rank-stars { flex-shrink: 0; display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; }
+
+    /* Modes Grid */
+    .modes-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .mode-card {
+      padding: 28px; background: var(--bg-secondary); border: 1px solid var(--line);
+      border-radius: var(--radius-lg); display: flex; flex-direction: column;
+      transition: border-color var(--dur) var(--ease);
+    }
+    .mode-card:hover { border-color: var(--line-strong); }
+    .mode-head { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .mode-head svg { color: var(--brand); flex-shrink: 0; }
+    .mode-head h3 { font-size: 16px; font-weight: 600; }
+    .mode-features { list-style: none; flex: 1; display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+    .mode-features li { font-size: 13.5px; color: var(--text-secondary); padding-left: 16px; position: relative; line-height: 1.6; }
+    .mode-features li::before { content: ''; position: absolute; left: 2px; top: 8px; width: 5px; height: 5px; border-radius: 1.5px; background: var(--brand); opacity: 0.8; }
+    .mode-card .btn { width: 100%; }
+
+    /* Footer */
+    footer { padding: 32px 0; border-top: 1px solid var(--line); text-align: center; font-size: 13px; color: var(--text-muted); }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 32px; }
+      .modes-grid { grid-template-columns: 1fr; }
+      nav { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <span>DSH插件管家</span>
+      </div>
+      <nav>
+        <a href="#">插件市场</a>
+        <a href="#">组合包</a>
+        <a href="#">下载</a>
+        <a href="#">文档</a>
+      </nav>
+      <a href="#" class="btn btn-sm btn-outline">登录</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <p class="hero-kicker">
+          <span class="kicker-dot"></span>
+          v1.18.7 已发布 · 开源 MIT
+        </p>
+        <h1>管 DeepSeek Harness 的插件，<br><span>用一件顺手的工具。</span></h1>
+        <p class="hero-desc">
+          插件市场 2189+ 款，按行业一键装组合包；
+          扫描、更新、启停、卸载与 MCP 服务管理都在一个桌面客户端里完成。
+          目录与自更新清单经 Ed25519 签名，验签失败拒绝消费。
+        </p>
+        <div class="hero-buttons">
+          <a href="#" class="btn btn-primary">下载 Windows 客户端</a>
+          <a href="#" class="btn btn-outline">浏览插件市场</a>
+        </div>
+        <div class="stats-line">
+          <div class="stat">
+            <span class="stat-value">2,189</span>
+            <span class="stat-label">收录插件</span>
+          </div>
+          <span class="stat-sep"></span>
+          <div class="stat">
+            <span class="stat-value">198k</span>
+            <span class="stat-label">社区 Stars</span>
+          </div>
+          <span class="stat-sep"></span>
+          <div class="stat">
+            <span class="stat-value">12</span>
+            <span class="stat-label">行业组合包</span>
+          </div>
+          <span class="stat-sep"></span>
+          <div class="stat">
+            <span class="stat-value" style="font-size:16px">Ed25519</span>
+            <span class="stat-label">目录与自更新验签</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 热门排行 -->
+    <section class="section">
+      <div class="container">
+        <div class="section-title">
+          <h2>社区热门</h2>
+          <p>按 GitHub Star 排名 · 数据每 10 分钟同步</p>
+        </div>
+        <div class="rank-grid">
+          <a href="#" class="rank-card">
+            <div class="rank-num rank-1">1</div>
+            <div class="rank-info">
+              <h3>dsh-better-sidebar</h3>
+              <p>侧边栏完整工作台：文件编辑、终端、Git、子代理</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              33k
+            </div>
+          </a>
+          <a href="#" class="rank-card">
+            <div class="rank-num rank-2">2</div>
+            <div class="rank-info">
+              <h3>dsh-market</h3>
+              <p>在 DSH 设置页内浏览、搜索并安装社区插件</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              21k
+            </div>
+          </a>
+          <a href="#" class="rank-card">
+            <div class="rank-num rank-3">3</div>
+            <div class="rank-info">
+              <h3>dsh-web-ui-all</h3>
+              <p>DSH Web UI 插件与皮肤合集</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              15k
+            </div>
+          </a>
+          <a href="#" class="rank-card">
+            <div class="rank-num">4</div>
+            <div class="rank-info">
+              <h3>memsearch-dsh</h3>
+              <p>供 DSH 与其他编程 Agent 共享的 Markdown 记忆</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              2.5k
+            </div>
+          </a>
+          <a href="#" class="rank-card">
+            <div class="rank-num">5</div>
+            <div class="rank-info">
+              <h3>dsh-pet</h3>
+              <p>DSH Web UI 桌面宠物：25 个透明动画</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              7k
+            </div>
+          </a>
+          <a href="#" class="rank-card">
+            <div class="rank-num">6</div>
+            <div class="rank-info">
+              <h3>dsh-im</h3>
+              <p>通过二维码或机器人凭据将 IM 机器人接入 DSH</p>
+            </div>
+            <div class="rank-stars">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+              1.2k
+            </div>
+          </a>
+        </div>
+        <div style="margin-top:24px">
+          <a href="#" class="btn btn-outline btn-sm">查看全部插件 →</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 客户端能力 -->
+    <section class="section">
+      <div class="container">
+        <div class="section-title">
+          <h2>桌面客户端</h2>
+          <p>Windows 10/11 · 独立运行，不依赖 DSH Agent 本体进程</p>
+        </div>
+        <div class="modes-grid">
+          <div class="mode-card">
+            <div class="mode-head">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+              <h3>装完就能做的事</h3>
+            </div>
+            <ul class="mode-features">
+              <li>扫描本机插件目录，识别已装插件与 Agent 本体</li>
+              <li>从市场安装/更新插件，更新前自动备份可回滚</li>
+              <li>按行业装组合包：插件 + MCP 模板 + Skill 一次装齐</li>
+              <li>MCP 服务集中配置，密钥存系统凭据库</li>
+              <li>导出插件快照、打包离线安装包，隔离环境两步部署</li>
+              <li>启停本地 DSH Web 服务器，一键打开面板</li>
+            </ul>
+            <a href="#" class="btn btn-primary">下载客户端 · v1.18.7</a>
+          </div>
+          <div class="mode-card">
+            <div class="mode-head">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+              <h3>为什么可以直接信</h3>
+            </div>
+            <ul class="mode-features">
+              <li>插件目录与自更新清单逐字节 Ed25519 验签</li>
+              <li>验签失败拒绝消费，自动降级本地缓存</li>
+              <li>更新包下载后校验 SHA256，不匹配即中止</li>
+              <li>签名私钥不入库、不随客户端分发</li>
+              <li>密钥轮换流程版本化，当前第 3 代</li>
+            </ul>
+            <a href="#" class="btn btn-outline">查看安全细节 →</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      © 2026 DSH插件管家 · MIT License
+    </div>
+  </footer>
+</body>
+</html>

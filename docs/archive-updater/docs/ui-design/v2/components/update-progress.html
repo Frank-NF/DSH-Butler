@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>更新进度对话框</title>
+<style>
+:root{--primary:#6366F1;--accent:#10B981;--warning:#F59E0B;--danger:#EF4444;--bg:#0F172A;--card:#1E293B;--border:rgba(255,255,255,0.1);--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:40px}
+.glass{background:rgba(30,41,59,0.8);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:20px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{width:520px;padding:32px}
+.modal h2{font-size:18px;font-weight:600;margin-bottom:20px;display:flex;align-items:center;gap:10px}
+.plugin-info{display:flex;align-items:center;gap:12px;padding:16px;background:rgba(255,255,255,0.03);border-radius:12px;margin-bottom:24px}
+.plugin-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--primary),var(--primary-light));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.plugin-name{font-size:14px;font-weight:500}
+.plugin-version{font-size:12px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+.progress-container{margin-bottom:20px}
+.progress-header{display:flex;justify-content:space-between;font-size:13px;color:var(--muted);margin-bottom:8px}
+.progress-bar{height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--primary),var(--primary-light));border-radius:4px;transition:width 0.3s}
+.progress-fill.success{background:linear-gradient(90deg,var(--accent),#34D399)}
+.progress-fill.error{background:linear-gradient(90deg,var(--danger),#F87171)}
+.speed-info{display:flex;gap:24px;margin-bottom:20px}
+.speed-item{font-size:13px;color:var(--muted)}
+.speed-item span{color:var(--text);font-weight:500}
+.status-badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;font-size:12px;font-weight:500}
+.status-badge.downloading{background:rgba(99,102,241,0.2);color:var(--primary-light)}
+.status-badge.success{background:rgba(16,185,129,0.2);color:var(--accent)}
+.status-badge.error{background:rgba(239,68,68,0.2);color:var(--danger)}
+.log-area{max-height:120px;overflow-y:auto;background:rgba(0,0,0,0.3);border-radius:8px;padding:12px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-bottom:20px}
+.log-entry{padding:2px 0}
+.log-entry.info{color:var(--primary-light)}
+.log-entry.success{color:var(--accent)}
+.log-entry.error{color:var(--danger)}
+.modal-footer{display:flex;justify-content:flex-end;gap:12px}
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;cursor:pointer;border:none;transition:all 0.2s}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+/* 成功状态 */
+.success-state{text-align:center;padding:20px 0}
+.success-icon{font-size:48px;margin-bottom:16px}
+.success-state h3{font-size:18px;margin-bottom:8px;color:var(--accent)}
+.success-state p{font-size:14px;color:var(--muted)}
+/* 失败状态 */
+.error-state{text-align:center;padding:20px 0}
+.error-icon{font-size:48px;margin-bottom:16px}
+.error-state h3{font-size:18px;margin-bottom:8px;color:var(--danger)}
+.error-state p{font-size:14px;color:var(--muted);margin-bottom:16px}
+</style>
+</head>
+<body>
+<div class="modal-overlay">
+  <div class="modal glass">
+    <h2>🔄 正在更新插件</h2>
+    <div class="plugin-info">
+      <div class="plugin-icon">🎨</div>
+      <div>
+        <div class="plugin-name">ComfyUI 集成插件</div>
+        <div class="plugin-version">v0.9.0 → v1.0.0</div>
+      </div>
+    </div>
+    <div class="progress-container">
+      <div class="progress-header">
+        <span class="status-badge downloading">⏳ 下载中...</span>
+        <span>68%</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill" style="width:68%"></div>
+      </div>
+    </div>
+    <div class="speed-info">
+      <div class="speed-item">速度：<span>2.3 MB/s</span></div>
+      <div class="speed-item">已下载：<span>15.6 MB</span></div>
+      <div class="speed-item">剩余时间：<span>约 12 秒</span></div>
+    </div>
+    <div class="log-area">
+      <div class="log-entry info">[INFO] 开始下载 v1.0.0...</div>
+      <div class="log-entry info">[INFO] 连接到代理服务器</div>
+      <div class="log-entry info">[INFO] 下载进度: 68%</div>
+      <div class="log-entry success">[SUCCESS] 备份旧版本完成</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" disabled>取消</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

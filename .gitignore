@@ -25,3 +25,9 @@ website/.output/
 website/dist/
 website/_build_bak/
 website/.data/
+
+# 密钥绝不入库（旧工程 scripts/ 里带出来的）
+*.pem
+*.key
+**/ed25519-private.pem
+key-info.json

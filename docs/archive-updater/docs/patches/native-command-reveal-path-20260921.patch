@@ -1,0 +1,69 @@
+diff --git a/packages/util/native-command/src/path-opener.ts b/packages/util/native-command/src/path-opener.ts
+index 8f3443b3c1..5821b730be 100644
+--- a/packages/util/native-command/src/path-opener.ts
++++ b/packages/util/native-command/src/path-opener.ts
+@@ -11,7 +11,6 @@
+ 
+ import { release as osRelease } from 'node:os'
+ import { dirname, extname } from 'node:path'
+-import { pathToFileURL } from 'node:url'
+ import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
+ 
+ /** Testable command boundary; native implementations never invoke a shell. */
+@@ -244,8 +243,14 @@ export async function revealNativePath(
+       windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
+       if (windowsPath === '') throw new Error('wslpath returned no Windows path')
+     }
+-    // Explorer parses commas itself; a file URI preserves commas and whitespace in the path.
+-    const target = pathToFileURL(windowsPath, { windows: true }).href.replaceAll(',', '%2C')
++    // Explorer resolves only a native, QUOTED path here: it splits an unquoted
++    // target at the first comma, ignores a forward-slash path, and cannot
++    // resolve a percent-encoded file URI — each failure silently opens its
++    // default folder instead. The trailing space makes Node quote the argument
++    // ("/select," "C:\a,b.txt "), which Explorer trims and resolves for every
++    // name shape: spaces, commas, and non-ASCII.
++    const native = platform === 'win32' ? windowsPath.replaceAll('/', '\\') : windowsPath
++    const target = `${native} `
+     try {
+       await run('explorer.exe', ['/select,', target], signal)
+     } catch (error) {
+diff --git a/packages/util/native-command/tests/path-opener.spec.ts b/packages/util/native-command/tests/path-opener.spec.ts
+index 5082d141ed..1dc6d98514 100644
+--- a/packages/util/native-command/tests/path-opener.spec.ts
++++ b/packages/util/native-command/tests/path-opener.spec.ts
+@@ -331,7 +331,7 @@ describe('canOpenNativePath', () => {
+ describe('native file manager', () => {
+   it.each([
+     ['darwin', 'finder', '/tmp/my report.txt', 'open', ['-R', '/tmp/my report.txt']],
+-    ['win32', 'explorer', 'C:\\work\\my report.txt', 'explorer.exe', ['/select,', 'file:///C:/work/my%20report.txt']],
++    ['win32', 'explorer', 'C:\\work\\my report.txt', 'explorer.exe', ['/select,', 'C:\\work\\my report.txt ']],
+     ['linux', 'directory', '/tmp/a $b; report.txt', 'xdg-open', ['/tmp']],
+   ] as const)('reveals through %s without opening the file association', async (platform, manager, path, command, args) => {
+     const run = vi.fn<PathOpenerRunner>(async () => ({ stdout: '', stderr: '' }))
+@@ -347,7 +347,7 @@ describe('native file manager', () => {
+     expect(nativeFileManager(internals)).toBe('explorer')
+     await revealNativePath('/mnt/c/work/报告.txt', signal(), internals)
+     expect(run.mock.calls.map(([cmd, args]) => [cmd, args])).toEqual([
+-      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'file:///C:/work/%E6%8A%A5%E5%91%8A.txt']],
++      ['wslpath', ['-w', '/mnt/c/work/报告.txt']], ['explorer.exe', ['/select,', 'C:\\work\\报告.txt ']],
+     ])
+   })
+ 
+@@ -405,10 +405,14 @@ it('preserves cancellation even when Explorer returns delegate exit 1', async ()
+   await expect(revealNativePath('C:\\file.txt', abort.signal, { platform: 'win32', run })).rejects.toBe(reason)
+ })
+ 
++// The trailing space is load-bearing: it forces the quoted command-line form
++// Explorer needs to survive a comma, and it is trimmed when the path resolves.
+ it.each([
+-  ['C:\\my files\\报告,#%.txt', 'file:///C:/my%20files/%E6%8A%A5%E5%91%8A%2C%23%25.txt'],
+-  ['\\\\server\\share\\a,b.txt', 'file://server/share/a%2Cb.txt'],
+-])('preserves special characters in the Explorer target %s', async (path, target) => {
++  ['C:\\my files\\报告,#%.txt', 'C:\\my files\\报告,#%.txt '],
++  ['\\\\server\\share\\a,b.txt', '\\\\server\\share\\a,b.txt '],
++  // A forward-slash host path is normalized: Explorer ignores /select for it.
++  ['C:/tmp/forward slashes/报告.txt', 'C:\\tmp\\forward slashes\\报告.txt '],
++])('passes %s to Explorer as a native window path', async (path, target) => {
+   const run = vi.fn<PathOpenerRunner>().mockResolvedValue({ stdout: '', stderr: '' })
+   await revealNativePath(path, signal(), { platform: 'win32', run })
+   expect(run).toHaveBeenCalledWith('explorer.exe', ['/select,', target], expect.any(AbortSignal))

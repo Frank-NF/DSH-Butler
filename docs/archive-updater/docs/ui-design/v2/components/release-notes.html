@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>发布说明对话框</title>
+<style>
+:root{--primary:#6366F1;--primary-light:#818CF8;--accent:#10B981;--bg:#0F172A;--card:#1E293B;--border:rgba(255,255,255,0.1);--text:#F8FAFC;--muted:#94A3B8}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);margin:0;padding:40px}
+.glass{background:rgba(30,41,59,0.8);backdrop-filter:blur(16px);border:1px solid var(--border);border-radius:20px}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:100}
+.modal{width:600px;max-height:85vh;overflow-y:auto;padding:32px;position:relative}
+.modal-close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,0.05);border:1px solid var(--border);color:var(--muted);cursor:pointer;font-size:18px}
+.modal-close:hover{background:rgba(239,68,68,0.2);color:#EF4444}
+.version-header{display:flex;align-items:center;gap:16px;margin-bottom:24px;padding-bottom:20px;border-bottom:1px solid var(--border)}
+.version-badge{background:linear-gradient(135deg,var(--primary),var(--primary-light));padding:8px 16px;border-radius:10px;font-weight:600;font-size:14px}
+.release-date{font-size:13px;color:var(--muted)}
+.changelog{font-size:14px;line-height:1.8}
+.changelog h4{font-size:13px;color:var(--primary-light);margin:16px 0 8px;text-transform:uppercase;letter-spacing:0.5px}
+.changelog ul{padding-left:20px;margin:8px 0}
+.changelog li{color:var(--text-secondary);padding:4px 0}
+.changelog li::marker{color:var(--accent)}
+.changelog .breaking{color:var(--danger)}
+.changelog .new{color:var(--accent)}
+.changelog .fix{color:var(--warning)}
+.modal-footer{display:flex;justify-content:flex-end;gap:12px;margin-top:24px;padding-top:20px;border-top:1px solid var(--border)}
+.btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;border:none;transition:all 0.2s}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff}
+.btn-primary:hover{box-shadow:0 4px 16px rgba(99,102,241,0.4)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-ghost:hover{background:rgba(255,255,255,0.05);color:var(--text)}
+</style>
+</head>
+<body>
+<div class="modal-overlay">
+  <div class="modal glass">
+    <button class="modal-close">×</button>
+    <div class="version-header">
+      <div class="version-badge">v1.0.0</div>
+      <div>
+        <div style="font-size:16px;font-weight:500">ComfyUI 集成插件</div>
+        <div class="release-date">2026-08-28 · 当前版本 v0.9.0</div>
+      </div>
+    </div>
+    <div class="changelog">
+      <h4>✨ 新功能</h4>
+      <ul>
+        <li class="new">新增 ComfyUI 工作流导入功能</li>
+        <li class="new">支持自定义节点配置</li>
+        <li class="new">添加批量导入插件列表</li>
+      </ul>
+      <h4>🔧 改进</h4>
+      <ul>
+        <li>优化了启动速度，减少 30% 加载时间</li>
+        <li>改进了错误提示信息</li>
+        <li>调整了 UI 布局</li>
+      </ul>
+      <h4>🐛 修复</h4>
+      <ul>
+        <li class="fix">修复了 Windows 路径特殊字符问题</li>
+        <li class="fix">修复了内存泄漏问题</li>
+      </ul>
+      <h4>⚠️ 破坏性变更</h4>
+      <ul>
+        <li class="breaking">配置文件格式已更新，请手动迁移</li>
+      </ul>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost">稍后更新</button>
+      <button class="btn btn-primary">立即更新</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

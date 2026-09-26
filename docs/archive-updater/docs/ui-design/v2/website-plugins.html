@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang='zh-CN'>
+<head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>插件市场 - DSH 插件升级管理 - 全新设计 v2</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --primary:#6366F1;--primary-light:#818CF8;--primary-dark:#4F46E5;
+  --accent:#10B981;--warning:#F59E0B;--danger:#EF4444;
+  --bg-primary:#0F172A;--bg-secondary:#1E293B;--bg-tertiary:#334155;
+  --text-primary:#F8FAFC;--text-secondary:#CBD5E1;--text-muted:#94A3B8;
+}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg-primary);color:var(--text-primary);min-height:100vh}
+.glass{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.1);box-shadow:0 8px 32px rgba(0,0,0,0.3)}
+a{color:var(--primary-light);text-decoration:none;transition:all 0.2s}
+a:hover{color:var(--primary)}
+
+/* Header */
+.header{position:fixed;top:0;left:0;right:0;z-index:100;padding:16px 24px}
+.header-inner{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:12px;text-decoration:none}
+.logo-icon{width:40px;height:40px;background:linear-gradient(135deg,var(--primary),var(--primary-light));border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff}
+.logo-text{font-size:18px;font-weight:700;color:var(--text-primary)}
+.nav{display:flex;align-items:center;gap:32px}
+.nav a{color:var(--text-secondary);font-size:15px;font-weight:500}
+.nav a:hover,.nav a.active{color:var(--primary-light)}
+.btn{padding:10px 24px;border-radius:10px;font-size:14px;font-weight:500;cursor:pointer;transition:all 0.2s;border:none;display:inline-flex;align-items:center;gap:8px}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--primary-light));color:#fff}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(99,102,241,0.4)}
+
+/* Main */
+.main{padding:100px 24px 60px;max-width:1200px;margin:0 auto}
+.section-title{text-align:center;margin-bottom:48px}
+.section-title h2{font-size:32px;font-weight:700;margin-bottom:12px}
+.section-title p{font-size:16px;color:var(--text-muted)}
+
+/* Plugin Cards */
+.plugins-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:24px}
+.plugin-card{padding:28px;border-radius:20px;transition:all 0.3s}
+.plugin-card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,0.4);border-color:var(--primary)}
+.plugin-header{display:flex;align-items:center;gap:16px;margin-bottom:16px}
+.plugin-icon{width:48px;height:48px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px}
+.plugin-icon.core{background:linear-gradient(135deg,var(--primary),var(--primary-light))}
+.plugin-icon.plugin{background:linear-gradient(135deg,var(--accent),#34D399)}
+.plugin-title{flex:1}
+.plugin-title h3{font-size:16px;font-weight:600;margin-bottom:4px}
+.plugin-title .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.core{background:rgba(99,102,241,0.2);color:var(--primary-light)}
+.badge.plugin{background:rgba(16,185,129,0.2);color:var(--accent)}
+.plugin-desc{font-size:14px;color:var(--text-secondary);line-height:1.6;margin-bottom:16px}
+.plugin-footer{display:flex;align-items:center;justify-content:space-between;padding-top:16px;border-top:1px solid rgba(255,255,255,0.05)}
+.plugin-repo{font-size:12px;color:var(--text-muted);font-family:'JetBrains Mono',monospace}
+.plugin-link{font-size:13px;color:var(--primary-light);font-weight:500}
+.plugin-link:hover{color:var(--primary)}
+</style>
+</head>
+<body>
+<!-- Header -->
+<header class='header glass'>
+  <div class='header-inner'>
+    <a href='website-index.html' class='logo'>
+      <div class='logo-icon'>DSH</div>
+      <span class='logo-text'>插件升级管理</span>
+    </a>
+    <nav class='nav'>
+      <a href='website-index.html'>首页</a>
+      <a href='website-plugins.html' class='active'>插件市场</a>
+      <a href='website-download.html'>下载</a>
+      <a href='website-docs.html'>文档</a>
+    </nav>
+    <a href='website-download.html' class='btn btn-primary'>立即下载</a>
+  </div>
+</header>
+
+<!-- Main -->
+<main class='main'>
+  <div class='section-title'>
+    <h2>插件市场</h2>
+    <p>浏览所有可用的 DSH 插件，与客户端工具数据同步</p>
+  </div>
+  
+  <div class='plugins-grid'>
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon core'>🖥️</div>
+        <div class='plugin-title'>
+          <h3>DSH Agent 本体</h3>
+          <span class='badge core'>本体</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>DSH Agent 核心程序，提供基础运行环境与能力调度</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/DSH-Agent</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon plugin'>🎨</div>
+        <div class='plugin-title'>
+          <h3>ComfyUI 集成插件</h3>
+          <span class='badge plugin'>插件</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>集成 ComfyUI 工作流，支持 AI 绘图和视频生成任务调度</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/dsh-plugin-comfyui</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon plugin'>🌐</div>
+        <div class='plugin-title'>
+          <h3>浏览器自动化插件</h3>
+          <span class='badge plugin'>插件</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>基于浏览器自动化的网页操作、数据采集和交互能力</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/dsh-plugin-browser</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon plugin'>🔊</div>
+        <div class='plugin-title'>
+          <h3>语音合成插件</h3>
+          <span class='badge plugin'>插件</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>多语言文本转语音，支持多种音色和情感表达</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/dsh-plugin-tts</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon plugin'>🧠</div>
+        <div class='plugin-title'>
+          <h3>长期记忆插件</h3>
+          <span class='badge plugin'>插件</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>向量数据库支持的长期记忆存储和语义检索能力</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/dsh-plugin-memory</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+
+    <div class='plugin-card glass'>
+      <div class='plugin-header'>
+        <div class='plugin-icon plugin'>🔌</div>
+        <div class='plugin-title'>
+          <h3>MCP 协议插件</h3>
+          <span class='badge plugin'>插件</span>
+        </div>
+      </div>
+      <p class='plugin-desc'>Model Context Protocol 支持，连接外部工具和数据源</p>
+      <div class='plugin-footer'>
+        <span class='plugin-repo'>Frank-NF/dsh-plugin-mcp</span>
+        <a href='#' class='plugin-link'>查看 →</a>
+      </div>
+    </div>
+  </div>
+</main>
+</body>
+</html>

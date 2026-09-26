@@ -1,0 +1,6 @@
+{
+  "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAosz/d4hGR0vKvDG0q0QHFLJ1qMAJLfdZPWBOEFbrqxQ=\n-----END PUBLIC KEY-----",
+  "public_key_hex": "A2CCFF778846474BCABC31B4AB440714B275A8C0092DF7593D604E1056EBAB14",
+  "rotated_at": "2026-09-08",
+  "note": "3rd rotation 2026-09-08. History: 8932de1 (original, leaked to public GitHub), a1bb47d/1928f1e (2nd rotation, committed into archived branch - also compromised). Private key is NOT embedded here; deploy out-of-band only (scripts/ed25519-private.pem is gitignored)."
+}
