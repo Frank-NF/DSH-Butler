@@ -280,6 +280,17 @@ button { cursor: pointer; }
   font-size: 11.5px; color: var(--text-2); max-height: 140px; overflow: auto;
   white-space: pre-wrap; word-break: break-all;
 }
+/* ── 设置页：左侧分组导航 + 右侧内容（长页面整理） ─────────────── */
+.set-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; align-items: start; }
+.set-nav { display: flex; flex-direction: column; gap: 4px; position: sticky; top: 10px; }
+.set-nav-item { width: 100%; text-align: left; padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid transparent; background: none; color: var(--text-2); cursor: pointer; font: inherit; }
+.set-nav-item:hover { background: var(--surface-2); }
+.set-nav-item:focus-visible { outline: 2px solid var(--accent, #c14a20); outline-offset: -2px; }
+.set-nav-item.active { background: var(--surface-2); border-color: var(--border); color: var(--text); font-weight: 600; }
+.set-nav-sub { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 400; color: var(--text-3); line-height: 1.4; }
+.set-pane > .card { margin-top: 0; }
+@media (max-width: 860px) { .set-layout { grid-template-columns: 1fr; } .set-nav { position: static; flex-direction: row; flex-wrap: wrap; } }
+
 /* ── 回滚点时间线（P0-4） ───────────────────────────────────── */
 .timeline { position: relative; padding-left: 18px; }
 .timeline::before { content: ""; position: absolute; left: 5px; top: 8px; bottom: 8px; width: 1px; background: var(--border); }

@@ -114,6 +114,7 @@ export const CLIENT_JS = `(function () {
     grid: SVG_OPEN + '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
     sliders: SVG_OPEN + '<path d="M4 6h9M18 6h2M4 12h4M13 12h7M4 18h9M18 18h2"/><circle cx="15" cy="6" r="2"/><circle cx="11" cy="12" r="2"/><circle cx="15" cy="18" r="2"/></svg>',
     box: SVG_OPEN + '<path d="M12 3 4 7.5v9L12 21l8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/></svg>',
+    chevron: SVG_OPEN + '<path d="M6 9l6 6 6-6"/></svg>',
     activity: SVG_OPEN + '<path d="M3 12h4l2.5-6 4.5 12 2.5-6H21"/></svg>',
     puzzle: SVG_OPEN + '<path d="M9 4a2 2 0 0 1 4 0v1h4a1 1 0 0 1 1 1v3h1a2 2 0 0 1 0 4h-1v4a1 1 0 0 1-1 1h-4v1a2 2 0 0 1-4 0v-1H5a1 1 0 0 1-1-1v-4H3a2 2 0 0 1 0-4h1V6a1 1 0 0 1 1-1h4z"/></svg>',
     terminal: SVG_OPEN + '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9.5 10 12l-3 2.5M13 15h4"/></svg>',
@@ -1477,7 +1478,7 @@ export const CLIENT_JS = `(function () {
     var c = res.config || {};
     var upd = state.extra.butlerUpdate;
     var tools = '<button class="btn sm" id="btn-check-butler-update">' + icon('refresh') + '<span>检查管家更新</span></button>';
-    var html = pageHead('设置', '每一项都写在 ' + esc(res.configPath || '配置文件') + '，改完点最下面的保存。', tools);
+    var html = pageHead('设置', '左边选一组，右边改值；每一项都写在 ' + esc(res.configPath || '配置文件') + '，改完点保存。', tools);
 
     html += '<div class="card"><div class="card-title">外观与窗口</div>'
       + setRow('主题', '<select class="select" id="set-theme">'
@@ -2227,7 +2228,100 @@ export const CLIENT_JS = `(function () {
     $('nav-items').innerHTML = html;
   }
 
+  // ── 设置页：长页面折叠（P2 收尾） ───────────────────────────────
+  //
+  // 设置项越加越多，一屏滚不完。这里在渲染之后把每张卡改造成「可折叠的一段」：
+  //   · 标题行常显，右边直接写出当前状态（收起时也看得到关键值）；
+  //   · 正文默认收起（第一段除外），想看再展开；
+  //   · 用真 <button> + aria-expanded，Tab 能聚焦、回车能开合（不是只能点的 div）。
+  // 为什么不改 renderSettings 的字符串：那样每加一个设置项都要重排一遍分组，
+  // 而这里是一次性增强 —— 以后再加卡片自动就是折叠段。
+
+  /** 每段标题行上显示的当前状态（从该卡里的输入控件读，不查配置）。 */
+  function settingsSummaryOf(title, card) {
+    function val(id) {
+      var el = card.querySelector('#' + id);
+      if (!el) return null;
+      return el.type === 'checkbox' ? el.checked : el.value;
+    }
+    if (title === '外观与窗口') {
+      var theme = val('set-theme') === 'dark' ? '深色' : val('set-theme') === 'auto' ? '跟随系统' : '浅色';
+      return '主题 ' + theme + (val('set-close-to-tray') ? ' · 关闭收进托盘' : ' · 关闭即退出') + (val('set-autostart') ? ' · 开机自启' : '');
+    }
+    if (title === 'DSH 页面里的浮动工具条') return (val('set-dock-enabled') ? '已启用' : '已关闭') + ' · ' + val('set-dock-idle') + ' 秒自动收起';
+    if (title === '插件市场') {
+      var t = Number(val('set-market-ttl')) || 0;
+      return '目录缓存 ' + (t >= 86400000 ? (t / 86400000) + ' 天' : (t / 3600000) + ' 小时');
+    }
+    if (title === '定时任务与备份') {
+      var head = val('set-sched-enabled')
+        ? '体检 ' + val('set-sched-health') + 'h · 备份 ' + val('set-sched-backup') + 'h · 查更新 ' + val('set-sched-check') + 'h'
+        : '已关闭';
+      return head + ' · 留 ' + val('set-retention-count') + ' 个 / ' + val('set-retention-mb') + ' MB';
+    }
+    if (title === '更新') return '自动查本体 ' + (val('set-auto-core') ? '开' : '关') + ' · 自动查管家 ' + (val('set-auto-butler') ? '开' : '关');
+    if (title === '网络与高级') {
+      return (val('set-npm-registry') || '官方源') + (val('set-proxy') ? ' · 有代理' : '') + ' · 端口 ' + val('set-dsh-port');
+    }
+    return '';
+  }
+
+  /**
+   * 设置页排版：左侧分组导航 + 右侧只显示当前那组。
+   *
+   * 【为什么不是上下折叠】一屏就那么高，折叠只是把要滚的东西藏起来 —— 分组一多照样得滚。
+   * 改成左导航后，页面高度恒等于「一组设置」的高度，永远不用长滚，而且一眼能看全有哪些组。
+   * 导航项右侧带该组的当前状态摘要；切换只切 hidden，不重渲染，输入的改动不会丢。
+   */
+  function layoutSettingsSections() {
+    var host = $('main');
+    if (!host) return;
+    var cards = [];
+    for (var i = 0; i < host.children.length; i++) {
+      var el = host.children[i];
+      if (el.classList && el.classList.contains('card') && el.querySelector(':scope > .card-title')) cards.push(el);
+    }
+    if (!cards.length) return;
+    var idx = Number(state.extra.settingsSec);
+    if (!(idx >= 0 && idx < cards.length)) idx = 0;
+
+    var layout = document.createElement('div');
+    layout.className = 'set-layout';
+    var nav = document.createElement('div');
+    nav.className = 'set-nav';
+    nav.setAttribute('role', 'tablist');
+    var pane = document.createElement('div');
+    pane.className = 'set-pane';
+
+    for (var j = 0; j < cards.length; j++) {
+      var card = cards[j];
+      var titleEl = card.querySelector(':scope > .card-title');
+      // 标题里可能带 <span class="sub">（提示句）：取标题时先去掉，否则摘要表对不上
+      var clone = titleEl.cloneNode(true);
+      var subIn = clone.querySelector('.sub');
+      if (subIn && subIn.parentNode) subIn.parentNode.removeChild(subIn);
+      var title = (clone.textContent || '').trim();
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'set-nav-item' + (j === idx ? ' active' : '');
+      btn.setAttribute('data-sec-go', String(j));
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', j === idx ? 'true' : 'false');
+      btn.innerHTML = '<span>' + esc(title) + '</span><span class="set-nav-sub">' + esc(settingsSummaryOf(title, card)) + '</span>';
+      nav.appendChild(btn);
+
+      card.setAttribute('data-sec-panel', String(j));
+      card.hidden = j !== idx;
+      pane.appendChild(card);
+    }
+    layout.appendChild(nav);
+    layout.appendChild(pane);
+    host.insertBefore(layout, cards[0]);
+  }
+
   function afterRender(page) {
+    if (page === 'settings') layoutSettingsSections();
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
     // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，
@@ -2287,6 +2381,31 @@ export const CLIENT_JS = `(function () {
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
     if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
+    // 设置页左侧分组导航：切组只切 hidden，不重渲染 —— 已经改过的输入不会丢
+    var secGo = hit('[data-sec-go]');
+    if (secGo) {
+      var want = Number(secGo.getAttribute('data-sec-go'));
+      state.extra.settingsSec = want;
+      var navItems = document.querySelectorAll('[data-sec-go]');
+      for (var ni = 0; ni < navItems.length; ni++) {
+        var isOn = Number(navItems[ni].getAttribute('data-sec-go')) === want;
+        navItems[ni].classList.toggle('active', isOn);
+        navItems[ni].setAttribute('aria-selected', isOn ? 'true' : 'false');
+      }
+      var panels = document.querySelectorAll('[data-sec-panel]');
+      for (var pi = 0; pi < panels.length; pi++) {
+        panels[pi].hidden = Number(panels[pi].getAttribute('data-sec-panel')) !== want;
+      }
+      // 切组时刷新导航上的状态摘要（刚才那一组的值可能已经改过）
+      for (var ri = 0; ri < navItems.length; ri++) {
+        var tEl = navItems[ri].querySelector('span');
+        var sEl = navItems[ri].querySelector('.set-nav-sub');
+        var panel = document.querySelector('[data-sec-panel="' + navItems[ri].getAttribute('data-sec-go') + '"]');
+        if (tEl && sEl && panel) sEl.textContent = settingsSummaryOf((tEl.textContent || '').trim(), panel);
+      }
+      return;
+    }
+
     var seenBtn = hit('#btn-notices-seen');
     if (seenBtn) {
       api('/api/notices/seen', { method: 'POST' }).then(function (r) {
