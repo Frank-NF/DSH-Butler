@@ -107,8 +107,14 @@ export function findUndefinedCalls(rawJs: string, opts: GuardOptions = {}): stri
 
   const allowed = new Set([...BUILTIN_GLOBALS, ...(opts.extraGlobals ?? [])]);
   const missing = new Set<string>();
-  for (const m of js.matchAll(/(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/g)) {
-    const name = m[2]!;
+  // 【2026-09-25 修的洞】原来写成 /(^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(/ —— 前缀字符被
+  // 当作匹配的一部分消耗掉了，于是**紧跟在 `(` 后面的嵌套调用永远检查不到**：
+  //   esc(fmtAgo(p.createdAt))      ← fmtAgo 前面那个 `(` 已被 esc( 这次匹配吃掉
+  // 结果就是「调用了但没定义」的整类事故里，嵌套写法全都漏网（fmtAgo 那次就是这么漏的：
+  // 语法测试全绿、守卫也全绿，回滚点页一打开就 ReferenceError）。
+  // 改成后行断言：只断言前面不是名字/点号，不消耗字符，嵌套调用也能逐个看到。
+  for (const m of js.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const name = m[1]!;
     if (defined.has(name) || allowed.has(name) || KEYWORDS.includes(name)) continue;
     missing.add(name);
   }
