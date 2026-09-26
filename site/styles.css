@@ -513,3 +513,28 @@ p { margin: 0; }
     transition-duration: 0.001ms !important;
   }
 }
+/* ── 第 7 条：LOGO 透明底 + 覆盖整块区域的粒子 ─────────────────── */
+/* logo.png 本身早就是透明背景（RGBA，四角 alpha=0），看着"有底"是 .hero-plate 这块卡片自己的背景。
+   这里把卡片底去掉，让 LOGO 直接浮在页面上，粒子铺满整块区域。 */
+.hero-plate {
+  position: relative;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.hero-particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;   /* 鼠标事件交给父元素统一处理，粒子层不挡点击 */
+}
+.hero-plate .hero-mark,
+.hero-plate .hero-plate-name {
+  position: relative;
+  z-index: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-particles { display: none; }   /* 系统开了"减少动态效果"就不放粒子 */
+}
