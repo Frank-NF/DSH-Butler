@@ -32,6 +32,7 @@ import { networkSetRegistryAction, networkTestSourcesAction } from "../domains/n
 import { profileListAction, profileSwitchAction } from "../domains/profile/manage.ts";
 import { dataDiagnoseAction } from "../domains/diag/package_actions.ts";
 import { dataAuditAction, dataAuditExportAction } from "../domains/data/audit_actions.ts";
+import { diagStatsAction } from "../domains/diag/stats_actions.ts";
 import { dataSnapshotAction, dataSnapshotRestoreAction, dataSnapshotsAction } from "../domains/data/git_snapshot.ts";
 import {
   dataBackupAction,
@@ -87,6 +88,7 @@ export function registerAllActions(): void {
     dataAuditAction,
     dataAuditExportAction,
     dataSnapshotAction,
+    diagStatsAction,
     dataSnapshotsAction,
     dataSnapshotRestoreAction,
     dataExportAction,

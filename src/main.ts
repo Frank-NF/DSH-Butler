@@ -15,6 +15,7 @@ import { loadConfig } from "./domains/state/config.ts";
 import { startScheduler, type SchedulerHandle } from "./domains/state/scheduler.ts";
 import { unseenCount } from "./domains/state/notices.ts";
 import { initCoexist } from "./domains/env/coexist.ts";
+import { recordSample } from "./domains/diag/stats.ts";
 import { createApiServer } from "./api/server.ts";
 import { isCliInvocation, runCli, wantsHeadless } from "./cli/router.ts";
 import { butlerLogFile, butlerRoot, p } from "./util/paths.ts";
@@ -168,6 +169,13 @@ async function main(): Promise<void> {
   // 与官方桌面端共存：启动时算一次模式（检测失败一律当「没检测到」，不因检测而改变行为）
   const coexist = await initCoexist();
   log.info("main", `共存模式：${coexist.mode === "service-only" ? "运维模式（官方桌面端在跑）" : "完整模式"}${coexist.detection.evidence.length ? " —— " + coexist.detection.evidence.join("；") : ""}`);
+
+  // 每天记一条运维采样（体积 / 任务数），趋势曲线靠它；同一天覆盖，不留重复点
+  try {
+    recordSample();
+  } catch (e) {
+    log.warn("main", `运维采样失败：${(e as Error).message}`);
+  }
 
   if (headless) {
     // 无界面模式：把地址打到 stdout，便于脚本抓取

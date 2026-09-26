@@ -1496,6 +1496,93 @@ export const CLIENT_JS = `(function () {
   // 那一项由服务端执行并把结果回给界面，失败会把配置里的意愿回滚，不让设置骗人。
 
   // ── 帮助页（第 4 条）────────────────────────────────────────────
+  // ── 统计页（P3）：把任务历史聚合成运维视角 ──────────────────────
+
+  /** 手写 SVG 柱状图（项目前端零依赖，不用图表库）。 */
+  function barChart(points, height) {
+    if (!points || !points.length) return '<div class="empty">没有数据</div>';
+    var max = 1;
+    for (var i = 0; i < points.length; i++) if (points[i].value > max) max = points[i].value;
+    var w = points.length * 14;
+    var bars = '';
+    for (var j = 0; j < points.length; j++) {
+      var bh = Math.max(2, Math.round((points[j].value / max) * (height - 18)));
+      bars += '<rect x="' + (j * 14) + '" y="' + (height - 14 - bh) + '" width="10" height="' + bh + '" rx="2" fill="'
+        + (points[j].value ? '#C94A20' : '#DAD7CD') + '"><title>' + esc(points[j].label) + '：' + points[j].value + '</title></rect>';
+    }
+    return '<svg viewBox="0 0 ' + w + ' ' + height + '" width="100%" height="' + height + '" preserveAspectRatio="none" role="img">' + bars + '</svg>';
+  }
+
+  /** 横向条形（用于 TOP 排行）：纯 div，宽度按占比。 */
+  function hBars(items, unit) {
+    if (!items || !items.length) return '<div class="empty">暂无</div>';
+    var max = 1;
+    for (var i = 0; i < items.length; i++) if (items[i].count > max) max = items[i].count;
+    var out = '';
+    for (var j = 0; j < items.length; j++) {
+      var pct = Math.max(4, Math.round((items[j].count / max) * 100));
+      out += '<div class="hbar"><div class="hbar-label">' + esc(items[j].key) + '</div>'
+        + '<div class="hbar-track"><div class="hbar-fill" style="width:' + pct + '%"></div></div>'
+        + '<div class="hbar-value">' + items[j].count + (unit || '') + '</div></div>';
+    }
+    return out;
+  }
+
+  function fmtBytes(n) {
+    if (!n) return '0 B';
+    if (n < 1024) return n + ' B';
+    if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+    if (n < 1024 * 1024 * 1024) return (n / 1024 / 1024).toFixed(1) + ' MB';
+    return (n / 1024 / 1024 / 1024).toFixed(2) + ' GB';
+  }
+
+  function fmtMs(ms) {
+    if (ms === null || ms === undefined) return '-';
+    if (ms < 1000) return ms + ' ms';
+    if (ms < 60000) return (ms / 1000).toFixed(1) + ' 秒';
+    return Math.round(ms / 60000) + ' 分';
+  }
+
+  function renderStats(r) {
+    var j = r.jobs || {};
+    var tools = actBtn('refresh', '重新统计', 'diag.stats');
+    var html = pageHead('统计', '管家自己的账本：任务成功率与耗时、最常跑的动作、失败原因、数据目录体积，以及按天的趋势（每次打开都会补记今天的采样）。', tools);
+
+    html += '<div class="card"><div class="card-title">任务（最近 ' + (j.rangeDays || 30) + ' 天）</div><div class="stat-grid">'
+      + stat('任务总数', j.total || 0)
+      + stat('成功率', (j.successRate || 0) + '%', '成功 ' + (j.ok || 0) + ' / 失败 ' + (j.failed || 0))
+      + stat('耗时中位数', fmtMs(j.medianMs))
+      + stat('最慢一次', fmtMs(j.maxMs))
+      + '</div>'
+      + '<div class="chart-wrap">' + barChart((j.daily || []).map(function (d) { return { label: d.date.slice(5), value: d.count }; }), 56) + '</div>'
+      + '<div class="field-help">上图：每天跑了多少任务（红色=有任务，灰色=0）</div></div>';
+
+    html += '<div class="card"><div class="card-title">最常跑的动作<span class="sub">次数</span></div>'
+      + hBars(j.topActions || [], ' 次') + '</div>';
+
+    if ((j.topFailures || []).length) {
+      html += '<div class="card"><div class="card-title">失败原因 TOP<span class="sub">同类已归一</span></div>'
+        + hBars(j.topFailures || [], ' 次') + '</div>';
+    }
+
+    html += '<div class="card"><div class="card-title">触发方式<span class="sub">谁在使唤管家</span></div>'
+      + hBars(j.bySource || [], ' 次') + '</div>';
+
+    var vols = r.volumes || [];
+    html += '<div class="card"><div class="card-title">数据体积<span class="sub">合计 ' + fmtBytes(r.volumesTotal) + '</span></div>'
+      + hBars(vols.map(function (v) { return { key: v.label, count: Math.round(v.bytes / 1024 / 1024) }; }), ' MB')
+      + '<div class="field-help">按占用排序；超大目录会做预算截断（标"至少"）</div></div>';
+
+    var samples = r.samples || [];
+    if (samples.length > 1) {
+      html += '<div class="card"><div class="card-title">体积趋势<span class="sub">最近 ' + samples.length + ' 天采样</span></div>'
+        + barChart(samples.map(function (s) { return { label: s.date.slice(5), value: Math.round((s.dshBytes + s.butlerBytes) / 1024 / 1024) }; }), 56)
+        + '<div class="field-help">每天一条采样（DSH 数据 + 管家目录合计，单位 MB）；采样随管家启动与打开本页时补齐</div></div>';
+    } else {
+      html += '<div class="card"><div class="card-title">体积趋势</div><div class="empty">还只有 ' + samples.length + ' 条采样 —— 明天起这里会出现曲线</div></div>';
+    }
+    return html;
+  }
   function loadHelp() { return api('/api/help'); }
 
   /**
@@ -2333,6 +2420,7 @@ export const CLIENT_JS = `(function () {
     { id: 'plugins', label: '插件', group: '诊断', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
     { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集' },
     { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
+    { id: 'stats', label: '统计', group: '诊断', icon: 'activity', action: 'diag.stats', render: renderStats, title: '运维统计' },
     { id: 'jobs', label: '任务', group: '记录', icon: 'list', load: loadJobs, render: renderJobs },
     { id: 'help', label: '帮助', group: '记录', icon: 'book', load: loadHelp, render: renderHelp },
     { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' },
