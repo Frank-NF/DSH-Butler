@@ -21,6 +21,7 @@ import {
   navigateMain,
   requestShowWindow,
 } from "../host/desktop.ts";
+import { MIRROR_CANDIDATES } from "../domains/net/sources.ts";
 import { collectPluginFacts } from "../domains/plugin/facts.ts";
 import {
   loadCatalog,
@@ -390,6 +391,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         exePath: Deno.execPath(),
         appName: APP_NAME,
         appVersion: APP_VERSION,
+        mirrors: MIRROR_CANDIDATES,
         configPath: butlerConfigPath(),
         defaultPort: BUTLER_PORT_HEADLESS,
       });

@@ -1496,7 +1496,12 @@ export const CLIENT_JS = `(function () {
   // 那一项由服务端执行并把结果回给界面，失败会把配置里的意愿回滚，不让设置骗人。
 
   function loadSettings() {
-    return api('/api/settings');
+    // 顺便留一份给「安装源下拉」用：下拉的候选来自服务端的 MIRROR_CANDIDATES（单一真相源），
+    // 不在前端复制一份列表 —— 否则以后加镜像要改两处。
+    return api('/api/settings').then(function (res) {
+      state.extra.settings = res;
+      return res;
+    });
   }
 
   function setRow(label, control, help) {
@@ -1582,7 +1587,9 @@ export const CLIENT_JS = `(function () {
       + '</div>';
 
     html += '<div class="card"><div class="card-title">网络与高级</div>'
-      + setRow('npm 安装源', '<input class="input" id="set-npm-registry" value="' + esc(c.npmRegistry || '') + '" spellcheck="false">',
+      + setRow('npm 安装源',
+        '<select class="select" id="set-npm-registry-pick"></select>'
+        + '<input class="input" id="set-npm-registry" value="' + esc(c.npmRegistry || '') + '" spellcheck="false" style="margin-top:8px">',
         '装插件时用哪个源；留空走官方源。')
       + setRow('网络代理', '<input class="input" id="set-proxy" value="' + esc(c.proxyUrl || '') + '" placeholder="留空 = 直连" spellcheck="false">')
       + setRow('DSH 服务端口', '<input class="input set-num" id="set-dsh-port" type="number" min="1" max="65535" value="'
@@ -2304,7 +2311,7 @@ export const CLIENT_JS = `(function () {
     }
     if (title === '更新') return '自动查本体 ' + (val('set-auto-core') ? '开' : '关') + ' · 自动查管家 ' + (val('set-auto-butler') ? '开' : '关');
     if (title === '网络与高级') {
-      return (val('set-npm-registry') || '官方源') + (val('set-proxy') ? ' · 有代理' : '') + ' · 端口 ' + val('set-dsh-port');
+      return registryLabel(val('set-npm-registry')) + (val('set-proxy') ? ' · 有代理' : '') + ' · 端口 ' + val('set-dsh-port');
     }
     return '';
   }
@@ -2316,6 +2323,56 @@ export const CLIENT_JS = `(function () {
    * 改成左导航后，页面高度恒等于「一组设置」的高度，永远不用长滚，而且一眼能看全有哪些组。
    * 导航项右侧带该组的当前状态摘要；切换只切 hidden，不重渲染，输入的改动不会丢。
    */
+  var CUSTOM_REGISTRY = '__custom__';
+
+  /** 把地址翻译成人看得懂的名字（摘要行显示它）。 */
+  function registryLabel(url) {
+    var u = (url || '').trim();
+    if (!u) return '官方源';
+    var mirrors = (state.extra.settings || {}).mirrors || [];
+    for (var i = 0; i < mirrors.length; i++) {
+      if (mirrors[i].url === u) return mirrors[i].label.replace(/（.*?）/, '');
+    }
+    return '自定义源';
+  }
+
+  /**
+   * npm 安装源下拉：候选来自服务端的 MIRROR_CANDIDATES（单一真相源，不在前端复制列表）。
+   * 选具体源就把地址写进下面的输入框（保存逻辑一行都不用改），选「自定义…」就露出输入框。
+   */
+  function initRegistryPicker() {
+    var pick = $('set-npm-registry-pick');
+    var input = $('set-npm-registry');
+    if (!pick || !input) return;
+    var mirrors = (state.extra.settings || {}).mirrors || [];
+    var current = (input.value || '').trim();
+    var known = false;
+    var html = '';
+    for (var i = 0; i < mirrors.length; i++) {
+      var hit = mirrors[i].url === current;
+      if (hit) known = true;
+      html += '<option value="' + esc(mirrors[i].url) + '"' + (hit ? ' selected' : '') + '>'
+        + esc(mirrors[i].label) + (mirrors[i].note ? '（' + esc(mirrors[i].note) + '）' : '') + '</option>';
+    }
+    html += '<option value="' + CUSTOM_REGISTRY + '"' + (known ? '' : ' selected') + '>自定义…（自己填地址）</option>';
+    pick.innerHTML = html;
+    input.hidden = known && !!current;
+    return pick;
+  }
+
+  /** 下拉改变：写值、切显隐。 */
+  function onRegistryPick(pick) {
+    var input = $('set-npm-registry');
+    if (!input) return;
+    if (pick.value === CUSTOM_REGISTRY) {
+      input.hidden = false;
+      input.focus();
+      return;
+    }
+    input.value = pick.value;
+    input.hidden = true;
+  }
+
   function layoutSettingsSections() {
     var host = $('main');
     if (!host) return;
@@ -2374,7 +2431,10 @@ export const CLIENT_JS = `(function () {
   }
 
   function afterRender(page) {
-    if (page === 'settings') layoutSettingsSections();
+    if (page === 'settings') {
+      initRegistryPicker();
+      layoutSettingsSections();
+    }
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
     // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，
@@ -2436,6 +2496,13 @@ export const CLIENT_JS = `(function () {
     if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
     // 设置页左侧分组导航：切组只切 hidden，不重渲染 —— 已经改过的输入不会丢
     // 主题下拉：选完立刻预览（保存时再落进配置），不用非点保存才看得见
+    // 安装源下拉：选具体源 → 写进输入框并收起；选自定义 → 露出输入框
+    var regPick = hit('#set-npm-registry-pick');
+    if (regPick && regPick.tagName === 'SELECT') {
+      onRegistryPick(regPick);
+      return;
+    }
+
     var themeSel = hit('#set-theme');
     if (themeSel) {
       applyThemePref(themeSel.value);
