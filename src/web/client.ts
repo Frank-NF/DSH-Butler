@@ -167,6 +167,7 @@ export const CLIENT_JS = `(function () {
     'plugin.scan': '插件扫描', 'plugin.diagnose': '插件诊断', 'plugin.install': '安装插件',
     'plugin.uninstall': '卸载插件', 'plugin.repair': '修复插件', 'plugin.cleanResidue': '清理安装残留',
     'plugin.cleanBackups': '清理历史备份',
+    'plugin.deps': '依赖冲突体检', 'plugin.syncLock': '重建锁文件',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
     'bootstrap.verify': '部署校验', 'bootstrap.discard': '放弃部署',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',
@@ -696,6 +697,15 @@ export const CLIENT_JS = `(function () {
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
       return;
     }
+    if (action === 'plugin.deps') {
+      state.extra.pluginDeps = result;
+      toast(
+        '依赖体检完成：' + result.summary.conflicts + ' 处版本冲突 / ' + result.summary.duplicates + ' 处重复安装',
+        result.summary.conflicts ? 'err' : '',
+      );
+      go('plugins', false);
+      return;
+    }
     if (action === 'backup.preview') {
       var rows = '';
       for (var pi = 0; pi < (result.artifacts || []).length; pi++) {
@@ -1146,6 +1156,7 @@ export const CLIENT_JS = `(function () {
 
   function renderPlugins(r) {
     var tools = actBtn('shield', '插件诊断', 'plugin.diagnose')
+      + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
       + writeBtn('plus', '安装插件', 'plugin.install')
       + writeBtn('wrench', '清理残留', 'plugin.cleanResidue');
     var html = pageHead('插件', '双名单（依赖 ∩ 生效名单）、包实体与作层资格。装/卸/修都会先摊开计划再执行。', tools);
@@ -1156,6 +1167,17 @@ export const CLIENT_JS = `(function () {
       + stat('装了没生效', r.summary.declaredButInactive, r.summary.declaredButInactive ? '可以点「修复」补登记' : '')
       + '</div></div>';
     if (state.extra.pluginDiag) html += diagCard('插件诊断结论', state.extra.pluginDiag);
+    // 【P0-3】依赖冲突体检查询结果：列出「谁和谁要的版本不可能同时满足」+ 重复安装 + 锁文件状态
+    if (state.extra.pluginDeps) {
+      var dp = state.extra.pluginDeps;
+      html += '<div class="card"><div class="card-title">依赖冲突体检'
+        + '<span class="sub">' + dp.summary.conflicts + ' 处版本冲突 · ' + dp.summary.duplicates + ' 处重复安装 · '
+        + esc(dp.lock && dp.lock.note ? dp.lock.note : '') + '</span></div>'
+        + '<div class="rows"><div class="row"><div class="row-main"><div class="row-meta"><span>profile：' + esc(dp.profileDir) + '</span></div>'
+        + '</div>' + writeBtn('wrench', '重建锁文件', 'plugin.syncLock', {}, 'sm') + '</div></div>'
+        + renderFindings(dp.findings)
+        + '</div>';
+    }
 
     var names = [];
     var push = function (n) { if (n && names.indexOf(n) < 0) names.push(n); };

@@ -260,7 +260,7 @@ export function unregisterFromProfile(manifestPath: string, name: string): void 
 
 // ── 包管理器（npm） ────────────────────────────────────────────────
 
-function pmEnvReady(): void {
+export function pmEnvReady(): void {
   if (pmFailInjected()) throw new Error("包管理器执行失败（测试注入 BUTLER_PM_FAIL=1）");
 }
 
