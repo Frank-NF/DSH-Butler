@@ -183,6 +183,8 @@ export const CLIENT_JS = `(function () {
     'plugin.cleanBackups': '清理历史备份',
     'plugin.deps': '依赖冲突体检', 'plugin.syncLock': '重建锁文件',
     'plugin.batchUpdate': '批量更新插件',
+    'data.export': '导出搬移包', 'data.inspect': '检查搬移包',
+    'data.restore': '从搬移包恢复', 'data.backup': '立即备份一次', 'data.backups': '备份列表',
     'bootstrap.plan': '一键部署', 'bootstrap.apply': '开始部署',
     'bootstrap.verify': '部署校验', 'bootstrap.discard': '放弃部署',
     'backup.list': '回滚点列表', 'backup.create': '创建回滚点', 'backup.apply': '回滚到该点',

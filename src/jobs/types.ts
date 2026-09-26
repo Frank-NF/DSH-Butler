@@ -115,6 +115,7 @@ export type ActionDomain =
   | "bootstrap"
   | "self"
   | "backup"
+  | "data"
   | "market"
   | "network"
   | "mcp"
