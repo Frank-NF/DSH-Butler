@@ -125,3 +125,8 @@ headless 模式（deno task headless，127.0.0.1:8731，仅本机）+ Playwright
 - 旧版 styles.css 另存为 site/docs.css 供 docs.html 专用（文档页样式隔离）；顺手修复 docs.html 里 PowerShell 转义残留（28 处反引号 n 变成真实换行）。
 - **修复一处真 bug**：首屏渐变标题与 SplitText 逐字拆分冲突（拆分后渐变失效、文字不可见），改为整行揭示动画，并移除 SplitText 依赖。
 - 原型 redesign.html 完成使命后删除；上线前本地 HTTP 服务 + Playwright 全量回归通过（主题切换/弹窗/剧场/文档页/零 JS 报错）。
+
+## 10. 线上缺陷修复（同日第三轮）
+
+- **截图变形修复**：全局图片规则缺 height:auto，而 HTML 带 height="1350" 属性，宽度被压到 100% 时高度仍按属性钉死，导致所有真实界面截图纵向拉伸（首屏 2 倍、Bento 卡片 4 倍以上）。修复为 img{display:block;max-width:100%;height:auto}，本地与线上各实测 11 张图，渲染高宽比全部与原图一致（9 张逐像素匹配 + 2 张为懒加载/旋转测量假象）。
+- 线上 version.json 清除 sourceUrl / sourceSha256 / sourceSizeBytes 三个字段，源码包文件与引用全部下线。
