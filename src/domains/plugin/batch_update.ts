@@ -19,7 +19,7 @@ import type { ActionContext, ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding } from "../../util/result.ts";
 import { isFile, readJson } from "../../host/fs.ts";
 import { runCmd } from "../../host/shell.ts";
-import { dshProfileDir, p } from "../../util/paths.ts";
+import { dshProfileDir } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
 import { checkUpdates } from "../../net/npm-registry.ts";
 import { collectRuntimeStatus, healthCheck } from "../runtime/status.ts";
