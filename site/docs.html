@@ -1,0 +1,44 @@
+<!doctype html>`n<html lang="zh-CN">`n<head>`n<meta charset="utf-8">`n<meta name="viewport" content="width=device-width, initial-scale=1">`n<title>DSH 管家 · 使用帮助 · DSH管家</title>`n<meta name="description" content="DSH 管家使用帮助：第一次用、日常五件事、定时守护、诊断包、写操作审计、技能快照、网络与离线、常见疑问。">`n<link rel="icon" href="/assets/favicon-32.png">`n<link rel="stylesheet" href="/styles.css">`n<style>`n  .doc-wrap { max-width: 820px; margin: 0 auto; padding: 96px 24px 80px; }`n  .doc-body h1 { font-size: 30px; margin: 0 0 20px; }`n  .doc-body h2 { font-size: 20px; margin: 34px 0 10px; padding-top: 18px; border-top: 1px solid var(--line, #e8e4dc); }`n  .doc-body h2:first-of-type { border-top: none; padding-top: 0; }`n  .doc-body p, .doc-body li { line-height: 1.8; color: var(--ink-2, #4a4740); }`n  .doc-body ul, .doc-body ol { padding-left: 22px; }`n  .doc-body li { margin: 6px 0; }`n  .doc-body code { background: #f2efe9; padding: 1px 6px; border-radius: 4px; font-size: 14px; }`n  .doc-body pre { background: #f2efe9; padding: 14px 16px; border-radius: 10px; overflow: auto; }`n  .doc-body a { color: #c24a1e; }`n  .doc-back { position: fixed; top: 20px; left: 24px; }`n</style>`n</head>`n<body>`n<a class="btn btn-ghost doc-back" href="/">← 返回首页</a>`n<main class="doc-wrap"><article class="doc-body"><h1>DSH 管家 · 使用帮助</h1>
+<p>一句话：管家是 DSH 的本地运维台 —— 装、修、更新、守护，四件事都在一个窗口里。</p>
+<h2>一、第一次用</h2>
+<ol>
+<li>双击 dsh-butler.exe 打开管家（免安装，绿色包）。</li>
+<li>第一次会自动部署 DSH 本体并把服务跑起来；顶部两个状态点分别是「本体」与「服务」。</li>
+<li>两个点都是绿的就可以点右上角「进入 DSH」开始用。</li>
+</ol>
+<h2>二、日常最常用的五件事</h2>
+<ul>
+<li>装插件：插件市场 → 搜关键词 → 点安装（装前会自动留回滚点）。</li>
+<li>修问题：环境与配置 / 运行状态页会直接告诉你哪里不对，多数问题旁有「一键修」。</li>
+<li>更新：插件市场右上角「检查更新」；管家本体在总览页「检查管家更新」。</li>
+<li>出事了退回：记录 → 回滚点，选一个时间点还原（动手前可先看「影响预览」）。</li>
+<li>备份与搬移：记录 → 数据搬家，导出搬移包（换机器时在新机器导入）。</li>
+</ul>
+<h2>三、它还会自己干活</h2>
+<p>设置 → 定时任务与备份 里可以设定：多久体检一次、多久备份一次、多久查一次更新。</p>
+<p>发现的问题会进总览页的「管家提醒」卡片，托盘图标悬停也能看到条数。</p>
+<h2>四、出问题怎么求助</h2>
+<p>体检报告页右上角「导出诊断包（脱敏）」：把体检结论、环境、依赖冲突、日志错误行打成一个文件夹。</p>
+<p>家目录会变成 ~、用户名变成 %USER%、密钥与邮箱全部打码，并且导出后会回读自检一遍，发现残留就不让导出。</p>
+<p>把它发给别人就能一次性说清现场。</p>
+<h2>五、想知道谁改过什么</h2>
+<p>记录 → 任务 → 右上角「写操作审计」：按时间倒序列出每一次写操作（谁触发的、改了什么、成没成、留下哪个回滚点）。</p>
+<p>点「导出审计」可以得到 Markdown 与 CSV 两份文件。</p>
+<h2>六、技能与配置的版本管理</h2>
+<p>数据搬家页 →「技能快照」会在你的技能目录（~/.dsh/skills）里做一次本地 Git 提交。</p>
+<p>「查看快照」看历史，「回退到某次快照」可回退（动手前会先把当前改动 stash 起来，不丢东西）。</p>
+<p>想跨机同步，给这个仓库加个 remote 再 push 即可。</p>
+<h2>七、网络不好怎么办</h2>
+<p>设置 → 网络与高级：npm 安装源可以直接下拉选（阿里云 / 官方 / 腾讯云 / 华为云，或自己填）。</p>
+<p>「测安装源速度」会并发测一遍，告诉你哪个最快。</p>
+<p>离线安装：插件市场有「离线安装」，把 tgz 拖进来就能装。</p>
+<h2>八、常见疑问</h2>
+<ul>
+<li>管家会不会偷偷改系统？所有写操作都会先给你看计划，确认后才执行，并且大多会留回滚点。</li>
+<li>数据在哪？管家的配置在 ~/.dsh-butler，DSH 的数据在 ~/.dsh，都跟着你自己的用户目录走。</li>
+<li>端口对外开了吗？没有。服务只监听本机回环地址。</li>
+<li>和官方桌面端一起装会不会打架？管家检测到官方桌面端在跑时会自动退成运维模式，不抢窗口与托盘。</li>
+</ul>
+<h2>九、命令行（给爱折腾的人）</h2>
+<p>管家自带只读诊断命令，例如 doctor 与 env probe，加 --json 可给脚本消费。</p>
+<p>更多细节见仓库文档：<a href="https://github.com/Frank-NF/DSH-Butler">https://github.com/Frank-NF/DSH-Butler</a></p></article></main>`n</body>`n</html>`n
