@@ -1,94 +1,115 @@
-<img src="icons/128x128.png" width="88" alt="DSH管家">
+<img src="icons/128x128.png" width="96" alt="DSH Butler">
 
-# DSH管家
+# DSH 管家 · DSH Butler
 
-> 项目中文名：**DSH管家**　｜　软件产品名：**DSH Butler**　｜　**让 DSH 始终好用**
+[简体中文](README.md) ｜ [English](README.en.md)
 
-DSH Desktop（DeepSeek 桌面 AI 助手）的增强外壳。用一个本地桌面程序，把「装 DSH、修 DSH、管 DSH 插件、查 DSH 环境」这些事一次性做掉。
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-302%20passed-brightgreen.svg)](src)
+[![Deno](https://img.shields.io/badge/Deno-2.x-black.svg)](https://deno.com)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg)](https://dsh.huilinsh.cn)
+[![Release](https://img.shields.io/badge/release-v2.0.0--rc.1-orange.svg)](https://dsh.huilinsh.cn)
 
-内置**插件市场**：直接浏览线上目录（2000+ 插件，带分类、star、下载量与中文简介），
-看中的一键安装 —— 装/卸同样先摊开计划、你确认了才动手，并自动建回滚点。
-目录本地缓存 6 小时，断网时退回上次的缓存并标明数据时间。
+> **让 DSH 始终好用。** 一个本地桌面运维台，把「装 DSH、修 DSH、管插件、护数据」收进一个窗口。
 
-技术栈：**Deno 2 + `deno desktop`**（WebView2 后端）。界面是内嵌 HTML/CSS/JS，逻辑全在 Deno 侧。
+单文件可执行程序，**只监听本机回环地址**，不写注册表、不装系统服务；所有写操作**先出计划、确认后才动手**，并且大多会留回滚点。
 
----
+## 特性
 
-## ⚠️ 命名铁律
+| 能力 | 说明 |
+| --- | --- |
+| 一键部署 DSH | 环境探测 → 计划 → 安装/修复，失败可回滚；只读诊断支持 `--json` |
+| 插件市场 | 线上目录 2000+ 插件（分类 / Star / 下载量 / 中文简介），一键装、批量更新、离线 tgz 安装、依赖与锁文件修复 |
+| 体检与一键修 | 每条问题给出「为什么 / 影响 / 怎么办」，多数带一键修 |
+| 回滚时间线 | 每次写操作留还原点，回退前先出「影响预览」 |
+| 数据搬家 | 导出 / 校验 / 还原搬移包（配置 / 含技能 / 全量） |
+| 定时守护 | 定时体检、备份、查更新；问题进「管家提醒」卡片与托盘提示 |
+| 诊断包 | 体检 / 环境 / 依赖 / 日志错误行脱敏打成一包，落盘后**回读自检**，有残留即拒绝导出 |
+| 写操作审计 | 按时间倒序列出每次写操作（谁触发 / 改了什么 / 结果 / 回滚点），可导出 Markdown + CSV |
+| 技能与配置 Git 化 | 技能目录本地 Git 快照，可看差异、可回退（回退前自动 stash） |
+| 多 profile 与镜像源 | 多 profile 管理台、npm 源下拉 + 并发测速、离线与内网场景 |
+| 与官方桌面端共存 | 检测到官方桌面端在跑时自动退成运维模式，不抢窗口与托盘（可强制完整模式） |
 
-**软件产品名必须是纯 ASCII，不许出现中文。**
+## 快速开始
 
-这条不是审美偏好，是踩过坑的。旧项目用「DSH插件管家」做产品名时，WiX 因 en-US codepage 1252 写不进中文，直接报 `LGHT0311`，而 tauri 表层只显示 `failed to run light.exe`，查了很久才定位。
+**下载即用（推荐）**：到 <https://dsh.huilinsh.cn> 下载 `DSH-Butler-v2.0.0-rc.1-win-x64.zip`（约 32 MB）→ 解压 → 双击 `dsh-butler.exe`。
 
-产品名会流进：打包元数据、安装包文件名、窗口标题、进程名、将来的自更新链路。中文在这些环节会安静地炸。
+校验完整性（SHA256 公布在 <https://dsh.huilinsh.cn/butler/version.json>）：
 
-因此：
-
-| 用途 | 取值 | 约束 |
-|---|---|---|
-| 软件产品名（`APP_NAME` / `desktop.app.name`） | `DSH Butler` | **纯 ASCII** |
-| 项目中文名（沟通、文档） | `DSH管家` | 不进产物 |
-| 应用标识（`APP_ID`） | `com.dsh.plugin-updater` | **绝不能改** —— 改了挪数据目录、丢用户配置、断自更新链 |
-| 界面文案 | 中文 | 走 UTF-8 HTML，安全 |
-
-守卫测试：`src/version_test.ts` 会在产品名含非 ASCII 字符时失败。
-
----
-
-## 品牌资产
-
-| 东西 | 位置 |
-|---|---|
-| 品牌源文件（VI 板） | `docs/DSH管家_品牌VI_assets/` |
-| 抠好的透明标志 | `icons/build/mark-raw.png` |
-| 应用 / 托盘图标 | `icons/icon.ico`、`icon.icns`、`tray.ico`、`tray.png` |
-| 界面内用的标志 | `icons/mark-chip.png`（base64 内嵌进 `src/web/`） |
-| 官网与静态资源 | `site/` |
-
-调色：主橙红 `#F06A3D`、深橙红 `#E55A2E`、浅橙 `#F0894E`、墨黑 `#222122`、米白 `#FAF8F5`。
-界面里的语义令牌与可访问性取舍见 `docs/UI-DESIGN-SYSTEM.md` §5.5。
-
-**生产线**：`python icons/extract-mark.py`（从 VI 板抠图）→ `python icons/build-icons.py`（出全部尺寸
-+ 官网资产 + 内嵌 base64）。**换标志就换源文件重跑这两步，不要手改 PNG。**
-
----
-
-## 常用命令
-
-```bash
-deno task dev          # 带热重载跑桌面窗口
-deno task headless     # 只起本地服务（固定端口 8731），不开窗口
-deno task check        # 类型检查
-deno test -A src/      # 单元测试
-deno task build        # 出压缩安装包
-deno task build:plain  # 出普通产物（更快）
+```powershell
+Get-FileHash .\DSH-Butler-v2.0.0-rc.1-win-x64.zip -Algorithm SHA256
 ```
 
-命令行方式（不起窗口）：
+**从源码构建**（需要 Deno 2.x，Windows 10/11 + WebView2 运行时）：
 
 ```bash
-deno run -A src/main.ts core status
-deno run -A src/main.ts env probe --json
+deno task dev       # 开发模式（HMR）
+deno task headless  # 无界面模式（只跑服务，便于脚本与诊断）
+deno task test      # 全量测试
+deno task lint      # 静态检查
+deno task build     # 产出 dist/dsh-butler/dsh-butler.exe
 ```
 
-## 产物
+## 架构
 
-`deno task build:plain` 产出到 `dist/dsh-butler/`：
+```
+src/
+├─ main.ts        入口：窗口、托盘、悬浮条、故障恢复、定时调度
+├─ jobs/          任务引擎：动作注册表、步骤流水、进度、历史落盘
+├─ api/           本地 HTTP 接口（设置、任务、市场、提醒、帮助）
+├─ web/           内嵌界面（单模板注入）与页面守卫测试
+├─ host/          平台层：进程、端口、窗口、托盘、文件系统
+├─ util/          路径、结果模型、错误翻译（21 条规则，含修复建议）
+└─ domains/       11 个领域、49 个动作：bootstrap / core / plugin / runtime /
+                  backup / data / net / diag / env / profile / state
+```
 
-- `dsh-butler.exe` —— 启动器（约 300 KB）
-- `dsh-butler.dll` —— 运行时 + 我们的全部代码（约 80 MB）
+## 动作清单（49）
 
-两个文件必须放在一起。界面 HTML/CSS/JS 是**内嵌进 dll 的字符串**，没有散落的 web 资源文件。
+| 领域 | 动作 |
+| --- | --- |
+| 部署引导 | `bootstrap.plan` `bootstrap.apply` `bootstrap.verify` `bootstrap.discard` |
+| DSH 本体 | `core.status` `core.update` `core.finishUpdate` `core.verify` `core.rollback` |
+| 插件 | `plugin.scan` `plugin.install` `plugin.uninstall` `plugin.repair` `plugin.diagnose` `plugin.batchUpdate` `plugin.installOffline` `plugin.deps` `plugin.syncLock` `plugin.cleanResidue` `plugin.cleanBackups` |
+| 运行 | `runtime.status` `runtime.logs` `runtime.diagnose` `runtime.start` `runtime.stop` `runtime.restart` `runtime.repair` |
+| 回滚点 | `backup.create` `backup.list` `backup.verify` `backup.preview` `backup.apply` `backup.delete` |
+| 数据 | `data.export` `data.inspect` `data.restore` `data.backup` `data.backups` `data.diagnose` `data.audit` `data.auditExport` `data.snapshot` `data.snapshots` `data.snapshotRestore` |
+| 网络 | `network.testSources` `network.setRegistry` |
+| 环境 | `env.probe` |
+| 多 profile | `profile.list` `profile.switch` |
 
-## 权限说明
+## 设计原则
 
-构建命令带 `-A`。这**不是偷懒**：Deno 的权限在编译期烘焙进二进制，而这个工具的本质就是
-读用户的 DSH 目录、起本地 HTTP 服务、跑 `git`/`node`/`pnpm`/PowerShell/tasklist。
+1. **写前必有计划**：写操作实现 `preflight()`，摊开「为什么 / 影响 / 怎么办」等用户确认。
+2. **回滚优先**：写操作尽量先建还原点，回退前给影响预览；跨进程用 `~/.dsh/write.lock` 防并发。
+3. **脱敏与自检**：对外文件统一深度脱敏，落盘后回读复扫，发现残留即判失败。
 
-因此 Deno 的权限模型对它不构成边界。安全性靠工具**自己**的措施保障：
+## 安全与隐私
 
-- 路径围栏（只在自己该管的目录里动手）
-- 危险命令不白名单化
-- 改用户文件前先建备份/隔离区
+- **只监听回环**：服务绑定 `127.0.0.1`，接口带一次性令牌，不对外开放端口。
+- **可回退**：写操作留还原点并提供影响预览，跨进程写锁防并发损坏。
+- **不外传**：不采集、不上报任何使用数据；诊断包等对外内容全部深度脱敏（家目录 / 用户名 / 令牌 / 邮箱）并回读复扫。
 
-详见 `src/jobs/` 与各领域模块的守卫逻辑。
+## 质量
+
+- **302 个测试全通过**（66 个测试文件），含注入脚本语法守卫、界面不可达路径守卫、历史缺陷复现测试。
+- 每个功能都在真实 Windows 环境跑通（批量更新后重启体检、离线包安装、镜像源实测延时对比等）。
+
+## 文档
+
+| 文档 | 内容 |
+| --- | --- |
+| [使用帮助](docs/使用帮助.md) | 上手与日常维护（软件内「帮助」页同源） |
+| [更新策略](docs/UPDATE-STRATEGY.md) | 版本清单、校验、自更新流程 |
+| [UI 设计系统](docs/UI-DESIGN-SYSTEM.md) | 色彩、字体、间距、组件规范 |
+| [功能路线图](docs/FEATURE-ROADMAP-2026-09-25.md) | 已完成与规划中的能力 |
+
+## 发布
+
+- 发布物是**免安装 zip**（不是安装包），解压即用，数据都在用户目录。
+- 版本清单：<https://dsh.huilinsh.cn/butler/version.json>（含 `version` / `url` / `sha256` / `sizeBytes` / `changelog`，管家据此检查更新并校验下载）。
+- 市场目录数据源：<https://dsh.huilinsh.cn/plugins.json>。
+
+## 许可
+
+[MIT](LICENSE) © 2026 Frank-NF（昊天）。
