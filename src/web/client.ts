@@ -739,6 +739,21 @@ export const CLIENT_JS = `(function () {
         result.summary.errors ? 'err' : result.summary.warns ? 'warn' : '');
       return;
     }
+    if (action === 'data.restore') {
+      // 一键恢复 = 把「还原 → 重建依赖 → 重启体检」串成一条引导：换机时按顺序点完即可，不用自己翻页面找
+      var rst = result || {};
+      var body = '<div class="finding info"><div class="finding-title">还原完成</div><div class="finding-row">'
+        + esc(rst.restored !== undefined ? ('写回 ' + rst.restored + ' 项') : '已按清单写回') + (rst.dir ? '　来源：' + esc(rst.dir) : '') + '</div></div>'
+        + '<div class="finding"><div class="finding-title">接下来两步（换机必做）</div>'
+        + '<div class="finding-row">① 重建插件依赖（约 1.1 GB，首次最慢）　② 重启服务并体检</div>'
+        + '<div class="btn-row" style="margin-top:10px">'
+        + actBtn('download', '① 重建依赖', 'bootstrap.apply')
+        + actBtn('activity', '② 重启并体检', 'runtime.restart')
+        + '</div></div>';
+      openModal({ title: '一键恢复', sub: '还原已完成，按顺序把依赖与运行状态补齐', body: body, foot: '<span class="spacer"></span><button class="btn" id="modal-close">知道了</button>' });
+      $('modal-close').addEventListener('click', closeModal);
+      return;
+    }
     if (action === 'data.audit') {
       var auditRows = '';
       var srcLabel = { ui: '界面', cli: '命令行', schedule: '定时', unknown: '未知' };
@@ -2245,7 +2260,8 @@ export const CLIENT_JS = `(function () {
       + writeBtn('box', '立即备份一次', 'data.backup')
       + writeBtn('history', '技能快照', 'data.snapshot')
       + actBtn('list', '查看快照', 'data.snapshots')
-      + actBtn('shield', '检查最新包', 'data.inspect');
+      + actBtn('shield', '检查最新包', 'data.inspect')
+      + writeBtn('box', '一键恢复（换机）', 'data.restore');
     var list = r.backups || [];
     var lim = r.limits || { maxBackups: 0, maxBackupBytes: 0 };
     var html = pageHead('数据搬家', '把配置、插件清单与技能打成搬移包，换机时拷过去就能恢复；备份目录里的旧包按保留策略自动清理。', tools);
