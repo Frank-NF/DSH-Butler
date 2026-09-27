@@ -317,6 +317,50 @@
     <p class="dl-meta reveal">Windows 10 / 11 · x64 · 免安装 · 源码只在 GitHub 仓库</p>
   </div>
 </section>
+
+<!-- 运营区块：友情链接 / 反馈入口 / 使用情况。自包含（内联样式 + 内联脚本），
+     刻意不依赖主样式表与 app.js —— 官网主视觉由另一条线在改，这样两边互不干扰。 -->
+<style>
+  .ops { border-top: 1px solid var(--line, #eae6df); padding: 36px 0 12px; }
+  .ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 24px; }
+  .ops h3 { font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted, #8b857c); margin: 0 0 10px; }
+  .ops a { display: block; padding: 6px 0; color: var(--ink, #23211d); text-decoration: none; transition: color .3s cubic-bezier(.2,.8,.2,1); }
+  .ops a:hover { color: #c94a20; }
+  .ops-stat { margin: 2px 0 10px; font-size: 13.5px; color: var(--ink, #23211d); }
+  .ops-stat b { font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .ops-todo { display: block; font-size: 12.5px; color: #b3ada3; padding-top: 4px; }
+</style>
+<section class="ops" id="ops">
+  <div class="container ops-grid">
+    <div>
+      <h3>友情链接</h3>
+      <a href="https://www.deepseek.com" target="_blank" rel="noopener">DeepSeek 官方</a>
+      <a href="https://github.com/Frank-NF/DSH-Butler" target="_blank" rel="noopener">DSH 管家 · GitHub 仓库</a>
+      <span class="ops-todo">官方 DSH 专页、作者媒体（抖音 / 小红书 / B 站 / 公众号）：地址待补</span>
+    </div>
+    <div>
+      <h3>反馈与交流</h3>
+      <a href="https://github.com/Frank-NF/DSH-Butler/issues" target="_blank" rel="noopener">提 Issue（能直接看到别人提的问题）</a>
+      <a href="https://github.com/Frank-NF/DSH-Butler/discussions" target="_blank" rel="noopener">讨论区</a>
+      <span class="ops-todo">微信群 / 邮箱：待补</span>
+    </div>
+    <div>
+      <h3>使用情况</h3>
+      <p class="ops-stat">已被下载 <b id="ops-dl">—</b> 次</p>
+      <p class="ops-stat">在跑的实例 <b id="ops-installs">—</b> 个</p>
+      <span class="ops-todo">来自服务器访问日志的匿名统计，不收集任何用户信息。</span>
+    </div>
+  </div>
+</section>
+<script>
+  fetch('/stats.json').then(function (r) { return r.json(); }).then(function (s) {
+    var dl = document.getElementById('ops-dl');
+    var ins = document.getElementById('ops-installs');
+    if (dl && s.downloads) dl.textContent = s.downloads.total;
+    if (ins && s.activeInstalls) ins.textContent = s.activeInstalls.uniqueIps;
+  }).catch(function () { /* 取不到就保持破折号，不报错 */ });
+</script>
+
 </main>
 
 <footer>
