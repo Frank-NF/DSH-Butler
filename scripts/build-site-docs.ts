@@ -78,7 +78,7 @@ const html = [
   "<title>" + esc(title) + " · DSH管家</title>",
   "<meta name=\"description\" content=\"DSH 管家使用帮助：第一次用、日常五件事、定时守护、诊断包、写操作审计、技能快照、网络与离线、常见疑问。\">",
   "<link rel=\"icon\" href=\"/assets/favicon-32.png\">",
-  "<link rel=\"stylesheet\" href=\"/styles.css\">",
+  "<link rel=\"stylesheet\" href=\"/docs.css\">",
   "<style>",
   "  .doc-wrap { max-width: 820px; margin: 0 auto; padding: 96px 24px 80px; }",
   "  .doc-body h1 { font-size: 30px; margin: 0 0 20px; }",
@@ -99,6 +99,6 @@ const html = [
   "</body>",
   "</html>",
   "",
-].join("`n");
+].join("\n");
 await Deno.writeTextFile(OUT_PATH, html);
-console.log("已生成 " + OUT_PATH + "（正文 " + body.split("`n").length + " 行）");
+console.log("已生成 " + OUT_PATH + "（正文 " + body.split("\n").length + " 行）");
