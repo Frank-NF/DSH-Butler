@@ -53,6 +53,18 @@ export function buildEntries(home: string, butlerRootDir: string): DataEntry[] {
     { label: "技能中枢状态", path: p(dsh, "dsh-skill-hub.json"), subset: "config", kind: "file" },
     { label: "server-deck 配置", path: p(dsh, "server-deck.json"), subset: "config", kind: "file" },
     { label: "管家设置", path: p(butlerRootDir, "config.json"), subset: "config", kind: "file" },
+  // ── 凭据与存储层（2026-09-27 补）──
+  // 【为什么必须补】用户重装系统前问「怎么恢复全量配置」，一查才发现：
+  // 旧预设只有配置与插件清单，**密钥一个都没带** —— 恢复完会是「配置齐全但连不上模型」的半残系统。
+  { label: "API 凭据（.credentials.yaml）", path: p(dsh, ".credentials.yaml"), subset: "config", kind: "file" },
+  { label: "MCP 服务器配置", path: p(dsh, "dsh-mcp.json"), subset: "config", kind: "file" },
+  { label: "模型通道配置", path: p(dsh, "llm-deepseek"), subset: "config", kind: "dir" },
+  { label: "SSH 隧道配置", path: p(dsh, "ssh-tunnel"), subset: "config", kind: "dir" },
+  { label: "jev 通道配置", path: p(dsh, "jev"), subset: "config", kind: "dir" },
+  { label: "git-forge 配置", path: p(dsh, "git-forge"), subset: "config", kind: "dir" },
+  { label: "聚合插件配置", path: p(dsh, "@wingsky-1"), subset: "config", kind: "dir" },
+  { label: "用量 / 轮次 / 体积统计", path: p(dsh, ".dshw-usage.json"), subset: "config", kind: "file" },
+  { label: "存储与记忆（storages）", path: p(dsh, "storages"), subset: "heavy", kind: "dir" },
     { label: "回滚点索引", path: p(butlerRootDir, "rollback", "index.json"), subset: "config", kind: "file" },
     // ── skills 子集：用户资产，体积大所以单独一层 ──
     { label: "DSH 技能（~/.dsh/skills）", path: p(dsh, "skills"), subset: "skills", kind: "dir", exclude: [".git"] },
