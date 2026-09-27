@@ -1,29 +1,4 @@
-<!doctype html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>DSH 管家 · 使用帮助 · DSH管家</title>
-<meta name="description" content="DSH 管家使用帮助：第一次用、日常五件事、定时守护、诊断包、写操作审计、技能快照、网络与离线、常见疑问。">
-<link rel="icon" href="/assets/favicon-32.png">
-<link rel="stylesheet" href="/docs.css">
-<style>
-  .doc-wrap { max-width: 820px; margin: 0 auto; padding: 96px 24px 80px; }
-  .doc-body h1 { font-size: 30px; margin: 0 0 20px; }
-  .doc-body h2 { font-size: 20px; margin: 34px 0 10px; padding-top: 18px; border-top: 1px solid var(--line, #e8e4dc); }
-  .doc-body h2:first-of-type { border-top: none; padding-top: 0; }
-  .doc-body p, .doc-body li { line-height: 1.8; color: var(--ink-2, #4a4740); }
-  .doc-body ul, .doc-body ol { padding-left: 22px; }
-  .doc-body li { margin: 6px 0; }
-  .doc-body code { background: #f2efe9; padding: 1px 6px; border-radius: 4px; font-size: 14px; }
-  .doc-body pre { background: #f2efe9; padding: 14px 16px; border-radius: 10px; overflow: auto; }
-  .doc-body a { color: #c24a1e; }
-  .doc-back { position: fixed; top: 20px; left: 24px; }
-</style>
-</head>
-<body>
-<a class="btn btn-ghost doc-back" href="/">← 返回首页</a>
-<main class="doc-wrap"><article class="doc-body"><h1>DSH 管家 · 使用帮助</h1>
+<!doctype html>`n<html lang="zh-CN">`n<head>`n<meta charset="utf-8">`n<meta name="viewport" content="width=device-width, initial-scale=1">`n<title>DSH 管家 · 使用帮助 · DSH管家</title>`n<meta name="description" content="DSH 管家使用帮助：第一次用、日常五件事、定时守护、诊断包、写操作审计、技能快照、网络与离线、常见疑问。">`n<link rel="icon" href="/assets/favicon-32.png">`n<link rel="stylesheet" href="/styles.css">`n<style>`n  .doc-wrap { max-width: 820px; margin: 0 auto; padding: 96px 24px 80px; }`n  .doc-body h1 { font-size: 30px; margin: 0 0 20px; }`n  .doc-body h2 { font-size: 20px; margin: 34px 0 10px; padding-top: 18px; border-top: 1px solid var(--line, #e8e4dc); }`n  .doc-body h2:first-of-type { border-top: none; padding-top: 0; }`n  .doc-body p, .doc-body li { line-height: 1.8; color: var(--ink-2, #4a4740); }`n  .doc-body ul, .doc-body ol { padding-left: 22px; }`n  .doc-body li { margin: 6px 0; }`n  .doc-body code { background: #f2efe9; padding: 1px 6px; border-radius: 4px; font-size: 14px; }`n  .doc-body pre { background: #f2efe9; padding: 14px 16px; border-radius: 10px; overflow: auto; }`n  .doc-body a { color: #c24a1e; }`n  .doc-back { position: fixed; top: 20px; left: 24px; }`n</style>`n</head>`n<body>`n<a class="btn btn-ghost doc-back" href="/">← 返回首页</a>`n<main class="doc-wrap"><article class="doc-body"><h1>DSH 管家 · 使用帮助</h1>
 <p>一句话：管家是 DSH 的本地运维台 —— 装、修、更新、守护，四件事都在一个窗口里。</p>
 <h2>一、第一次用</h2>
 <ol>
@@ -42,6 +17,7 @@
 <h2>三、它还会自己干活</h2>
 <p>设置 → 定时任务与备份 里可以设定：多久体检一次、多久备份一次、多久查一次更新。</p>
 <p>发现的问题会进总览页的「管家提醒」卡片，托盘图标悬停也能看到条数。</p>
+<p>问题解决了（比如插件都更新完了）它会自己把那条提醒撤掉，不用手动清；历史条目也能在卡片上「清空提醒」。</p>
 <h2>四、出问题怎么求助</h2>
 <p>体检报告页右上角「导出诊断包（脱敏）」：把体检结论、环境、依赖冲突、日志错误行打成一个文件夹。</p>
 <p>家目录会变成 ~、用户名变成 %USER%、密钥与邮箱全部打码，并且导出后会回读自检一遍，发现残留就不让导出。</p>
@@ -63,9 +39,8 @@
 <li>数据在哪？管家的配置在 ~/.dsh-butler，DSH 的数据在 ~/.dsh，都跟着你自己的用户目录走。</li>
 <li>端口对外开了吗？没有。服务只监听本机回环地址。</li>
 <li>和官方桌面端一起装会不会打架？管家检测到官方桌面端在跑时会自动退成运维模式，不抢窗口与托盘。</li>
+<li>想关掉 DSH 服务？右下角那条悬浮工具条上就是「启动 / 停止 / 重启」，DSH 界面和管家界面都有同一条；首页「DSH 已就绪」卡片里也有一个「停止服务」。</li>
 </ul>
 <h2>九、命令行（给爱折腾的人）</h2>
 <p>管家自带只读诊断命令，例如 doctor 与 env probe，加 --json 可给脚本消费。</p>
-<p>更多细节见仓库文档：<a href="https://github.com/Frank-NF/DSH-Butler">https://github.com/Frank-NF/DSH-Butler</a></p></article></main>
-</body>
-</html>
+<p>更多细节见仓库文档：<a href="https://github.com/Frank-NF/DSH-Butler">https://github.com/Frank-NF/DSH-Butler</a></p></article></main>`n</body>`n</html>`n
