@@ -27,6 +27,39 @@ Deno.test("BUTLER_BAR_JS 不调用未定义的名字（bindings 是页面桥，�
   assertEquals(missing, [], `悬浮条脚本调用了未定义的名字：${missing.join("、")}`);
 });
 
+Deno.test("悬浮条：管家界面上不摆「回管家」按钮，也不压住进度条/提示气泡", () => {
+  assertEquals(
+    BUTLER_BAR_JS.includes("__DSH_BUTLER_HOME__"),
+    true,
+    "没拿到管家页地址，页面无法判断自己是不是已经在管家界面上",
+  );
+  assertEquals(
+    BUTLER_BAR_JS.includes("var HOME_BTN = AT_HOME ? '' :"),
+    true,
+    "在管家界面上仍会生成「回管家」按钮（点下去是空动作）",
+  );
+  assertEquals(
+    BUTLER_BAR_JS.includes("if (backBtn) backBtn.addEventListener"),
+    true,
+    "按钮在管家页上不存在，事件绑定却没做空判断 —— 整条悬浮条会挂掉",
+  );
+  // 管家页底部有任务进度条、右下角有提示气泡：悬浮条得按它们的高度抬上去
+  assertEquals(BUTLER_BAR_JS.includes("progress-wrap"), true, "没有避让底部任务进度条");
+  assertEquals(BUTLER_BAR_JS.includes("toast-host"), true, "没有避让右下角提示气泡");
+  assertEquals(BUTLER_BAR_JS.includes("modal-backdrop"), true, "确认弹窗打开时没有把自己藏起来");
+});
+
+Deno.test("悬浮条：启停/重启三个按钮都要真的接到命令上", () => {
+  for (const cmd of ["'stop'", "'start'", "'restart'"]) {
+    assertEquals(BUTLER_BAR_JS.includes(cmd), true, "悬浮条缺 " + cmd + " 命令");
+  }
+  assertEquals(
+    BUTLER_BAR_JS.includes("$('dbb-restart').addEventListener"),
+    true,
+    "「重启」按钮没有绑事件 —— 点下去毫无反应（曾经就是这样）",
+  );
+});
+
 Deno.test("悬浮条必须幂等：注入前先查探针 id（防止 SPA 下叠加出好几条）", () => {
   assertEquals(
     BUTLER_BAR_JS.includes("dsh-butler-dock"),

@@ -4,7 +4,13 @@
  * 定时任务每 5 分钟醒一次：不去重就会把同一件事刷成一屏。
  */
 import { assertEquals } from "@std/assert";
-import { DEDUP_WINDOW_MS, MAX_NOTICES, mergeNotice } from "./notices.ts";
+import {
+  DEDUP_WINDOW_MS,
+  MAX_NOTICES,
+  mergeNotice,
+  noticePlanOf,
+  resolveNotices,
+} from "./notices.ts";
 
 const T0 = Date.parse("2026-09-26T10:00:00Z");
 
@@ -28,6 +34,31 @@ Deno.test("提醒：不同来源/标题算不同的事，最新在前", () => {
   list = mergeNotice(list, { level: "error", title: "B", source: "定时体检" }, T0 + 2000);
   assertEquals(list.length, 3);
   assertEquals(list[0]!.title, "B");
+});
+
+Deno.test("提醒：条件没了就把旧条目撤掉（插件全更新完后不该还挂着「有新版本」）", () => {
+  let list = mergeNotice([], { level: "info", title: "1 个插件有新版本", detail: "a", source: "定时查更新" }, T0);
+  list = mergeNotice(list, { level: "warn", title: "定时体检：0 项错误 / 1 项警告", source: "定时体检" }, T0 + 1000);
+  const r = resolveNotices(list, { source: "定时查更新" });
+  assertEquals(r.removed, 1);
+  assertEquals(r.list.map((n) => n.source), ["定时体检"], "只撤该来源，别误伤别的提醒");
+  assertEquals(resolveNotices(r.list, { source: "定时查更新" }).removed, 0, "本来就没有就别报撤掉了");
+});
+
+Deno.test("提醒：撤销也能按标题精确到一条", () => {
+  let list = mergeNotice([], { level: "info", title: "A", source: "s" }, T0);
+  list = mergeNotice(list, { level: "info", title: "B", source: "s" }, T0 + 1000);
+  assertEquals(resolveNotices(list, { source: "s", title: "A" }).list.map((n) => n.title), ["B"]);
+});
+
+Deno.test("提醒计划：条件成立记一条，条件不成立撤那一条", () => {
+  const on = noticePlanOf("定时查更新", { level: "info", title: "1 个插件有新版本", detail: "x 1.0 → 1.1" });
+  assertEquals(on.add?.source, "定时查更新");
+  assertEquals(on.add?.detail, "x 1.0 → 1.1");
+  assertEquals(on.clearSource, null, "有条件成立时不该撤");
+  const off = noticePlanOf("定时查更新", null);
+  assertEquals(off.add, null);
+  assertEquals(off.clearSource, "定时查更新", "没更新了就必须撤掉上次那条提示");
 });
 
 Deno.test("提醒：上限裁剪，且已看过的标记会被重置为未看", () => {

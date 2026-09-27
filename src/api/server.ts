@@ -36,7 +36,12 @@ import {
 import { checkUpdates } from "../net/npm-registry.ts";
 import { collectLogs, readTail } from "../domains/runtime/logs.ts";
 import { butlerConfigPath, butlerLogFile, downloadsDir, p } from "../util/paths.ts";
-import { loadNotices, markNoticesSeen, unseenCount } from "../domains/state/notices.ts";
+import {
+  clearAllNotices,
+  loadNotices,
+  markNoticesSeen,
+  unseenCount,
+} from "../domains/state/notices.ts";
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
@@ -415,6 +420,12 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
     if (req.method === "POST" && path === "/api/notices/seen") {
       const list = markNoticesSeen();
       return json({ ok: true, notices: list, unseen: unseenCount(list) });
+    }
+    // 手动清空：定时任务已经会自动撤掉过期的条目，这里留给"这条我不想再看到"的情况
+    if (req.method === "POST" && path === "/api/notices/clear") {
+      const cleared = clearAllNotices();
+      const list = loadNotices();
+      return json({ ok: true, cleared, notices: list, unseen: unseenCount(list) });
     }
 
     // 帮助文档：内容随程序走（单文件 exe 里读不到 docs/），界面与官网用同一份 Markdown

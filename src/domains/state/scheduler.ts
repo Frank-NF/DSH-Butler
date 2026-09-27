@@ -8,7 +8,8 @@
  * 三条纪律：
  *   1. 有任务在跑时整轮跳过（不抢锁、不插队）；
  *   2. 起不来就不记账（下一轮再试），绝不假装跑过；
- *   3. 结果要留痕：体检发现错误/警告、备份失败、有插件可更新 → 记一条提醒（带去重）。
+ *   3. 结果要留痕：体检发现错误/警告、备份失败、有插件可更新 → 记一条提醒（带去重）；
+ *      反过来，这次"没问题"了就得把上次那条撤掉 —— 提醒说的是现在，不是历史。
  */
 
 import { engine } from "../../jobs/engine.ts";
@@ -16,7 +17,13 @@ import type { Job } from "../../jobs/types.ts";
 import { log } from "../../util/log.ts";
 import { checkUpdates } from "../../net/npm-registry.ts";
 import { loadConfig, type ScheduleConfig } from "./config.ts";
-import { addNotice, type NoticeLevel, unseenCount } from "./notices.ts";
+import {
+  addNotice,
+  clearNotices,
+  type NoticeLevel,
+  noticePlanOf,
+  unseenCount,
+} from "./notices.ts";
 import {
   dueTasks,
   initializeScheduleState,
@@ -30,6 +37,30 @@ import { pathExists } from "../../host/fs.ts";
 import { readInstalledDeps } from "../plugin/deps_actions.ts";
 
 export const DEFAULT_TICK_MS = 5 * 60_000;
+
+/**
+ * 三种定时提醒的来源标签。
+ *
+ * 它们都是「当前状况」而不是历史事件，所以条件消失时要按这个标签把旧条目撤掉
+ * （见 notices.ts 的 resolveNotices）。
+ */
+export const UPDATE_NOTICE_SOURCE = "定时查更新";
+export const HEALTH_NOTICE_SOURCE = "定时体检";
+export const BACKUP_NOTICE_SOURCE = "定时备份";
+
+/**
+ * 装/卸/更新插件这一批动作。
+ *
+ * 【为什么管家要盯着它们】定时查更新留下的「N 个插件有新版本」是用户手动更新完就过期的
+ * 假消息。等下一次定时查更新（默认 6 小时）来撤太晚了 —— 用户刚点完更新回到首页，
+ * 看到的还是那条提示（实测反馈）。所以这类动作一成功就立刻撤掉。
+ */
+export const PLUGIN_VERSION_ACTIONS: ReadonlySet<string> = new Set([
+  "plugin.install",
+  "plugin.uninstall",
+  "plugin.batchUpdate",
+  "plugin.installOffline",
+]);
 
 /** 定时任务 → 要交给引擎的动作。 */
 export const TASK_ACTIONS: Record<ScheduledTaskId, { action: string; params: Record<string, unknown> }> = {
@@ -66,6 +97,16 @@ export function healthNoticeOf(
   };
 }
 
+/** 撤掉某来源的过期提醒，返回是否真的撤掉了东西（界面/托盘需要据此刷新）。 */
+function clearStale(source: string): boolean {
+  const removed = clearNotices({ source });
+  if (removed > 0) {
+    log.info("schedule", `条件已恢复，撤掉 ${removed} 条过期的「${source}」提醒`);
+    return true;
+  }
+  return false;
+}
+
 export interface SchedulerHandle {
   /** 停掉定时器。 */
   stop: () => void;
@@ -91,26 +132,40 @@ export function startScheduler(opts: SchedulerOptions = {}): SchedulerHandle {
   const watched = new Map<string, ScheduledTaskId>();
   const unsub = engine.subscribe((ev) => {
     if (ev.type !== "done") return;
-    const task = watched.get(ev.jobId);
-    if (!task) return;
-    watched.delete(ev.jobId);
     const job: Job | undefined = engine.get(ev.jobId);
-    if (!job) return;
-    if (task === "health" && job.status === "succeeded") {
-      const findings = (job.result as { findings?: Array<{ severity: string; title: string }> } | undefined)?.findings ?? [];
-      const n = healthNoticeOf(findings);
-      if (n && loadConfig().schedule.notify) {
-        addNotice({ ...n, source: "定时体检" });
-        log.info("schedule", `定时体检：${n.title}`);
-      }
-    } else if (task === "backup") {
-      if (job.status === "succeeded") {
-        log.info("schedule", "定时备份完成");
-      } else if (loadConfig().schedule.notify) {
-        addNotice({ level: "error", title: "定时备份失败", detail: job.error ?? "未知原因", source: "定时备份" });
+    let noticed = false;
+
+    // 插件装完/更新完：定时查更新留下的「有新版本」当场就过期了，立刻撤掉
+    if (job && job.status === "succeeded" && PLUGIN_VERSION_ACTIONS.has(job.action)) {
+      if (clearStale(UPDATE_NOTICE_SOURCE)) noticed = true;
+    }
+
+    const task = watched.get(ev.jobId);
+    if (task) {
+      watched.delete(ev.jobId);
+      if (job) {
+        if (task === "health" && job.status === "succeeded") {
+          const findings = (job.result as { findings?: Array<{ severity: string; title: string }> } | undefined)?.findings ?? [];
+          // 全绿 = 上次那条「体检有问题」已经过期，撤掉；有问题才记新的
+          const plan = noticePlanOf(HEALTH_NOTICE_SOURCE, healthNoticeOf(findings));
+          if (plan.add && loadConfig().schedule.notify) {
+            addNotice(plan.add);
+            noticed = true;
+            log.info("schedule", `定时体检：${plan.add.title}`);
+          }
+          if (plan.clearSource && clearStale(plan.clearSource)) noticed = true;
+        } else if (task === "backup") {
+          if (job.status === "succeeded") {
+            log.info("schedule", "定时备份完成");
+            if (clearStale(BACKUP_NOTICE_SOURCE)) noticed = true;
+          } else if (loadConfig().schedule.notify) {
+            addNotice({ level: "error", title: "定时备份失败", detail: job.error ?? "未知原因", source: BACKUP_NOTICE_SOURCE });
+            noticed = true;
+          }
+        }
       }
     }
-    opts.onNoticesChanged?.(unseenCount());
+    if (task || noticed) opts.onNoticesChanged?.(unseenCount());
   });
 
   const tick = async () => {
@@ -129,11 +184,13 @@ export function startScheduler(opts: SchedulerOptions = {}): SchedulerHandle {
           const names = Object.keys(installed);
           if (names.length) {
             const res = await checkUpdates(installed, names);
-            const n = updateNoticeOf(res.updates);
-            if (n && sc.notify) {
-              addNotice({ ...n, source: "定时查更新" });
-              log.info("schedule", n.title);
+            // 有更新记一条；都没更新 = 上次那条已经过期，撤掉（否则首页一直挂着旧提示）
+            const plan = noticePlanOf(UPDATE_NOTICE_SOURCE, updateNoticeOf(res.updates));
+            if (plan.add && sc.notify) {
+              addNotice(plan.add);
+              log.info("schedule", plan.add.title);
             }
+            if (plan.clearSource) clearStale(plan.clearSource);
           }
           saveScheduleState(markRun(loadScheduleState(), t.id));
           opts.onNoticesChanged?.(unseenCount());

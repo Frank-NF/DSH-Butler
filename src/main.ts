@@ -293,31 +293,42 @@ async function runJobAndWait(
 }
 
 /**
- * 在 DSH 页面里装那条「管家悬浮条」。
+ * 装上那条「管家悬浮条」（DSH 页与管家页都注入）。
  *
  * 这是单窗口形态下最重要的一条回程路：DSH 界面会把管家界面顶掉，托盘图标又未必
  * 一眼看得到。悬浮条里的每个按钮都走和界面一致的通道（见 runJobAndWait）。
+ *
+ * 【为什么管家页也要】用户反馈"只有启动按钮、找不到关闭 DSH 服务"——管家页上
+ * 首页那张状态卡只给一个主行动，停止服务藏在「运行状态」页里。两个界面都摆这条
+ * 工具条之后，启停/重启在哪儿都点得到；页面会把自己的位置（在不在管家页）报上来，
+ * 宿主据此决定"停止/重启之后要不要切页面"。
  */
 function setupButlerOverlay(butlerUrl: string): void {
   const cfg = loadConfig();
-  // 设置里关掉就别注入：DSH 页面保持干净
+  // 设置里关掉就别注入：页面保持干净
   if (!cfg.dockEnabled) {
     log.info("main", "设置里关掉了浮动工具条，跳过注入");
     return;
   }
-  const back = () => navigateMain(butlerUrl, { title: WINDOW_TITLE, injectOverlay: false });
+  // 回管家界面：仍然注入悬浮条（用户要在管家界面上也能一键启停 DSH 服务）
+  const back = () => navigateMain(butlerUrl, { title: WINDOW_TITLE });
   const butlerOrigin = butlerUrl.split("?")[0]!;
-  // 自动收起的秒数随设置走：注入前先把这个数塞给页面脚本
+  // 自动收起的秒数、管家页地址都随注入塞给页面脚本：
+  // 页面据此知道"我现在是不是就在管家界面上"（在的话不生成「回管家」那颗按钮）
   const barScript = "window.__DSH_BUTLER_IDLE_MS__ = " + Math.max(1000, cfg.dockIdleMs) + ";" +
+    "window.__DSH_BUTLER_HOME__ = " + JSON.stringify(butlerOrigin) + ";" +
     BUTLER_BAR_JS;
   installOverlay({
     script: barScript,
     probeId: "dsh-butler-dock",
     bindingName: "butlerCmd",
-    // 管家自己的界面不需要悬浮条（那上面本来就有这些按钮），只有 DSH 页面才注入
-    shouldInject: (href) => !href.startsWith(butlerOrigin),
-    handle: async (cmd) => {
+    // 两个界面都注入：管家页面上原来"什么按钮都有"，可用户就是找不到"关闭 DSH 服务"
+    // （首页状态卡只有一个主行动，停止服务藏在运行状态页里）。现在右下角这条工具条
+    // 在哪儿都能启停（2026-09-27 用户反馈）。
+    handle: async (cmd, arg) => {
       const c = String(cmd ?? "");
+      // 页面自己报的"我现在就在管家界面上"（停止/重启之后要不要切页面看它）
+      const atHome = Boolean(arg && (arg as { atHome?: unknown }).atHome);
       if (c === "back") {
         back();
         return { ok: true };
@@ -334,13 +345,16 @@ function setupButlerOverlay(butlerUrl: string): void {
       if (c === "start") return await runJobAndWait("runtime.start");
       if (c === "stop") {
         const r = await runJobAndWait("runtime.stop", { confirm: true });
-        // 服务停了，DSH 页面就成了一张死页面 —— 顺手切回管家界面，别让用户对着白屏
-        if (r.ok) back();
+        // 服务停了，DSH 页面就成了一张死页面 —— 顺手切回管家界面，别让用户对着白屏。
+        // 本来就在管家界面上时别切：那等于把页面重刷一遍，用户刚点的东西全没了。
+        if (r.ok && !atHome) back();
         return r;
       }
       if (c === "restart") {
         const r = await runJobAndWait("runtime.restart");
         if (!r.ok) return r;
+        // 管家界面上点重启就留在管家界面（那是管理台）；从 DSH 页面点才需要重新导航
+        if (atHome) return { ok: true, jobId: r.jobId };
         // 重启会换一次访问令牌，必须重新取地址再导航，否则又会掉进 401
         const entered = await enterDsh({ restartIfNeeded: false });
         if (entered.ok && entered.url) {
@@ -417,10 +431,8 @@ function ensureMainWindow(url: string, view: "butler" | "dsh"): boolean {
   shellView = view;
   hiddenToTray = false;
   if (cur && !cur.isClosed?.()) {
-    return navigateMain(
-      url,
-      view === "butler" ? { title: WINDOW_TITLE, injectOverlay: false } : { title: WINDOW_TITLE },
-    );
+    // 两个界面都注入悬浮条（管家页上少一颗「回管家」，见 setupButlerOverlay）
+    return navigateMain(url, { title: WINDOW_TITLE });
   }
   const win = createWindow({ title: WINDOW_TITLE, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
   if (!win) {

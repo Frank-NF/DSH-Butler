@@ -143,6 +143,7 @@ export const CLIENT_JS = `(function () {
     wrench: SVG_OPEN + '<path d="M15 3a5 5 0 0 0-4.5 7.2L4 16.7V20h3.3l6.5-6.5A5 5 0 0 0 21 9l-3 2-2-2z"/></svg>',
     shield: SVG_OPEN + '<path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>',
     play: SVG_OPEN + '<path d="M7 4.5 19 12 7 19.5z"/></svg>',
+    stop: SVG_OPEN + '<rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
     upload: SVG_OPEN + '<path d="M12 16V4M7 9l5-5 5 5M4 20h16"/></svg>',
     check: SVG_OPEN + '<path d="M5 13l4 4L19 7"/></svg>',
     chevron: SVG_OPEN + '<path d="M9 6l6 6-6 6"/></svg>',
@@ -327,6 +328,9 @@ export const CLIENT_JS = `(function () {
       html += '<div class="hero-title">DSH 已就绪</div><div class="hero-desc">' + esc(s.note) + '</div>'
         + '<div class="btn-row" style="margin-top:12px">'
         + '<button class="btn primary" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
+        // 服务正在跑：这里得有一个"关掉它"的出口。以前首页只有一个主行动，
+        // 想停服务要自己翻到「运行状态」页 —— 用户找不到（2026-09-27 反馈）。
+        + writeBtn('stop', '停止服务', 'runtime.stop', {}, 'sm danger')
         + '</div>';
     } else if (s.next === 'start') {
       html += '<div class="hero-title">DSH 已装好，服务没在跑</div><div class="hero-desc">' + esc(s.note) + '</div>'
@@ -1096,7 +1100,13 @@ export const CLIENT_JS = `(function () {
         + '</div>';
     }
     html += '</div>';
-    if (unseen) html += '<div class="btn-row" style="margin-top:10px"><button class="btn sm" id="btn-notices-seen">全部标记已读</button></div>';
+    // 两个出口：只想消掉红点就用「标记已读」，不想再看到这些条目就用「清空」
+    if (unseen || list.length) {
+      html += '<div class="btn-row" style="margin-top:10px">'
+        + (unseen ? '<button class="btn sm" id="btn-notices-seen">全部标记已读</button>' : '')
+        + '<button class="btn sm ghost" id="btn-notices-clear">清空提醒</button>'
+        + '</div>';
+    }
     return html + '</div>';
   }
 
@@ -1301,7 +1311,7 @@ export const CLIENT_JS = `(function () {
       + actBtn('activity', '运行时诊断', 'runtime.diagnose')
       + writeBtn('wrench', '修复僵尸锁', 'runtime.repair')
       + writeBtn('play', '启动服务', 'runtime.start')
-      + writeBtn('external', '停止服务', 'runtime.stop', {}, 'sm danger')
+      + writeBtn('stop', '停止服务', 'runtime.stop', {}, 'sm danger')
       + writeBtn('refresh', '重启服务', 'runtime.restart');
     var html = pageHead('运行状态', '服务进程、HTTP 健康检查、僵尸锁与 profile 残留物。', tools);
     if (state.extra.runtimeDiag) html += diagCard('运行时诊断结论', state.extra.runtimeDiag);
@@ -1741,8 +1751,8 @@ export const CLIENT_JS = `(function () {
         res.autostartActual ? '注册表里已经有自启项' + (res.autostartCommand ? '：' + res.autostartCommand : '') : '注册表里还没有自启项')
       + '</div>';
 
-    html += '<div class="card"><div class="card-title">DSH 页面里的浮动工具条</div>'
-      + setRow('启用', checkBox('set-dock-enabled', c.dockEnabled, '在 DSH 页面右下角显示管家工具条'),
+    html += '<div class="card"><div class="card-title">页面里的浮动工具条</div>'
+      + setRow('启用', checkBox('set-dock-enabled', c.dockEnabled, '在 DSH 与管家页面右下角显示工具条（状态 / 启动 / 停止 / 重启）'),
         '关掉之后 DSH 页面就干净了，回管家只能靠托盘图标或 Ctrl+Shift+B。')
       + setRow('自动收起', '<input class="input set-num" id="set-dock-idle" type="number" min="1" max="60" value="'
         + Math.round((c.dockIdleMs || 3000) / 1000) + '">', '展开后多少秒没动作就自动收起（秒）')
@@ -2633,7 +2643,7 @@ export const CLIENT_JS = `(function () {
       var theme = val('set-theme') === 'dark' ? '深色' : val('set-theme') === 'auto' ? '跟随系统' : '浅色';
       return '主题 ' + theme + (val('set-close-to-tray') ? ' · 关闭收进托盘' : ' · 关闭即退出') + (val('set-autostart') ? ' · 开机自启' : '');
     }
-    if (title === 'DSH 页面里的浮动工具条') return (val('set-dock-enabled') ? '已启用' : '已关闭') + ' · ' + val('set-dock-idle') + ' 秒自动收起';
+    if (title === '页面里的浮动工具条') return (val('set-dock-enabled') ? '已启用' : '已关闭') + ' · ' + val('set-dock-idle') + ' 秒自动收起';
     if (title === '插件市场') {
       var t = Number(val('set-market-ttl')) || 0;
       return '目录缓存 ' + (t >= 86400000 ? (t / 86400000) + ' 天' : (t / 3600000) + ' 小时');
@@ -2876,6 +2886,15 @@ export const CLIENT_JS = `(function () {
         toast('已全部标记为已读');
         go(state.page, true);
       }).catch(function (e) { toast('标记失败：' + (e && e.message ? e.message : e), 'err'); });
+      return;
+    }
+    var clearBtn = hit('#btn-notices-clear');
+    if (clearBtn) {
+      api('/api/notices/clear', { method: 'POST' }).then(function (r) {
+        state.notices = r && r.notices ? r.notices : [];
+        toast(r && r.cleared ? '已清空 ' + r.cleared + ' 条提醒' : '没有提醒可清');
+        go(state.page, true);
+      }).catch(function (e) { toast('清空失败：' + (e && e.message ? e.message : e), 'err'); });
       return;
     }
     if (hit('#btn-refresh') || hit('#btn-refresh-page')) { state.cache = {}; state.extra = {}; go(state.page, true); return; }

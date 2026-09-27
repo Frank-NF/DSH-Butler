@@ -8,7 +8,7 @@ Deno.test("设置页：左导航分组，右侧只显示当前一组", () => {
   assertEquals(CLIENT_JS.includes("layoutSettingsSections();"), true, "渲染后没做分组排版");
   assertEquals(CLIENT_JS.includes("initRegistryPicker();"), true, "渲染后没初始化安装源下拉");
   assertEquals(CLIENT_JS.includes("function settingsSummaryOf(title, card)"), true, "导航项没有状态摘要");
-  for (const t of ["外观与窗口", "DSH 页面里的浮动工具条", "插件市场", "定时任务与备份", "更新", "网络与高级"]) {
+  for (const t of ["外观与窗口", "页面里的浮动工具条", "插件市场", "定时任务与备份", "更新", "网络与高级"]) {
     assertEquals(CLIENT_JS.includes("'" + t + "'"), true, `摘要表缺 ${t}`);
   }
   // 左侧导航：真按钮 + role=tab + aria-selected（键盘与读屏可达）

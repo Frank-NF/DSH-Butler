@@ -271,8 +271,7 @@ export function navigateMain(
       win.show();
       win.focus?.();
     } catch { /* 某些平台不支持 */ }
-    // 页面换了，注入过的悬浮条也随之消失 —— 这里跟着重新注入一次。
-    // 默认注入；切回管家自己的界面时调用方会显式关掉（我们自己页面不需要它）。
+    // 页面换了，注入过的悬浮条也随之消失 —— 这里跟着重新注入一次（两个界面都要）。
     if (opts.injectOverlay !== false) overlayInstaller?.();
     return true;
   } catch (e) {
@@ -321,7 +320,7 @@ export interface InstallOverlayOptions {
   probeId: string;
   /**
    * 只在满足条件的页面上注入（拿到的是当前 location.href）。
-   * 典型用法：管家自己的界面不需要悬浮条，只有 DSH 页面才需要。
+   * 现在两个界面都要悬浮条，所以没用到它；留着给"某些页面不该注入"的将来。
    */
   shouldInject?: (href: string) => boolean;
 }

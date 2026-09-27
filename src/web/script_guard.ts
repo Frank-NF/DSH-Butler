@@ -63,6 +63,7 @@ const BUILTIN_GLOBALS = new Set([
   "btoa",
   "requestAnimationFrame",
   "getComputedStyle",
+  "MutationObserver",
   "console",
   "document",
   "window",
