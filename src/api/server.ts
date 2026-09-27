@@ -14,7 +14,14 @@ import { STYLE_CSS } from "../web/styles.ts";
 import { STATS_CSS } from "../web/styles_stats.ts";
 import { CLIENT_JS } from "../web/client.ts";
 import { HELP_MD } from "../web/help.ts";
-import { aiChat, assembleSystemPrompt, buildSystemPrompt, type AiMessage } from "../domains/ai/ai.ts";
+import {
+  aiChat,
+  assembleSystemPrompt,
+  buildSystemPrompt,
+  type AiMessage,
+  maskKey,
+} from "../domains/ai/ai.ts";
+import { collectDshChannels, publicChannel } from "../domains/ai/dsh_channels.ts";
 import { maskSecrets } from "../util/redact.ts";
 import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
@@ -91,12 +98,6 @@ const SSE_HEADERS = {
  * 威胁模型没变差：本服务只监听 127.0.0.1，令牌挡的是「浏览器里的其它网页」这类跨源来源。
  */
 const AUTH_COOKIE = "butler_token";
-
-/** AI 助手：密钥在配置与界面之间只以掩码形态出现。 */
-function maskKey(k: string): string {
-  if (!k) return "";
-  return k.length <= 8 ? "••••" : k.slice(0, 4) + "••••" + k.slice(-4);
-}
 
 /** AI 助手的现场信息：概览摘要 + 管家日志尾部，整段脱敏并限长（启动不了 DSH 时的排障现场）。 */
 async function gatherAiContext(): Promise<string> {
@@ -461,6 +462,39 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       if (body.clearKey === true) ai.apiKey = "";
       saveConfig({ ai });
       return json({ ok: true, hasKey: ai.apiKey.length > 0, keyMasked: maskKey(ai.apiKey) });
+    }
+    // 从 DSH 一键导入通道：读 DSH 自己的 profile 配置与密钥引用。
+    // 密钥只在本机文件之间复制 —— 列表里永远是掩码，导入也不需要把密钥送到界面。
+    if (req.method === "GET" && path === "/api/ai/dsh-channels") {
+      const channels = collectDshChannels().map(publicChannel);
+      return json({ ok: true, channels });
+    }
+    if (req.method === "POST" && path === "/api/ai/import-dsh") {
+      let body: Record<string, unknown>;
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      const ch = collectDshChannels().find((c) => c.key === key);
+      if (!ch) {
+        return json({ ok: false, error: "DSH 配置里没有这个通道（刚改过的话，刷新一下再看）" }, 404);
+      }
+      const ai = { ...loadConfig().ai, baseUrl: ch.baseUrl, model: ch.model || loadConfig().ai.model };
+      // 通道没带上密钥时保持原样：别把用户手填的密钥抹掉
+      if (ch.apiKey) ai.apiKey = ch.apiKey;
+      saveConfig({ ai });
+      return json({
+        ok: true,
+        key: ch.key,
+        label: ch.label,
+        baseUrl: ai.baseUrl,
+        model: ai.model,
+        usedKey: ch.apiKey.length > 0,
+        hasKey: ai.apiKey.length > 0,
+        keyMasked: maskKey(ai.apiKey),
+      });
     }
     if (req.method === "POST" && path === "/api/ai/chat") {
       let body: { messages?: unknown };

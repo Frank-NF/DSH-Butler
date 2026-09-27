@@ -2451,10 +2451,46 @@ export const CLIENT_JS = `(function () {
 
   // ── AI 助手：自带 API 的对话（DSH 起不来时的排障通道） ────────────
   // 转义纪律与本文件一致：不用反引号与插值，字符串一律单引号拼接。
-  var AI = { cfg: null, messages: [], busy: false };
+  var AI = { cfg: null, messages: [], busy: false, channels: [] };
 
+  // 一次取两样：AI 配置 + 能从 DSH 里搬过来的通道（后者失败不影响本页可用）
   function loadAiConfig() {
-    return api('/api/ai/config');
+    return Promise.all([
+      api('/api/ai/config'),
+      api('/api/ai/dsh-channels').catch(function () { return null; })
+    ]).then(function (r) {
+      AI.channels = (r[1] && r[1].channels) ? r[1].channels : [];
+      return r[0];
+    });
+  }
+
+  /**
+   * 「从 DSH 导入」卡片。
+   *
+   * 为什么值得做：DSH 里早就配好了通道与密钥，AI 助手却要用户把地址、模型、密钥再抄一遍 ——
+   * 密钥还是那种一长串、抄错一位就 401 的东西。这里只读 DSH 的配置文件，
+   * 点一下搬到本机配置里；密钥从不进页面（接口只给掩码）。
+   */
+  function dshImportCard() {
+    if (!AI.channels.length) return '';
+    var html = '<div class="card" style="margin-top:14px"><div class="card-title">从 DSH 导入'
+      + '<span class="sub">DSH 里已经配好的通道，点一下搬过来</span></div><div class="rows">';
+    for (var i = 0; i < AI.channels.length; i++) {
+      var c = AI.channels[i];
+      var models = (c.models && c.models.length) ? c.models.join(' / ') : (c.model || '（DSH 里没写模型名）');
+      html += '<div class="row"><div class="row-main">'
+        + '<div class="row-name">' + esc(c.label || c.key)
+        + (c.isDefault ? '<span class="tag ok">DSH 当前默认</span>' : '')
+        + (c.hasKey ? '' : '<span class="tag warn">没找到密钥</span>') + '</div>'
+        + '<div class="row-meta"><span>' + esc(c.baseUrl) + (c.baseUrlFromDefaults ? '（内置默认地址）' : '') + '</span>'
+        + '<span>模型：' + esc(models) + '</span>'
+        + '<span>密钥：' + (c.hasKey ? esc(c.keyMasked) + ' ← ' + esc(c.apiKeyEnv) : esc(c.apiKeyEnv) + '（DSH 里没存）') + '</span></div>'
+        + '</div><div class="row-actions">'
+        + '<button class="btn sm' + (c.isDefault ? ' primary' : '') + '" data-dsh-import="' + esc(c.key) + '">用这个</button>'
+        + '</div></div>';
+    }
+    html += '</div><div class="field-help">只读 DSH 的 cordis.patch.yml 与 .credentials.yaml（绝不改它们）；密钥只在本机文件之间复制，页面上永远只显示掩码。导入后想换模型名，直接改上面的输入框即可。</div></div>';
+    return html;
   }
 
   function renderAi(cfg) {
@@ -2471,6 +2507,7 @@ export const CLIENT_JS = `(function () {
       + '<button class="btn" id="ai-test">测试连接</button>'
       + (cfg.hasKey ? '<button class="btn" id="ai-clearkey">清除已存密钥</button>' : '')
       + '</div></div>';
+    html += dshImportCard();
     html += '<div class="card" style="margin-top:14px"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
       + '<div id="ai-box" class="chat-box"></div>'
       + '<div class="chat-row"><textarea id="ai-input" class="textarea" rows="2" placeholder="描述你的问题，回车发送（Shift+回车换行）…"></textarea>'
@@ -2572,6 +2609,24 @@ export const CLIENT_JS = `(function () {
       });
     }
     $('ai-clear').addEventListener('click', function () { AI.messages = []; aiRenderAll(); });
+    // 从 DSH 导入：点了就走服务端搬运（密钥不会经过页面），成功后整页重画把新配置显示出来
+    var importBtns = document.querySelectorAll('[data-dsh-import]');
+    for (var ib = 0; ib < importBtns.length; ib++) {
+      importBtns[ib].addEventListener('click', function () {
+        var btn = this;
+        var key = btn.getAttribute('data-dsh-import') || '';
+        btn.disabled = true;
+        btn.textContent = '导入中…';
+        api('/api/ai/import-dsh', { method: 'POST', body: { key: key } }).then(function (r) {
+          toast('已从 DSH 导入「' + ((r && r.label) || key) + '」' + (r && r.usedKey ? '（地址 + 模型 + 密钥）' : '（这个通道 DSH 里没存密钥，请自己填）'), 'ok');
+          go('ai', true);
+        }).catch(function (e) {
+          toast('导入失败：' + (e && e.message ? e.message : e), 'err');
+          btn.disabled = false;
+          btn.textContent = '用这个';
+        });
+      });
+    }
   }
 
   var PAGES = [

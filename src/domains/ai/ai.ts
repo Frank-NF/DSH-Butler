@@ -14,6 +14,12 @@ export interface AiMessage {
   content: string;
 }
 
+/** 密钥掩码：界面与接口只用这个形状露密钥（前 4 后 4，短的一律全遮）。 */
+export function maskKey(k: string): string {
+  if (!k) return "";
+  return k.length <= 8 ? "••••" : k.slice(0, 4) + "••••" + k.slice(-4);
+}
+
 /** OpenAI 兼容端点归一化：允许粘贴到域名根、/v1 层或完整路径。 */
 export function chatCompletionsUrl(baseUrl: string): string {
   const u = baseUrl.trim().replace(/\/+$/, "");
