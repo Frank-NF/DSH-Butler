@@ -47,6 +47,7 @@ import { runtimeStartAction, runtimeStopAction } from "../domains/runtime/start_
 import { coreFinishUpdateAction } from "../domains/core/finish_update.ts";
 import { coreUpdateAction } from "../domains/core/update.ts";
 import { coreRollbackAction } from "../domains/core/rollback.ts";
+import { coreFetchUpstreamAction } from "../domains/core/upstream_changelog.ts";
 import {
   backupApplyAction,
   backupCreateAction,
@@ -109,6 +110,7 @@ export function registerAllActions(): void {
     coreFinishUpdateAction,
     coreUpdateAction,
     coreRollbackAction,
+    coreFetchUpstreamAction,
     bootstrapPlanAction,
     bootstrapApplyAction,
     bootstrapDiscardAction,

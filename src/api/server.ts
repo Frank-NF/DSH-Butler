@@ -52,6 +52,7 @@ import {
 import { loadConfig, saveConfig } from "../domains/state/config.ts";
 import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
+import { collectUpstreamChangelog } from "../domains/core/upstream_changelog.ts";
 import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
 import { log } from "../util/log.ts";
 
@@ -825,6 +826,13 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       const limit = Number(url.searchParams.get("limit") ?? 20);
       const n = Number.isFinite(limit) ? Math.min(Math.max(Math.round(limit), 5), 50) : 20;
       return json(await collectCoreChangelog(n));
+    }
+    // ③b 上游新版本改了什么（版本区间对比）：只读、不联网拉代码；
+    // 本机还没有上游记录时返回 recordsReady=false，界面给一个「拉取上游更新记录」的动作。
+    if (req.method === "GET" && path === "/api/changelog/upstream") {
+      const limit = Number(url.searchParams.get("limit") ?? 120);
+      const n = Number.isFinite(limit) ? Math.min(Math.max(Math.round(limit), 10), 500) : 120;
+      return json(await collectUpstreamChangelog({ limit: n }));
     }
     if (req.method === "GET" && path === "/api/shell/state") {
       const state = await collectShellState().catch(() => null);

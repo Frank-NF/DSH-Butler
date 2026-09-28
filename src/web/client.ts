@@ -191,7 +191,8 @@ export const CLIENT_JS = `(function () {
   var ACT_TITLE = {
     'diag.healthCheck': '全面体检', 'env.probe': '环境体检', 'core.status': '本体状态',
     'core.verify': '本体校验', 'core.update': '更新 DSH 本体', 'core.finishUpdate': '完成更新',
-    'core.rollback': '回滚本体', 'runtime.status': '服务状态', 'runtime.logs': '日志收集',
+    'core.rollback': '回滚本体', 'core.fetchUpstreamTags': '拉取上游更新记录',
+    'runtime.status': '服务状态', 'runtime.logs': '日志收集',
     'runtime.diagnose': '运行时诊断', 'runtime.repair': '修复僵尸锁',
     'runtime.start': '启动 DSH 服务', 'runtime.stop': '停止 DSH 服务', 'runtime.restart': '重启 DSH 服务',
     'plugin.scan': '插件扫描', 'plugin.diagnose': '插件诊断', 'plugin.install': '安装插件',
@@ -1237,7 +1238,7 @@ export const CLIENT_JS = `(function () {
     html += '</div>';
 
     // ③ 本体更新日志：最近 20 条提交（来自源码仓库 git log，异步拉取）
-    html += '<div class="card"><div class="card-title">本体更新日志<span class="sub">最近 20 条提交 · 来自源码仓库</span>'
+    html += '<div class="card"><div class="card-title">本体更新日志<span class="sub" id="changelog-sub">最近 20 条提交 · 来自源码仓库</span>'
       + '<span class="spacer"></span><button class="btn sm" id="btn-refresh-changelog">' + icon('refresh') + '<span>刷新</span></button></div>'
       + '<div id="changelog-list"><div class="empty"><span class="spinner"></span> 正在读取提交记录…</div></div></div>';
 
@@ -1278,17 +1279,79 @@ export const CLIENT_JS = `(function () {
     return html;
   }
 
-  // ③ 本体更新日志（最近 20 条提交）：渲染进 DSH 本体页的占位卡片里
+  // ③ 本体更新日志：优先回答"上游新版本相对本机改了什么"，取不到再退回"本机最近 20 条提交"
   function fillChangelog() {
     var el = $('changelog-list');
     if (!el) return;
     el.innerHTML = '<div class="empty"><span class="spinner"></span> 正在读取提交记录…</div>';
-    api('/api/changelog?limit=20').then(function (res) {
+    // 先问上游对比（纯本地读，不联网拉代码）；失败了就老老实实显示本机记录
+    api('/api/changelog/upstream?limit=120').then(function (up) {
       if (state.page !== 'core') return; // 用户已经切走了，别覆盖新页面
-      var box = $('changelog-list');
-      if (!box) return;
+      if (up && up.recordsReady && up.entries && up.entries.length) { renderUpstreamChangelog(up); return; }
+      if (up && up.available) { renderUpstreamPending(up); return; }
+      renderLocalChangelog();
+    }).catch(function () {
+      renderLocalChangelog();
+    });
+  }
+
+  // 提交类型的颜色标签：新功能绿、修复蓝、文档/测试灰
+  var CHANGELOG_TAGS = { feat: ['ok', '新功能'], fix: ['info', '修复'], docs: ['', '文档'], test: ['', '测试'], refactor: ['', '重构'], perf: ['', '性能'] };
+  function changelogTag(type) {
+    var t = CHANGELOG_TAGS[type];
+    if (!t) return '';
+    return '<span class="tag ' + t[0] + '">' + t[1] + '</span>';
+  }
+
+  function upstreamSummaryLine(up) {
+    var c = up.counts || {};
+    return '新版本 ' + (up.latest || '?') + '（' + (up.channel || '?') + ' 通道）相对本机 ' + (up.installed || '?')
+      + '：' + (c.total || 0) + ' 条改动 —— 新功能 ' + (c.feat || 0) + ' · 修复 ' + (c.fix || 0)
+      + ' · 文档 ' + (c.docs || 0) + ' · 测试 ' + (c.test || 0) + ' · 其它 ' + (c.other || 0);
+  }
+
+  function renderUpstreamChangelog(up) {
+    var box = $('changelog-list');
+    if (!box) return;
+    var sub = $('changelog-sub');
+    if (sub) sub.textContent = '上游 ' + (up.latest || '') + ' 相对本机的改动';
+    var rows = '';
+    for (var i = 0; i < up.entries.length; i++) {
+      var e = up.entries[i];
+      rows += '<div class="row"><div class="row-main"><div class="row-name">' + changelogTag(e.type) + esc(e.subject || '(无提交说明)')
+        + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
+    }
+    box.innerHTML = '<div class="finding info" style="margin-bottom:10px"><div class="finding-title">' + esc(upstreamSummaryLine(up)) + '</div>'
+      + '<div class="finding-row">来自上游标签 ' + esc(up.toTag || '') + '；只算真实改动，合并提交（同步噪音）不计'
+      + (up.note ? '；' + esc(up.note) : '') + '</div></div>'
+      + '<div class="rows">' + rows + '</div>';
+  }
+
+  // 有新版但本机还没它的记录 → 给一个明确的动作（走任务引擎，会先弹计划）
+  function renderUpstreamPending(up) {
+    var box = $('changelog-list');
+    if (!box) return;
+    var sub = $('changelog-sub');
+    if (sub) sub.textContent = '上游 ' + (up.latest || '') + ' 的改动还没取回来';
+    box.innerHTML = '<div class="finding warn"><div class="finding-title"><span class="tag warn">待拉取</span>'
+      + '上游有新版本 ' + esc(up.latest || '') + '，本机还没有它的提交记录</div>'
+      + '<div class="finding-row">' + esc(up.note || '') + '</div>'
+      + '<div class="finding-fix">' + writeBtn('upload', '拉取上游更新记录', 'core.fetchUpstreamTags', {}, 'sm primary') + '</div></div>'
+      + '<div class="field-help">只拉标签（git fetch --tags）：不动工作区、不改 HEAD、不安装任何东西；拉完这里就会列出新版本改了哪些。</div>';
+  }
+
+  // 本机已装版本的最近提交（原来那张卡的内容）
+  function renderLocalChangelog() {
+    var box = $('changelog-list');
+    if (!box) return;
+    var sub = $('changelog-sub');
+    if (sub) sub.textContent = '最近 20 条提交 · 来自源码仓库';
+    api('/api/changelog?limit=20').then(function (res) {
+      if (state.page !== 'core') return;
+      var b = $('changelog-list');
+      if (!b) return;
       if (!res || res.error || !res.entries || !res.entries.length) {
-        box.innerHTML = emptyBox('没有读到提交记录', res && res.error ? res.error : '本体源码目录不是一个 git 仓库？');
+        b.innerHTML = emptyBox('没有读到提交记录', res && res.error ? res.error : '本体源码目录不是一个 git 仓库？');
         return;
       }
       var rows = '';
@@ -1297,10 +1360,10 @@ export const CLIENT_JS = `(function () {
         rows += '<div class="row"><div class="row-main"><div class="row-name">' + esc(e.subject || '(无提交说明)')
           + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
       }
-      box.innerHTML = '<div class="rows">' + rows + '</div>';
+      b.innerHTML = '<div class="rows">' + rows + '</div>';
     }).catch(function (err) {
-      var box = $('changelog-list');
-      if (box) box.innerHTML = emptyBox('读取失败', err && err.message ? err.message : String(err));
+      var b = $('changelog-list');
+      if (b) b.innerHTML = emptyBox('读取失败', err && err.message ? err.message : String(err));
     });
   }
 
@@ -2836,6 +2899,10 @@ export const CLIENT_JS = `(function () {
       layoutSettingsSections();
     }
     if (page === 'ai') initAi();
+    // 【必须放在渲染之后】卡片是 setMain 刚建出来的，渲染前调只会拿到上一页的旧元素（或 null）
+    // —— 原来那句就写在 go() 里、setMain 之前，结果这张卡永远停在"正在读取提交记录…"，
+    // 只有手动点「刷新」才会填上（2026-09-29 端到端实测抓到的老 bug）。
+    if (page === 'core') fillChangelog();
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
     // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，
@@ -2856,7 +2923,6 @@ export const CLIENT_JS = `(function () {
       pageOverview().catch(function (e) { showError(e); });
       return;
     }
-    if (page === 'core') fillChangelog();
     if (!force && state.cache[page]) {
       setMain(def.render(state.cache[page]));
       afterRender(page);
