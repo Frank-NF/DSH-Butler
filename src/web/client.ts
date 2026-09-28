@@ -1140,15 +1140,24 @@ export const CLIENT_JS = `(function () {
         + navBtn('activity', '运行状态', 'runtime')
         + navBtn('puzzle', '插件', 'plugins')
         + '</div></div>';
-      if (ov.dsh.updateAvailable) {
+      if (ov.dsh.updateAvailable || ov.dsh.needsFinishUpdate) {
+        // 任务5：一个按钮说清「更新」这件事 —— 有新版就拉取+重建+重启（core.update 本身就含重建六步），
+        // 只是产物落后就直接重建（core.finishUpdate）。用户不需要知道是两个动作。
+        var upHasNew = !!ov.dsh.updateAvailable;
+        var upAction = (ov.dsh.needsFinishUpdate && !upHasNew) ? 'core.finishUpdate' : 'core.update';
+        var upLabel = upAction === 'core.update' ? '更新本体' : '完成更新（重建界面）';
         html += '<div class="card">'
           + '<div class="finding warn"><div class="finding-title"><span class="tag warn">可更新</span>'
-          + '本体有新版本：' + esc(ov.dsh.latestVersion || '') + '（本机 ' + esc(ov.dsh.version || '未知') + '）</div>'
-          + '<div class="finding-cause">上游 ' + esc(ov.dsh.latestChannel || '') + ' 通道已经发到 '
-          + esc(ov.dsh.latestVersion || '') + '，本机还是 ' + esc(ov.dsh.version || '未知')
-          + '。更新会先停服、拉取新版本、重建产物；动手前会把步骤摊给你确认，你也可以先建个回滚点。</div>'
+          + (upHasNew
+            ? '本体有新版本：' + esc(ov.dsh.latestVersion || '') + '（本机 ' + esc(ov.dsh.version || '未知') + '）'
+            : '本体源码已更新，界面产物还没重建') + '</div>'
+          + '<div class="finding-cause">'
+          + (upHasNew
+            ? '上游 ' + esc(ov.dsh.latestChannel || '') + ' 通道已经发到 ' + esc(ov.dsh.latestVersion || '') + '，本机还是 ' + esc(ov.dsh.version || '未知') + '。'
+            : '源码提交比界面产物新，缺的只是最后的重建这一步。')
+          + '一次更新 = 停服 → 拉取 → 重建 → 重启，点一次就全做完，不用再点第二个按钮；动手前会把步骤摊给你确认，也可以先建个回滚点。</div>'
           + '<div class="btn-row" style="margin-top:10px">'
-          + '<button class="btn primary" data-write="core.update">' + icon('upload') + '<span>去更新本体</span></button>'
+          + '<button class="btn primary" data-write="' + upAction + '">' + icon(upAction === 'core.update' ? 'upload' : 'check') + '<span>' + upLabel + '</span></button>'
           + '<button class="btn" data-page="core">' + icon('box') + '<span>先看本体状态</span></button>'
           + '</div></div></div>';
       }
@@ -1216,9 +1225,14 @@ export const CLIENT_JS = `(function () {
   // ── 页面：DSH 本体 ───────────────────────────────────────────────
 
   function renderCore(r) {
+    // 任务5：以前「完成更新」和「更新本体」并排站着，用户不知道点哪个、也不知道点完算不算完。
+    // 合并成一个智能按钮 —— 有新版就拉取+重建+重启（core.update，本身就含重建那六步），
+    // 只是产物落后就直接重建（core.finishUpdate）。两个动作用户点的是同一个按钮。
+    var smartUpdate = r.needsFinishUpdate
+      ? writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate')
+      : writeBtn('upload', '更新本体', 'core.update');
     var tools = actBtn('shield', '校验本体', 'core.verify')
-      + writeBtn('check', '完成更新', 'core.finishUpdate')
-      + writeBtn('upload', '更新本体', 'core.update')
+      + smartUpdate
       + writeBtn('history', '回滚本体', 'core.rollback');
     var html = pageHead('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', tools);
     if (!r.sourceRoot) {
@@ -1310,21 +1324,128 @@ export const CLIENT_JS = `(function () {
       + ' · 文档 ' + (c.docs || 0) + ' · 测试 ' + (c.test || 0) + ' · 其它 ' + (c.other || 0);
   }
 
+  // 任务6：更新日志不再往页面上刷一长屏 —— 卡片只留中文概括 + 头几条，
+  // 全量列表进弹窗（弹窗里滚动看），再给一个「用 AI 中文总结」的口子（提交说明都是英文）。
+  var CHANGELOG_PREVIEW = 6;
+
+  function changelogRow(e) {
+    return '<div class="row"><div class="row-main"><div class="row-name">' + changelogTag(e.type) + esc(e.subject || '(无提交说明)')
+      + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
+  }
+
+  /** 中文分类计数：让用户一眼看出这次更新里"修了多少、加了多少"，而不是对着英文提交发呆。 */
+  function changelogChips(counts) {
+    var c = counts || {};
+    var order = [['feat', '新功能', 'ok'], ['fix', '修复', 'info'], ['perf', '性能', ''], ['refactor', '重构', ''], ['docs', '文档', ''], ['test', '测试', ''], ['other', '其它', '']];
+    var parts = [];
+    for (var i = 0; i < order.length; i++) {
+      var n = c[order[i][0]] || 0;
+      if (n) parts.push('<span class="tag ' + order[i][2] + '">' + order[i][1] + ' ' + n + '</span>');
+    }
+    return parts.join(' ') || '<span class="tag">没有分类信息</span>';
+  }
+
+  function changelogPreviewBox(entries) {
+    var rows = '';
+    var n = Math.min(entries.length, CHANGELOG_PREVIEW);
+    for (var i = 0; i < n; i++) rows += changelogRow(entries[i]);
+    var html = '<div class="rows">' + rows + '</div>';
+    if (entries.length > n) {
+      html += '<div class="field-help">还有 ' + (entries.length - n) + ' 条没列出来 —— 点下面的「看全部」在弹窗里滚动看，不再把页面撑长。</div>';
+    }
+    return html;
+  }
+
+  function changelogModalOpts(o) {
+    return {
+      title: o.title || '本体更新日志',
+      sub: o.sub || '',
+      counts: o.counts || null,
+      entries: o.entries || [],
+      installed: o.installed || '',
+      latest: o.latest || '',
+      note: o.note || ''
+    };
+  }
+
+  function openChangelogModal(opt) {
+    var o = changelogModalOpts(opt);
+    var rows = '';
+    for (var i = 0; i < o.entries.length; i++) rows += changelogRow(o.entries[i]);
+    openModal({
+      title: o.title,
+      sub: o.sub,
+      body: '<div id="cl-ai-out"></div>'
+        + '<div class="finding info" style="margin-bottom:10px"><div class="finding-title">' + changelogChips(o.counts) + '</div>'
+        + '<div class="finding-row">' + esc(o.note) + '</div></div>'
+        + '<div class="rows" style="max-height:52vh;overflow:auto">' + rows + '</div>',
+      foot: '<button class="btn" id="cl-ai">' + icon('chat') + '<span>用 AI 中文总结</span></button>'
+        + '<span class="spacer"></span><button class="btn primary" id="cl-close">关闭</button>'
+    });
+    var cb = $('cl-close');
+    if (cb) cb.addEventListener('click', closeModal);
+    var ab = $('cl-ai');
+    if (ab) ab.addEventListener('click', function () { aiSummarizeChangelog(ab, o); });
+  }
+
+  /**
+   * 把提交清单交给 AI 助手，让它在弹窗顶部用中文说人话（任务6：全是英文看不懂）。
+   * 没配 AI 时不装作能用 —— 直接说清去哪儿配。
+   */
+  function aiSummarizeChangelog(btn, o) {
+    var out = $('cl-ai-out');
+    if (!out) return;
+    var subjects = [];
+    for (var i = 0; i < o.entries.length && i < 120; i++) {
+      subjects.push('- [' + (o.entries[i].type || 'other') + '] ' + (o.entries[i].subject || ''));
+    }
+    out.innerHTML = '<div class="finding info" style="margin-bottom:10px"><div class="finding-title"><span class="spinner"></span> AI 正在读这 '
+      + subjects.length + ' 条改动…</div></div>';
+    btn.disabled = true;
+    var q = '下面是从 DSH ' + (o.installed || '?') + ' 到 ' + (o.latest || '?') + ' 的全部改动清单（每条是英文提交说明）。请用中文总结这次更新：'
+      + '① 先用一两句话说明这次更新主要是什么；② 再按「新功能 / 修复 / 性能与重构 / 其它」分组，每组挑最值得用户知道的 3-6 条，'
+      + '每条讲清楚「改了什么、对用户有什么影响」；③ 不要逐条翻译，不要贴英文原文，不要贴 commit 号，不要编造清单里没有的内容。\\n\\n'
+      + subjects.join('\\n');
+    api('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: q }] } }).then(function (r) {
+      out.innerHTML = '<div class="finding ok" style="margin-bottom:10px"><div class="finding-title">AI 的中文概括</div>'
+        + '<div class="finding-row explain-text" style="white-space:pre-wrap">' + esc(r.reply || '（AI 没给出内容）') + '</div></div>';
+    }).catch(function (e) {
+      out.innerHTML = '<div class="finding warn" style="margin-bottom:10px"><div class="finding-title"><span class="tag warn">没能总结</span>'
+        + esc(e && e.message ? e.message : String(e)) + '</div>'
+        + '<div class="finding-row">总结要用到你配的模型。先去「AI 助手」页把 API 地址、模型、密钥配好（也可以一键从 DSH 导入），再回来点一次。</div></div>';
+    }).finally(function () { btn.disabled = false; });
+  }
+
   function renderUpstreamChangelog(up) {
     var box = $('changelog-list');
     if (!box) return;
     var sub = $('changelog-sub');
-    if (sub) sub.textContent = '上游 ' + (up.latest || '') + ' 相对本机的改动';
-    var rows = '';
-    for (var i = 0; i < up.entries.length; i++) {
-      var e = up.entries[i];
-      rows += '<div class="row"><div class="row-main"><div class="row-name">' + changelogTag(e.type) + esc(e.subject || '(无提交说明)')
-        + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
-    }
+    if (sub) sub.textContent = '上游 ' + (up.latest || '') + ' 相对本机 · 共 ' + up.entries.length + ' 条';
+    var modalNote = '来自上游标签 ' + (up.toTag || '') + '；只算真实改动，合并提交（同步噪音）不计' + (up.note ? '；' + up.note : '');
+    var modalOpt = {
+      title: '本体更新日志',
+      sub: upstreamSummaryLine(up),
+      counts: up.counts,
+      entries: up.entries,
+      installed: up.installed,
+      latest: up.latest,
+      note: modalNote
+    };
     box.innerHTML = '<div class="finding info" style="margin-bottom:10px"><div class="finding-title">' + esc(upstreamSummaryLine(up)) + '</div>'
-      + '<div class="finding-row">来自上游标签 ' + esc(up.toTag || '') + '；只算真实改动，合并提交（同步噪音）不计'
-      + (up.note ? '；' + esc(up.note) : '') + '</div></div>'
-      + '<div class="rows">' + rows + '</div>';
+      + '<div class="finding-row">' + changelogChips(up.counts) + '</div></div>'
+      + changelogPreviewBox(up.entries)
+      + '<div class="btn-row" style="margin-top:10px">'
+      + '<button class="btn primary" id="cl-all">' + icon('list') + '<span>看全部 ' + up.entries.length + ' 条</span></button>'
+      + '<button class="btn" id="cl-summary">' + icon('chat') + '<span>用 AI 中文总结</span></button>'
+      + '</div>';
+    var all = $('cl-all');
+    if (all) all.addEventListener('click', function () { openChangelogModal(modalOpt); });
+    var sum = $('cl-summary');
+    if (sum) sum.addEventListener('click', function () {
+      openChangelogModal(modalOpt);
+      var ab = $('cl-ai');
+      if (ab) ab.click();
+    });
   }
 
   // 有新版但本机还没它的记录 → 给一个明确的动作（走任务引擎，会先弹计划）
@@ -1354,13 +1475,21 @@ export const CLIENT_JS = `(function () {
         b.innerHTML = emptyBox('没有读到提交记录', res && res.error ? res.error : '本体源码目录不是一个 git 仓库？');
         return;
       }
-      var rows = '';
-      for (var i = 0; i < res.entries.length; i++) {
-        var e = res.entries[i];
-        rows += '<div class="row"><div class="row-main"><div class="row-name">' + esc(e.subject || '(无提交说明)')
-          + '</div><div class="row-meta"><span class="mono">' + esc(e.sha) + '</span><span>' + esc(e.date || '') + '</span></div></div></div>';
-      }
-      b.innerHTML = '<div class="rows">' + rows + '</div>';
+      var entries = res.entries;
+      b.innerHTML = changelogPreviewBox(entries)
+        + '<div class="btn-row" style="margin-top:10px">'
+        + '<button class="btn primary" id="cl-all">' + icon('list') + '<span>看全部 ' + entries.length + ' 条</span></button>'
+        + '</div>';
+      var all = $('cl-all');
+      if (all) all.addEventListener('click', function () {
+        openChangelogModal({
+          title: '本机提交记录',
+          sub: '本机源码仓库最近 ' + entries.length + ' 条提交',
+          counts: null,
+          entries: entries,
+          note: '来自本机 git log（还没取到上游对比数据时显示这个）。上游新版本改了什么，点卡片上的「刷新」再看。'
+        });
+      });
     }).catch(function (err) {
       var b = $('changelog-list');
       if (b) b.innerHTML = emptyBox('读取失败', err && err.message ? err.message : String(err));
@@ -1426,9 +1555,11 @@ export const CLIENT_JS = `(function () {
   // ── 页面：插件 ───────────────────────────────────────────────────
 
   function renderPlugins(r) {
+    // 任务3：批量更新挪去了「插件市场」（用户在那儿看到谁有新版）。这里留个指路按钮，
+    // 免得以为功能没了。
     var tools = actBtn('shield', '插件诊断', 'plugin.diagnose')
       + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
-      + writeBtn('upload', '批量更新（含验证）', 'plugin.batchUpdate')
+      + navBtn('store', '去市场批量更新', 'market')
       + writeBtn('plus', '安装插件', 'plugin.install')
       + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline')
       + actBtn('activity', '测安装源速度', 'network.testSources')
@@ -1440,6 +1571,11 @@ export const CLIENT_JS = `(function () {
       + stat('实际生效', r.summary.active)
       + stat('装了没生效', r.summary.declaredButInactive, r.summary.declaredButInactive ? '可以点「修复」补登记' : '')
       + '</div></div>';
+    // 任务2：装了但被 DSH 整体跳过的插件（peer 不兼容）。
+    // 以前管家只转达 pnpm 的"安装成功"，用户永远不知道它根本没加载 —— 这块必须显形。
+    html += '<div class="card"><div class="card-title">装了却没加载<span class="sub">DSH 启动时判定版本不兼容、整包跳过的插件</span>'
+      + '<span class="spacer"></span><button class="btn sm" id="btn-skipped-refresh">' + icon('refresh') + '<span>重新扫描</span></button></div>'
+      + '<div id="skipped-list"><div class="empty"><span class="spinner"></span> 正在扫描 DSH 启动日志…</div></div></div>';
     if (state.extra.pluginDiag) html += diagCard('插件诊断结论', state.extra.pluginDiag);
     // 【P0-3】依赖冲突体检查询结果：列出「谁和谁要的版本不可能同时满足」+ 重复安装 + 锁文件状态
     if (state.extra.pluginDeps) {
@@ -1503,6 +1639,83 @@ export const CLIENT_JS = `(function () {
   }
 
   // ── 页面：日志 ───────────────────────────────────────────────────
+
+  /**
+   * 「装了却没加载」清单（任务2）。
+   * 现场来自 DSH 自己的启动输出（dsh-server-*.out/err.log 里那句
+   * "is incompatible with dsh ..."），服务端已经解析成人话；
+   * 这里只负责显示 + 给一条官方出路（profile 的 compatibility.json 精确版本豁免）。
+   */
+  function fillSkippedBundles() {
+    var el = $('skipped-list');
+    if (!el) return;
+    var rf = $('btn-skipped-refresh');
+    if (rf) rf.addEventListener('click', function () { fillSkippedBundles(); });
+    el.innerHTML = '<div class="empty"><span class="spinner"></span> 正在扫描 DSH 启动日志…</div>';
+    api('/api/plugins/skipped').then(function (res) {
+      var b = $('skipped-list');
+      if (!b) return;
+      var items = (res && res.items) || [];
+      if (!items.length) {
+        b.innerHTML = '<div class="empty"><div class="empty-title">没有被跳过的插件</div><div>'
+          + esc((res && res.note) || '最近几轮 DSH 启动输出里没有"版本不兼容、已跳过"的记录。') + '</div></div>';
+        return;
+      }
+      var html = '<div class="finding warn" style="margin-bottom:10px"><div class="finding-title"><span class="tag warn">装了没生效</span>'
+        + items.length + ' 个插件被 DSH 跳过了</div>'
+        + '<div class="finding-row">它们声明要的 DSH 内部包版本和本机运行时对不上，DSH 为了安全会把整包跳过 —— 包在、代码在，就是不加载。'
+        + '确认你信任它（知道它是干什么的、从哪来的）之后，可以给它开一张只针对这个版本的通行证；开完要重启一次 DSH 才会加载。</div></div><div class="rows">';
+      for (var i = 0; i < items.length; i++) {
+        var it = items[i];
+        html += '<div class="row"><div class="row-main"><div class="row-name">' + esc(it.name)
+          + (it.exempted ? ' <span class="tag ok">已放行</span>' : '') + '</div>'
+          + '<div class="row-meta"><span class="mono">' + esc(it.key) + '</span><span>要求 dsh ' + esc(it.runtime) + '</span>'
+          + (it.peers ? '<span>' + esc(it.peers) + '</span>' : '') + '</div></div>'
+          + '<div class="row-actions"><button class="btn sm ' + (it.exempted ? '' : 'primary') + '" data-exempt-key="' + esc(it.key)
+          + '" data-exempt-runtime="' + esc(it.runtime) + '" data-exempt-on="' + (it.exempted ? '0' : '1') + '">'
+          + (it.exempted ? '收回通行证' : '允许运行') + '</button></div></div>';
+      }
+      html += '</div><div class="field-help">通行证写在 ' + esc((res && res.compatibilityFile) || '') + '（DSH 官方的精确版本豁免），'
+        + '不动依赖、不动 bundles。DSH 正在运行的话，开完点一下上面的「重启服务」才会重新加载插件。</div>';
+      b.innerHTML = html;
+      bindExemptButtons(b);
+    }).catch(function (e) {
+      var b2 = $('skipped-list');
+      if (b2) b2.innerHTML = emptyBox('扫描失败', e && e.message ? e.message : String(e));
+    });
+  }
+
+  function bindExemptButtons(scope) {
+    var btns = scope.querySelectorAll('[data-exempt-key]');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].addEventListener('click', function () {
+        var btn = this;
+        var key = btn.getAttribute('data-exempt-key') || '';
+        var runtime = btn.getAttribute('data-exempt-runtime') || '';
+        var on = btn.getAttribute('data-exempt-on') === '1';
+        btn.disabled = true;
+        api('/api/plugins/exempt', { method: 'POST', body: { key: key, runtime: runtime, remove: !on } }).then(function (r) {
+          toast(on ? ('已允许 ' + key + ' 运行') : ('已收回 ' + key + ' 的通行证'), 'ok');
+          fillSkippedBundles();
+          if (r && r.restartHint) {
+            openModal({
+              title: '通行证已写好',
+              sub: key + ' @ dsh ' + runtime,
+              body: '<div class="finding info"><div class="finding-title">DSH 要重启一次才会重新加载它</div>'
+                + '<div class="finding-row">' + esc(r.restartHint) + '</div></div>',
+              foot: '<button class="btn primary" data-write="runtime.restart">' + icon('refresh') + '<span>重启 DSH 服务</span></button>'
+                + '<span class="spacer"></span><button class="btn" id="ex-close">稍后再说</button>'
+            });
+            var cb = $('ex-close');
+            if (cb) cb.addEventListener('click', closeModal);
+          }
+        }).catch(function (e) {
+          toast('没有改成：' + (e && e.message ? e.message : e), 'err');
+          btn.disabled = false;
+        });
+      });
+    }
+  }
 
   function renderLogs(r) {
     var kw = (state.logFilter || '').toLowerCase();
@@ -1865,6 +2078,31 @@ export const CLIENT_JS = `(function () {
           : ''))
       + '</div>';
 
+    // 任务1：手动指定 DSH 源码目录。
+    // 老毛病：探测失败时界面只说"在设置里手动指定"，但设置里根本没有这个框。
+    // 现在框在这儿，并且说清"当前生效的是谁、从哪来的"。
+    var sro = res.sourceRootOverride;   // { path, valid } | null
+    var effRoot = res.sourceRoot || null; // { path, source } | null
+    var SRC_LABEL = {
+      env: '环境变量 DSH_WEB_DIR',
+      config: '你手动指定的（就在下面这个框里）',
+      cache: '上次记住的位置',
+      'home-candidate': '自动搜索（用户目录）',
+      'drive-scan': '自动搜索（盘符扫描）'
+    };
+    html += '<div class="card"><div class="card-title">DSH 源码目录<span class="sub">本体在哪儿 —— 更新、回滚、重建都得用它</span></div>'
+      + setRow('现在用的是',
+        '<span class="mono">' + esc((effRoot && effRoot.path) || '没有找到') + '</span>'
+        + '<div class="field-help">' + (effRoot && effRoot.path
+          ? '来源：' + esc(SRC_LABEL[effRoot.source] || effRoot.source || '未知')
+          : '自动搜索没找到 DSH 源码树（判据：目录下面有 apps/cli）。在下面手动指定一个。') + '</div>',
+        '')
+      + setRow('手动指定',
+        '<input class="input" id="set-source-root" value="' + esc((sro && sro.path) || '') + '" placeholder="例如 G:/DeepSeek_Harness（留空 = 自动搜索）" spellcheck="false">'
+        + (sro && !sro.valid ? '<div class="field-help">上次指定的目录现在不像 DSH 源码树，会自动搜索接手 —— 换个路径再保存一次。</div>' : ''),
+        '填 DSH 的源码根目录（不是 apps/cli，也不是 profile 目录）；改完点下面的「保存设置」，立刻生效、不用重启。')
+      + '</div>';
+
     html += '<div class="card"><div class="card-title">网络与高级</div>'
       + setRow('npm 安装源',
         '<select class="select" id="set-npm-registry-pick"></select>'
@@ -1902,6 +2140,8 @@ export const CLIENT_JS = `(function () {
       autoCheckButlerUpdate: $('set-auto-butler').checked,
       npmRegistry: $('set-npm-registry').value,
       proxyUrl: $('set-proxy').value,
+      // 留空 = 回到自动搜索（服务端把 '' 当成"清掉手动指定"）
+      dshSourceRootOverride: $('set-source-root').value,
       dshPort: Number($('set-dsh-port').value),
       schedule: {
         enabled: $('set-sched-enabled').checked,
@@ -2122,7 +2362,10 @@ export const CLIENT_JS = `(function () {
         + '<div class="card">' + emptyBox('没能连上市场', why, '<div class="muted">检查网络或稍后再试；目录一旦拉到本地会缓存 6 小时。</div>') + '</div>';
     }
     var p = res.page;
-    var tools = '<button class="btn sm" id="btn-market-refresh">' + icon('refresh') + '<span>刷新目录</span></button>';
+    // 任务3：「全部更新」放在市场上最顺手 —— 用户就是在这里发现"有插件能更新"的。
+    // 有可更新项时按钮上直接写个数，一眼知道要更几个。
+    var tools = writeBtn('upload', res.outdatedCount ? ('全部更新（' + res.outdatedCount + ' 个）') : '全部更新', 'plugin.batchUpdate')
+      + '<button class="btn sm" id="btn-market-refresh">' + icon('refresh') + '<span>刷新目录</span></button>';
     var html = pageHead('插件市场', '线上目录共 ' + res.total + ' 个插件，数据更新于 ' + esc(res.updated || '未知') + '。', tools);
     html += '<div class="card"><div class="stats">'
       + stat('目录插件', p.total)
@@ -2556,11 +2799,14 @@ export const CLIENT_JS = `(function () {
     return html;
   }
 
-  function renderAi(cfg) {
-    AI.cfg = cfg;
+  /**
+   * API 设置表单。它现在住在弹窗里，不再摊在对话页上（任务7）——
+   * 元素 id 保持原样，绑事件的地方只有 bindAiSettings 一处。
+   */
+  function aiSettingsCard() {
+    var cfg = AI.cfg || { baseUrl: '', model: '', hasKey: false, keyMasked: '', attachDiagnostics: true };
     var keyPh = cfg.hasKey ? ('已保存（' + cfg.keyMasked + '）· 留空 = 不修改') : 'sk-…';
-    var html = pageHead('AI 助手', '自带 API 的对话助手：DSH 起不来的时候，管家还在 —— 把现场喂给它，照它说的修。密钥只存本机配置文件，绝不回传原文。', '');
-    html += '<div class="card"><div class="card-title">API 设置<span class="sub">OpenAI 兼容接口（DeepSeek / GLM / Kimi / Ollama 等都行）</span></div>'
+    var html = '<div class="card"><div class="card-title">API 设置<span class="sub">OpenAI 兼容接口（DeepSeek / GLM / Kimi / Ollama 等都行）</span></div>'
       + '<div class="field"><label class="field-label" for="ai-base">API 地址</label><input class="input" id="ai-base" placeholder="https://api.deepseek.com" value="' + esc(cfg.baseUrl) + '"></div>'
       + '<div class="field"><label class="field-label" for="ai-key">API 密钥</label><input class="input" id="ai-key" type="password" placeholder="' + esc(keyPh) + '" autocomplete="off"></div>'
       + '<div class="field"><label class="field-label" for="ai-model">模型名</label><input class="input" id="ai-model" placeholder="deepseek-chat" value="' + esc(cfg.model) + '"></div>'
@@ -2571,6 +2817,40 @@ export const CLIENT_JS = `(function () {
       + (cfg.hasKey ? '<button class="btn" id="ai-clearkey">清除已存密钥</button>' : '')
       + '</div></div>';
     html += dshImportCard();
+    return html;
+  }
+
+  /** 配置收进弹窗：对话才是这页的主体，配置是偶尔才碰的东西（任务7）。 */
+  function openAiSettings() {
+    openModal({
+      title: 'API 设置',
+      sub: 'OpenAI 兼容接口；也可以直接从 DSH 导入已经配好的通道。密钥只存本机配置文件。',
+      body: aiSettingsCard(),
+      foot: '<span class="spacer"></span><button class="btn" id="ai-settings-close">关闭</button>'
+    });
+    bindAiSettings(true);
+    var c = $('ai-settings-close');
+    if (c) c.addEventListener('click', closeModal);
+  }
+
+  function renderAi(cfg) {
+    AI.cfg = cfg;
+    var ready = !!(cfg.baseUrl && cfg.model && cfg.hasKey);
+    var tools = '<button class="btn sm" id="btn-ai-settings">' + icon('sliders') + '<span>API 设置</span></button>'
+      + '<button class="btn sm" id="btn-ai-test-top">' + icon('check') + '<span>测试连接</span></button>';
+    var html = pageHead('AI 助手', '自带 API 的对话助手：DSH 起不来的时候，管家还在 —— 把现场喂给它，照它说的修。密钥只存本机配置文件，绝不回传原文。', tools);
+    html += '<div class="card"><div class="card-title">当前通道<span class="sub">配置在右上角「API 设置」里</span></div>';
+    if (ready) {
+      html += kv('API 地址', cfg.baseUrl, true)
+        + kv('模型', cfg.model)
+        + kv('密钥', cfg.keyMasked || '已保存（不显示原文）')
+        + kv('诊断现场', cfg.attachDiagnostics ? '每次提问自动附带（已脱敏）' : '不附带');
+    } else {
+      html += '<div class="finding warn"><div class="finding-title"><span class="tag warn">还没配好</span>填上 API 地址、模型名和密钥才能对话</div>'
+        + '<div class="finding-row">DSH 里已经配过的话，最省事的办法是打开「API 设置」，用里面的「从 DSH 导入」一键把地址、模型、密钥搬过来。</div>'
+        + '<div class="finding-fix"><button class="btn primary" id="btn-ai-settings-2">' + icon('sliders') + '<span>打开 API 设置</span></button></div></div>';
+    }
+    html += '</div>';
     html += '<div class="card" style="margin-top:14px"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
       + '<div id="ai-box" class="chat-box"></div>'
       + '<div class="chat-row"><textarea id="ai-input" class="textarea" rows="2" placeholder="描述你的问题，回车发送（Shift+回车换行）…"></textarea>'
@@ -2641,37 +2921,48 @@ export const CLIENT_JS = `(function () {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
     });
     $('ai-send').addEventListener('click', send);
-    $('ai-save').addEventListener('click', function () {
+    $('ai-clear').addEventListener('click', function () { AI.messages = []; aiRenderAll(); });
+    // 「API 设置」收进弹窗后，页面上只剩这两个入口按钮（任务7）
+    var openers = ['btn-ai-settings', 'btn-ai-settings-2'];
+    for (var oi = 0; oi < openers.length; oi++) {
+      var ob = $(openers[oi]);
+      if (ob) ob.addEventListener('click', openAiSettings);
+    }
+    var tt = $('btn-ai-test-top');
+    if (tt) tt.addEventListener('click', function () { runAiTest(tt); });
+  }
+
+  /**
+   * 绑「API 设置」表单上的动作：保存 / 测试 / 清密钥 / 从 DSH 导入。
+   * inModal=true 表示表单在弹窗里 —— 保存成功后要先关弹窗再整页重画，
+   * 否则弹窗会盖在刷新后的页面上。
+   * 元素 id 与 aiSettingsCard() 里一一对应。
+   */
+  function bindAiSettings(inModal) {
+    var sv = $('ai-save');
+    if (sv) sv.addEventListener('click', function () {
       var body = { baseUrl: $('ai-base').value, model: $('ai-model').value, attachDiagnostics: $('ai-diag').checked };
       var k = $('ai-key').value;
       if (k) body.apiKey = k;
       api('/api/ai/config', { method: 'POST', body: body }).then(function (r) {
         AI.cfg = Object.assign({}, AI.cfg, { baseUrl: body.baseUrl, model: body.model, attachDiagnostics: body.attachDiagnostics, hasKey: r.hasKey, keyMasked: r.keyMasked });
         toast('AI 配置已保存', 'ok');
+        if (inModal) closeModal();
         go('ai', true);
       }).catch(function (e) { toast('保存失败：' + (e && e.message ? e.message : e), 'err'); });
     });
-    $('ai-test').addEventListener('click', function () {
-      var b = $('ai-test');
-      b.disabled = true;
-      b.textContent = '测试中…';
-      api('/api/ai/test', { method: 'POST', body: {} }).then(function (r) {
-        toast('连接正常：' + (r.reply || '').slice(0, 40), 'ok');
-      }).catch(function (e) { toast('连接失败：' + (e && e.message ? e.message : e), 'err'); }).finally(function () {
-        b.disabled = false;
-        b.textContent = '测试连接';
-      });
-    });
+    var tb = $('ai-test');
+    if (tb) tb.addEventListener('click', function () { runAiTest(tb); });
     var ck = $('ai-clearkey');
     if (ck) {
       ck.addEventListener('click', function () {
         api('/api/ai/config', { method: 'POST', body: { clearKey: true } }).then(function () {
           toast('已清除本机保存的密钥', 'ok');
+          if (inModal) closeModal();
           go('ai', true);
         }).catch(function (e) { toast('清除失败：' + (e && e.message ? e.message : e), 'err'); });
       });
     }
-    $('ai-clear').addEventListener('click', function () { AI.messages = []; aiRenderAll(); });
     // 从 DSH 导入：点了就走服务端搬运（密钥不会经过页面），成功后整页重画把新配置显示出来
     var importBtns = document.querySelectorAll('[data-dsh-import]');
     for (var ib = 0; ib < importBtns.length; ib++) {
@@ -2682,6 +2973,7 @@ export const CLIENT_JS = `(function () {
         btn.textContent = '导入中…';
         api('/api/ai/import-dsh', { method: 'POST', body: { key: key } }).then(function (r) {
           toast('已从 DSH 导入「' + ((r && r.label) || key) + '」' + (r && r.usedKey ? '（地址 + 模型 + 密钥）' : '（这个通道 DSH 里没存密钥，请自己填）'), 'ok');
+          if (inModal) closeModal();
           go('ai', true);
         }).catch(function (e) {
           toast('导入失败：' + (e && e.message ? e.message : e), 'err');
@@ -2690,6 +2982,20 @@ export const CLIENT_JS = `(function () {
         });
       });
     }
+  }
+
+  /** 测一次连通性：页面右上角与弹窗里各有一个按钮，共用这一份实现。 */
+  function runAiTest(btn) {
+    if (!btn) return;
+    var label = btn.innerHTML;
+    btn.disabled = true;
+    btn.textContent = '测试中…';
+    api('/api/ai/test', { method: 'POST', body: {} }).then(function (r) {
+      toast('连接正常：' + (r.reply || '').slice(0, 40), 'ok');
+    }).catch(function (e) { toast('连接失败：' + (e && e.message ? e.message : e), 'err'); }).finally(function () {
+      btn.disabled = false;
+      btn.innerHTML = label;
+    });
   }
 
   var PAGES = [
@@ -2904,6 +3210,8 @@ export const CLIENT_JS = `(function () {
     // 只有手动点「刷新」才会填上（2026-09-29 端到端实测抓到的老 bug）。
     if (page === 'core') fillChangelog();
     if (page === 'plugins' && state.cache.plugins) setNavCount('plugins', state.cache.plugins.summary.deps);
+    // 【同样必须在渲染之后】「装了却没加载」是异步扫日志补上的（任务2）
+    if (page === 'plugins') fillSkippedBundles();
     if (page === 'backups' && state.cache.backups) setNavCount('backups', (state.cache.backups.points || []).length);
     // ④ 切页后任务还在跑（如卸载）：进度条保持可见 —— go() 只重渲染主区，不碰固定底栏，
     // 但保险起见在每次重渲染后核对一次：有 running 任务却没挂 SSE 就重新挂上。

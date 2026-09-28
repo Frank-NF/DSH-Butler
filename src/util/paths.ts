@@ -140,7 +140,46 @@ export function legacyConfigPath(): string {
 export interface DshRootProbe {
   path: string;
   /** 发现方式，用于在界面上解释"为什么我认为 DSH 在这里"。 */
-  source: "env" | "cache" | "home-candidate" | "drive-scan";
+  source: "env" | "config" | "cache" | "home-candidate" | "drive-scan";
+}
+
+/** 这个目录像不像 DSH 源码树（判据：下面有 apps/cli）。 */
+export function isDshSourceRootDir(dir: string): boolean {
+  try {
+    return Deno.statSync(p(dir, DSH_CLI_SUBDIR)).isDirectory;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 配置里那个「手动指定 DSH 源码目录」怎么读 —— 由 config 模块注册进来。
+ *
+ * 为什么用注册而不是直接 import：paths 是最底层的工具（config 反过来要用它），
+ * 直接 import 就成环了。注册一个惰性读取器，两边都干净。
+ */
+let sourceRootOverrideReader: (() => string | null) | null = null;
+
+export function setSourceRootOverrideReader(fn: (() => string | null) | null): void {
+  sourceRootOverrideReader = fn;
+}
+
+/**
+ * 用户手动指定的源码目录（设置里填的那个）。
+ *
+ * valid=false 表示填了但那个目录不像 DSH 源码树 —— 界面必须如实说出来，
+ * 否则用户填错了却看到「还是用的老目录」，只会更糊涂。
+ */
+export function configuredSourceRoot(): { path: string; valid: boolean } | null {
+  let raw: string | null = null;
+  try {
+    raw = sourceRootOverrideReader?.() ?? null;
+  } catch {
+    raw = null;
+  }
+  const trimmed = raw?.trim();
+  if (!trimmed) return null;
+  return { path: trimmed, valid: isDshSourceRootDir(trimmed) };
 }
 
 /**
@@ -148,17 +187,15 @@ export interface DshRootProbe {
  * 判据：该目录下存在 apps/cli（DSH_CLI_SUBDIR）。
  */
 export function resolveDshSourceRoot(): DshRootProbe | null {
-  const isRoot = (dir: string): boolean => {
-    try {
-      return Deno.statSync(p(dir, DSH_CLI_SUBDIR)).isDirectory;
-    } catch {
-      return false;
-    }
-  };
+  const isRoot = isDshSourceRootDir;
 
-  // 1. 环境变量精确指定
+  // 1. 环境变量精确指定（测试隔离靠它，优先级必须最高）
   const envDir = Deno.env.get("DSH_WEB_DIR");
   if (envDir && isRoot(envDir)) return { path: normalize(envDir), source: "env" };
+
+  // 1.5 用户在设置里手动指定的目录 —— 这是"用户说了算"，要压过缓存与自动扫描
+  const manual = configuredSourceRoot();
+  if (manual?.valid) return { path: normalize(manual.path), source: "config" };
 
   // 2. 上次探测缓存（用户通过界面确认过的路径）
   try {

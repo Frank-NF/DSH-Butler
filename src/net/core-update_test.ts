@@ -5,10 +5,13 @@ import { assertEquals } from "@std/assert";
 
 import {
   checkCoreUpdate,
+  clearCoreUpdateCache,
   CORE_UPDATE_TTL_MS,
+  type CoreUpdateInfo,
   fetchDistTags,
   pickNewest,
   readCoreUpdateCache,
+  recomputeAvailable,
 } from "./core-update.ts";
 
 function fakeFetch(tags: Record<string, string> | number): typeof fetch {
@@ -123,4 +126,52 @@ Deno.test("checkCoreUpdate：联网失败但有旧缓存 → 退回缓存；没�
   assertEquals(none.latest, null);
   await Deno.remove(root, { recursive: true });
   await Deno.remove(empty, { recursive: true });
+});
+
+Deno.test("recomputeAvailable：缓存里那句「可更新」必须按当前版本重算（任务4 根因）", async () => {
+  const root = await Deno.makeTempDir();
+  // 更新前：本机 0.1.7-rc.1，上游 0.1.7-rc.2 → 缓存里记下 available=true
+  const before = await checkCoreUpdate({
+    installed: "0.1.7-rc.1",
+    fetcher: fakeFetch({ next: "0.1.7-rc.2" }),
+    root,
+  });
+  assertEquals(before.available, true);
+  // 更新后：本机已经是 0.1.7-rc.2，缓存还在有效期内（不会再联网）
+  const after = await checkCoreUpdate({
+    installed: "0.1.7-rc.2",
+    fetcher: fakeFetch({ next: "0.9.9" }),
+    root,
+  });
+  assertEquals(after.installed, "0.1.7-rc.2");
+  assertEquals(after.available, false, "更新完还挂着「可更新」就是这次要修的 bug");
+  await Deno.remove(root, { recursive: true });
+});
+
+Deno.test("recomputeAvailable：拿不到本机版本时不下结论（沿用缓存里的判断）", () => {
+  const info: CoreUpdateInfo = {
+    installed: "0.1.7-rc.1",
+    latest: "0.1.7-rc.2",
+    channel: "next",
+    tags: { next: "0.1.7-rc.2" },
+    available: true,
+    checkedAt: new Date().toISOString(),
+  };
+  assertEquals(recomputeAvailable(info, null).available, true);
+  assertEquals(recomputeAvailable(info, "0.1.7-rc.2").available, false);
+  assertEquals(recomputeAvailable(info, "0.1.6").available, true);
+});
+
+Deno.test("clearCoreUpdateCache：删掉缓存（没有也算清干净）", async () => {
+  const root = await Deno.makeTempDir();
+  await checkCoreUpdate({
+    installed: "0.1.7-rc.1",
+    fetcher: fakeFetch({ next: "0.1.7-rc.2" }),
+    root,
+  });
+  assertEquals(readCoreUpdateCache(root) !== null, true);
+  assertEquals(clearCoreUpdateCache(root), true);
+  assertEquals(readCoreUpdateCache(root), null);
+  assertEquals(clearCoreUpdateCache(root), false, "本来就没有，也算清干净了");
+  await Deno.remove(root, { recursive: true });
 });

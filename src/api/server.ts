@@ -42,7 +42,16 @@ import {
 } from "../net/market.ts";
 import { checkUpdates } from "../net/npm-registry.ts";
 import { collectLogs, readTail } from "../domains/runtime/logs.ts";
-import { butlerConfigPath, butlerLogFile, downloadsDir, p } from "../util/paths.ts";
+import {
+  butlerConfigPath,
+  butlerLogFile,
+  configuredSourceRoot,
+  dshProfileDir,
+  downloadsDir,
+  isDshSourceRootDir,
+  p,
+  resolveDshSourceRoot,
+} from "../util/paths.ts";
 import {
   clearAllNotices,
   loadNotices,
@@ -54,6 +63,11 @@ import { checkButlerUpdate } from "../net/butler-update.ts";
 import { collectCoreChangelog } from "../domains/core/status.ts";
 import { collectUpstreamChangelog } from "../domains/core/upstream_changelog.ts";
 import { autostartCommand, autostartEnabled, setAutostart } from "../host/autostart.ts";
+import {
+  collectSkippedBundles,
+  compatibilityFilePath,
+  writeExemption,
+} from "../domains/plugin/skipped_bundles.ts";
 import { log } from "../util/log.ts";
 
 const nextTick = (fn: () => void) => {
@@ -562,6 +576,10 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
         mirrors: MIRROR_CANDIDATES,
         configPath: butlerConfigPath(),
         defaultPort: BUTLER_PORT_HEADLESS,
+        // 手动指定的源码目录（界面要能区分「没指定」「指定了有效」「指定了但不对」）
+        sourceRootOverride: configuredSourceRoot(),
+        // 现在实际用的是哪个目录、怎么找到的（任务1：设置页要能显示"当前生效的是谁"）
+        sourceRoot: resolveDshSourceRoot(),
       });
     }
     if (req.method === "POST" && path === "/api/settings") {
@@ -635,6 +653,25 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       }
       if (typeof body.npmRegistry === "string") patch.npmRegistry = body.npmRegistry.trim();
       if (typeof body.proxyUrl === "string") patch.proxyUrl = body.proxyUrl.trim();
+      // 手动指定 DSH 源码目录：这个设置以前是死的（存了但没人读），现在真生效。
+      // 传 ""/null = 回到自动探测；填的目录不像 DSH 源码树就直接拒，绝不静默存一个假路径。
+      if (body.dshSourceRootOverride !== undefined) {
+        const raw = body.dshSourceRootOverride;
+        if (raw === null || (typeof raw === "string" && raw.trim() === "")) {
+          patch.dshSourceRootOverride = null;
+        } else if (typeof raw === "string") {
+          const dir = raw.trim();
+          if (!isDshSourceRootDir(dir)) {
+            return json({
+              ok: false,
+              error: "这个目录不像 DSH 源码树（里面找不到 apps/cli）：" + dir,
+            }, 400);
+          }
+          patch.dshSourceRootOverride = dir;
+        } else {
+          return json({ ok: false, error: "dshSourceRootOverride 必须是路径字符串或 null" }, 400);
+        }
+      }
       if (Object.keys(patch).length === 0) {
         return json({ ok: false, error: "没有任何可识别的设置项" }, 400);
       }
@@ -650,6 +687,45 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
       }
       log.info("api", `设置已更新：${Object.keys(patch).join("、")}`);
       return json({ ok: true, config: saveConfig({}), notes });
+    }
+
+    // 「装上了却被跳过」清单：插件的真实失败状态，装完必须让用户看见
+    if (req.method === "GET" && path === "/api/plugins/skipped") {
+      const scan = collectSkippedBundles();
+      return json({
+        ok: true,
+        ...scan,
+        profileDir: dshProfileDir(),
+        compatibilityFile: compatibilityFilePath(),
+      });
+    }
+    // 写/撤 DSH 的精确版本豁免（官方通道：不动依赖、不动 bundles）
+    if (req.method === "POST" && path === "/api/plugins/exempt") {
+      let body: Record<string, unknown>;
+      try {
+        body = await req.json();
+      } catch {
+        return json({ ok: false, error: "请求体不是合法 JSON" }, 400);
+      }
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      const runtime = typeof body.runtime === "string" ? body.runtime.trim() : "";
+      if (!key || !runtime) return json({ ok: false, error: "缺少 key 或 runtime" }, 400);
+      // 键要形如 包名@版本 —— 不许把任意字符串写进 DSH 的豁免文件
+      if (!/^[^\s@]+@[^\s@]+$/.test(key)) {
+        return json({ ok: false, error: "key 必须是 包名@版本 的形式" }, 400);
+      }
+      const remove = body.remove === true;
+      const res = writeExemption(key, runtime, { remove });
+      const verb = remove ? "撤销" : "写入";
+      log.info("plugin", verb + "兼容性豁免：" + key + " @ dsh " + runtime);
+      return json({
+        ok: true,
+        changed: res.changed,
+        table: res.table,
+        file: res.path,
+        // 外部写文件不保证被运行中的 DSH 重读 —— 老实告诉用户要重启
+        restartHint: remove ? "" : "豁免已写入；DSH 需要重启一次才会重新加载这个插件。",
+      });
     }
 
     if (req.method === "GET" && path === "/api/market/catalog") {

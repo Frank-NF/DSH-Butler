@@ -11,6 +11,7 @@ import {
   butlerConfigPath,
   dshProfileDir,
   legacyConfigPath,
+  setSourceRootOverrideReader,
   stampOf,
 } from "../../util/paths.ts";
 import { pathExists, readJson, writeJsonAtomic } from "../../host/fs.ts";
@@ -157,6 +158,10 @@ interface LegacyConfig {
 
 let cached: AppConfig | null = null;
 
+// 把「手动指定的 DSH 源码目录」读给最底层的 util/paths.ts（它不能反过来 import 这里，
+// 会成环）。惰性求值：只有真的去探测源码树时才会读配置。
+setSourceRootOverrideReader(() => (cached ?? loadConfig()).dshSourceRootOverride);
+
 /** 载入配置；不存在时返回默认值并落盘。 */
 export function loadConfig(): AppConfig {
   if (cached) return cached;
@@ -222,7 +227,12 @@ export function resetConfigCacheForTest(): void {
   cached = null;
 }
 
-/** 手动指定 DSH 源码目录。 */
+/**
+ * 手动指定 DSH 源码目录（传 null = 回到自动探测）。
+ *
+ * config 是被 paths 依赖的下层，所以这里反过来把读取器注册给 paths ——
+ * 见 util/paths.ts 的 setSourceRootOverrideReader。
+ */
 export function setDshSourceRoot(path: string | null): AppConfig {
   return saveConfig({ dshSourceRootOverride: path });
 }

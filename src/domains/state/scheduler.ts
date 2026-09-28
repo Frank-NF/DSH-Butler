@@ -35,6 +35,8 @@ import {
 } from "./schedule.ts";
 import { pathExists } from "../../host/fs.ts";
 import { readInstalledDeps } from "../plugin/deps_actions.ts";
+import { clearCoreUpdateCache } from "../../net/core-update.ts";
+import { invalidateOverview } from "../../api/overview.ts";
 
 export const DEFAULT_TICK_MS = 5 * 60_000;
 
@@ -60,6 +62,18 @@ export const PLUGIN_VERSION_ACTIONS: ReadonlySet<string> = new Set([
   "plugin.uninstall",
   "plugin.batchUpdate",
   "plugin.installOffline",
+]);
+
+/**
+ * 动过 DSH 本体这一批动作。
+ *
+ * 本体更新完，缓存里那句「上游有新版本」当场就过期了，而且它的 available 是按
+ * 更新前的版本算的 —— 不清掉的话首页「可更新」会挂到缓存过期（最多 6 小时）。
+ */
+export const CORE_VERSION_ACTIONS: ReadonlySet<string> = new Set([
+  "core.update",
+  "core.finishUpdate",
+  "core.rollback",
 ]);
 
 /** 定时任务 → 要交给引擎的动作。 */
@@ -137,6 +151,13 @@ export function startScheduler(opts: SchedulerOptions = {}): SchedulerHandle {
 
     // 插件装完/更新完：定时查更新留下的「有新版本」当场就过期了，立刻撤掉
     if (job && job.status === "succeeded" && PLUGIN_VERSION_ACTIONS.has(job.action)) {
+      if (clearStale(UPDATE_NOTICE_SOURCE)) noticed = true;
+    }
+
+    // 本体更新/回滚完：同样撤提醒，且必须把本体更新缓存删掉（里面的结论已经过期）
+    if (job && job.status === "succeeded" && CORE_VERSION_ACTIONS.has(job.action)) {
+      clearCoreUpdateCache();
+      invalidateOverview();
       if (clearStale(UPDATE_NOTICE_SOURCE)) noticed = true;
     }
 
