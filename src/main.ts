@@ -45,9 +45,13 @@ import {
   createTray,
   createWindow,
   type DesktopWindow,
+  evalJs,
   getMainWindow,
   installOverlay,
+  lastNavigatedOrigin,
+  msSinceLastNavigation,
   navigateMain,
+  rememberNavOrigin,
   setMainWindow,
   setShowHandler,
   showMainWindow,
@@ -56,6 +60,7 @@ import {
 import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
 import { BUTLER_BAR_JS } from "./web/bar.ts";
+import { windowLooksStuck } from "./host/window_health.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -247,6 +252,7 @@ function adoptDesktopWindow(url: string): DesktopWindow | null {
     // 默认 800×600 对 1080p 屏太袖珍，按 1.8 倍放到 1440×1080（不超屏）。
     const win = new BW({ title: WINDOW_TITLE, width: WINDOW_WIDTH, height: WINDOW_HEIGHT });
     win.navigate(url);
+    rememberNavOrigin(url);
     try {
       win.show();
     } catch { /* 某些平台构造即显示 */ }
@@ -602,6 +608,107 @@ function setupDesktopTray(
   return shellTray;
 }
 
+// ── 窗口卡在死页面上时的自愈 ─────────────────────────────────────────
+
+/** 问页面三件事：现在在哪、标题是什么、是不是 Chromium 的错误页。 */
+const WINDOW_STATE_JS =
+  "(function(){var e=document.querySelector('#main-frame-error,#error-code,.neterror');" +
+  // 标题要 encodeURIComponent：实测 executeJs 回来的非 ASCII 字符会被弄花
+  // （日志里出现过「DSH ,0??」这种），编码成纯 ASCII 才搬得回来，取到后再解码
+  "var t='';try{t=encodeURIComponent(document.title||'')}catch(x){}" +
+  "return JSON.stringify({href:location.href,origin:location.origin,title:t,error:!!e});})()";
+
+/** 探针把标题做了百分号编码（非 ASCII 过 FFI 会花），这里解回来；解不开就用原文。 */
+function decodeProbeText(s: string | undefined): string {
+  if (!s) return "";
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/** 上一轮看到的异常页面：连看两轮才算数，免得把"正在导航中"当成跑偏。 */
+let stuckSeen: { href: string; at: number } | null = null;
+/** 上次自愈的时间：救完给一分钟静默期，别把页面刷成幻灯片。 */
+let lastHealAt = 0;
+/** 连续几次问不出页面的话（渲染进程卡死时 executeJs 会一直抛）。 */
+let probeFailures = 0;
+/** 第一次成功探测记一条日志：出问题时要能确认"看护真的在跑"，平时不刷屏。 */
+let probeLogged = false;
+
+/**
+ * 「窗口卡在死页面上」的自愈。
+ *
+ * 【现场】2026-09-28 用户实测：管家窗口停在 Edge 的「127.0.0.1 拒绝连接」错误页
+ * （ERR_CONNECTION_REFUSED），而管家与 DSH 两个服务都活着 —— 说明某一刻窗口被指到了
+ * 一个**没人监听的本地端口**，之后没有任何机制把它拉回来。页面里那条悬浮条也随页面一起
+ * 没了，用户只剩托盘一条路（而托盘图标他们刚刚才遇上"丢了"，那条路也不可靠）。
+ *
+ * 判据（命中任意一条就是窗口废了）：
+ *   1) 页面源不是"我们最后指过去的那个源"，且那个源是本机回环地址 —— 真正出事那次就是这种；
+ *   2) 页面带 Chromium 错误页标记（连我们自己的地址都没打开、源却一样的那种）；
+ *   3) 页面是空白（about:blank / origin=null）。
+ * 用户自己点开的外部网站不算，别去打断他。
+ *
+ * 救法：跑偏的是管家自己的地址就回管家页，否则重新进 DSH（进不去会自动退回管家页）。
+ */
+async function healStuckWindow(): Promise<void> {
+  const win = getMainWindow();
+  if (!win?.executeJs) return;
+  let st: { href?: string; origin?: string; title?: string; error?: boolean } | null = null;
+  try {
+    const raw = await evalJs(win, WINDOW_STATE_JS);
+    st = typeof raw === "string" ? JSON.parse(raw) : (raw as typeof st);
+  } catch {
+    // 页面正在切换、窗口刚建好都会抛：下一轮再看。
+    // 但连续几次都问不出话，就说明渲染进程出事了 —— 重新导航一次（浏览器进程会换一个新渲染进程）
+    probeFailures++;
+    if (probeFailures >= 3) {
+      probeFailures = 0;
+      log.warn("main", "窗口连续 3 次问不出话（渲染进程可能卡死）—— 重新导航一次");
+      backToButler();
+    }
+    return;
+  }
+  probeFailures = 0;
+  if (!st || typeof st.origin !== "string") return;
+  const origin = st.origin;
+  // 第一次"看得见真页面"的时候记一条：出问题时要能确认看护真的在跑、看的是哪个页面。
+  // 起始那次探测通常是加载中的空白，不记（免得看起来像出事）。
+  if (!probeLogged && origin !== "null" && origin !== "") {
+    probeLogged = true;
+    log.info(
+      "main",
+      `窗口看护已生效：当前页面 ${origin}（标题「${decodeProbeText(st.title)}」），期望 ${lastNavigatedOrigin() ?? "(未知)"}`,
+    );
+  }
+  const expected = lastNavigatedOrigin();
+  const blank = origin === "null" || st.href === "about:blank";
+  const now = Date.now();
+  if (!windowLooksStuck(st, expected, { msSinceNavigation: msSinceLastNavigation() })) {
+    stuckSeen = null;
+    return;
+  }
+  const href = st.href ?? "(读不到地址)";
+  if (!stuckSeen || stuckSeen.href !== href) {
+    stuckSeen = { href, at: now };
+    return; // 第一轮只是记账：可能是导航中途
+  }
+  // 上一轮（30 秒前）看到的是同一个坏页面 → 确认卡住；救完一分钟内不重复救
+  if (now - stuckSeen.at < 20_000 || now - lastHealAt < 60_000) return;
+  lastHealAt = now;
+  stuckSeen = null;
+  const butlerOrigin = shellButlerUrl.split("?")[0] ?? "";
+  log.warn(
+    "main",
+    `窗口卡住了：${href}（标题「${decodeProbeText(st.title)}」${st.error ? "，错误页" : ""}）` +
+      ` —— 期望的源是 ${expected ?? "(未知)"}，正在重新导航`,
+  );
+  if (origin === butlerOrigin || blank) backToButler();
+  else goToDsh();
+}
+
 // ── 后台保活 ─────────────────────────────────────────────────────────
 
 /** 窗口是否正收在托盘里（隐藏时不要拿服务状态覆盖"已收进托盘"的提示）。 */
@@ -626,6 +733,12 @@ let unseenNotices = 0;
 function startHousekeeping(tray: TrayHandle | null, opts: { headless?: boolean } = {}): void {
   if (housekeepingTimer !== null) return;
   const tick = async () => {
+    // 先看一眼"窗口是不是卡在死页面上"：这件事与托盘在不在**无关** ——
+    // 页面一旦废了，页面里那条悬浮条也一起没了，用户本来就只剩托盘一条路，
+    // 托盘再不可用时更需要有人把页面救回来。
+    try {
+      await healStuckWindow();
+    } catch { /* 自愈失败不影响保活 */ }
     if (!tray) return;
     try {
       const st = await collectRuntimeStatus();

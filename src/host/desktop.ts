@@ -262,6 +262,7 @@ export function navigateMain(
   }
   try {
     win.navigate(url);
+    rememberNavOrigin(url);
     if (opts.title && win.setTitle) {
       try {
         win.setTitle(opts.title);
@@ -277,6 +278,37 @@ export function navigateMain(
   } catch (e) {
     log.warn("desktop", `窗口导航失败：${(e as Error).message}`);
     return false;
+  }
+}
+
+/**
+ * 窗口最后被指到哪个源（origin）上 —— 「页面跑偏」的自愈判据。
+ *
+ * 【为什么需要】2026-09-28 用户实测：管家窗口停在 Edge 的「127.0.0.1 拒绝连接」错误页上，
+ * 而管家与 DSH 两个服务都活着 —— 说明某次导航把窗口指到了没人监听的本地端口，
+ * 之后没有任何东西把它拉回来（页面里那条悬浮条也随页面一起没了，用户只剩托盘一条路）。
+ * 主程序每 30 秒拿页面里的 location.origin 和这里比一比，不一样就是跑偏了。
+ */
+let lastNavOrigin: string | null = null;
+/** 上次导航的时间：页面加载中会出现短暂空白，判"卡死"要给这段宽限期留位置。 */
+let lastNavAt = 0;
+
+export function lastNavigatedOrigin(): string | null {
+  return lastNavOrigin;
+}
+
+/** 距离上次导航过了多少毫秒（没导航过时返回一个很大的数）。 */
+export function msSinceLastNavigation(): number {
+  return lastNavAt === 0 ? Number.MAX_SAFE_INTEGER : Date.now() - lastNavAt;
+}
+
+/** 记下"这次把窗口指到了哪个源"（navigateMain 会自动记；直接 navigate 的地方要自己调）。 */
+export function rememberNavOrigin(url: string): void {
+  lastNavAt = Date.now();
+  try {
+    lastNavOrigin = new URL(url).origin;
+  } catch {
+    log.warn("desktop", `导航地址解析不了（自愈只能靠错误页标记判断）：${url}`);
   }
 }
 
