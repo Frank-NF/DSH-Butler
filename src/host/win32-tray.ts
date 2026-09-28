@@ -14,6 +14,14 @@
  *     另一个进程里，照常渲染），菜单关掉就恢复，实测心跳照常；
  *   - 图标优先从磁盘上的 .ico 加载，失败就用系统默认图标（绝不因为图标缺失而没托盘）。
  *
+ * 【Explorer 重启 = 所有托盘图标消失】这是 Win32 托盘的经典坑：Explorer 崩溃或被重启后，
+ * 通知区域会被整个重建，**所有应用之前挂上去的图标都不再存在**，而进程还活着 ——
+ * 用户看到的就是"用着用着托盘图标就丢了"。系统为此提供了标准补救：向所有顶层窗口广播一条
+ * 注册消息「TaskbarCreated」，应用收到就重新 Shell_NotifyIcon(NIM_ADD)。
+ * 本机实测（2026-09-28）：这台机器的 Explorer 一天崩了十几次（7:40 那波每 2 秒一次），
+ * 用户反复找不到托盘图标就反复双击 exe 重新启动 —— 所以这里既处理那条消息，
+ * 又留了一个「每 20 秒自检一次」的兜底（消息可能收不到：重启过快、消息窗口刚建好）。
+ *
  * 只在本平台可用；其它平台返回 ok=false，由调用方回退到 Deno.Tray。
  */
 
@@ -145,6 +153,7 @@ function buildTray(opts: Win32TrayOptions): Win32TrayHandle {
       result: "pointer",
     },
     LoadIconW: { parameters: ["pointer", "pointer"], result: "pointer" },
+    RegisterWindowMessageW: { parameters: ["pointer"], result: "u32" },
   });
   // GetModuleHandleW 在 kernel32 里（不属 user32）—— 放错库会报"找不到指定的程序"
   const kernel32 = Deno.dlopen(sys32 + "kernel32.dll", {
@@ -156,6 +165,12 @@ function buildTray(opts: Win32TrayOptions): Win32TrayHandle {
   });
 
   const hInstance = kernel32.symbols.GetModuleHandleW(null);
+
+  // Explorer 重启后通知区域重建时，系统会向所有顶层窗口广播这条注册消息。
+  // 必须在建窗口之前注册（消息号是进程内全局的，早注册早安心）。
+  const taskbarCreatedMsg = user32.symbols.RegisterWindowMessageW(
+    Deno.UnsafePointer.of(wide("TaskbarCreated")),
+  );
 
   // 菜单项 id → 命令号（1..n）
   const commands = new Map<number, string>();
@@ -209,9 +224,17 @@ function buildTray(opts: Win32TrayOptions): Win32TrayHandle {
     }
   };
 
+  // nid（图标描述结构）要到后面才建好，这里先占个位；窗口过程收到消息时它早已就绪
+  let ensureIcon: (why: string) => void = () => { /* 建好 nid 后赋真身 */ };
+
   const wndProc = new Deno.UnsafeCallback(
     { parameters: ["pointer", "u32", "u64", "i64"], result: "i64" },
     (hwnd: Deno.PointerValue, msg: number, wParam: bigint, lParam: bigint) => {
+      // Explorer 重启：通知区域是全新的，得自己把图标挂回去（这就是"图标用着用着丢了"的根因）
+      if (taskbarCreatedMsg !== 0 && msg === taskbarCreatedMsg) {
+        ensureIcon("Explorer 重启");
+        return 0n;
+      }
       if (msg === WM_TRAY_CALLBACK) {
         const evt = Number(lParam) & 0xffff;
         if (evt === WM_LBUTTONUP) {
@@ -307,12 +330,69 @@ function buildTray(opts: Win32TrayOptions): Win32TrayHandle {
     const tip = wide(opts.tooltip.slice(0, 63));
     for (let i = 0; i < 128 && i < tip.length; i++) nid[40 + i] = tip[i]!;
   }
-  const added = shell32.symbols.Shell_NotifyIconW(NIM_ADD, Deno.UnsafePointer.of(nid));
-  if (!added) {
-    log.warn("tray", "Shell_NotifyIcon(NIM_ADD) 失败，Win32 托盘不可用");
+  /** 当前图标在屏幕上的位置（拿不到 = 没有图标，或它在隐藏区里）。 */
+  const boundsOf = (): { x: number; y: number; width: number; height: number } | null => {
+    const id = new Uint8Array(40);
+    const idv = new DataView(id.buffer);
+    idv.setUint32(0, 40, true);
+    idv.setBigUint64(8, ptrValue(hwnd), true);
+    idv.setUint32(16, 1, true);
+    const rect = new Int32Array(4);
+    const hr = shell32.symbols.Shell_NotifyIconGetRect(
+      Deno.UnsafePointer.of(id),
+      Deno.UnsafePointer.of(rect),
+    );
+    if (hr !== 0) return null;
+    return {
+      x: rect[0]!,
+      y: rect[1]!,
+      width: rect[2]! - rect[0]!,
+      height: rect[3]! - rect[1]!,
+    };
+  };
+
+  /** 把图标（连同提示）挂上去；启动时用它，Explorer 重启后补挂也用它。 */
+  const addIcon = (why: string): boolean => {
+    const dv = new DataView(nid.buffer);
+    dv.setUint32(20, NIF_MESSAGE | NIF_ICON | NIF_TIP, true);
+    const ok = shell32.symbols.Shell_NotifyIconW(NIM_ADD, Deno.UnsafePointer.of(nid)) !== 0;
+    if (ok) {
+      // 位置只是"顺带看一眼"：刚挂上时系统可能还没排好版，取不到就不写，免得误报
+      const b = boundsOf();
+      log.info(
+        "tray",
+        `托盘图标已挂上（${why}）` + (b ? ` · 位置 ${b.x},${b.y}（${b.width}×${b.height}）` : ""),
+      );
+    } else {
+      log.warn("tray", `托盘图标挂不上（${why}）`);
+    }
+    return ok;
+  };
+
+  /**
+   * 自愈：先问一句"图标还在不在"（NIM_MODIFY 失败 = 被系统清掉了），不在就重新挂。
+   *
+   * 主路是 TaskbarCreated 消息，这里是兜底：消息可能收不到（Explorer 重启过快、
+   * 消息窗口刚建好还没进消息循环），而"图标没了"这件事用户在托盘上是看得见的。
+   */
+  ensureIcon = (why: string) => {
+    try {
+      const dv = new DataView(nid.buffer);
+      dv.setUint32(20, NIF_MESSAGE | NIF_ICON | NIF_TIP, true);
+      if (shell32.symbols.Shell_NotifyIconW(NIM_MODIFY, Deno.UnsafePointer.of(nid)) !== 0) return;
+      addIcon(why);
+    } catch (e) {
+      log.warn("tray", `托盘自检失败：${(e as Error).message}`);
+    }
+  };
+
+  if (!addIcon("启动")) {
     user32.symbols.DestroyWindow(hwnd);
     return DEAD;
   }
+
+  // 定时自检：窗口收进托盘时主程序的保活循环会跳过刷新提示（见 main.ts），所以这里自己盯着
+  const selfCheck = setInterval(() => ensureIcon("定时自检"), 20_000);
 
   // 消息泵：50ms 轮询，绝不阻塞主线程
   const msgBuf = new Uint8Array(64);
@@ -343,27 +423,10 @@ function buildTray(opts: Win32TrayOptions): Win32TrayHandle {
         dv.setUint32(20, NIF_MESSAGE | NIF_ICON | NIF_TIP, true); // 复位，后续 modify 语义一致
       } catch { /* 改提示失败不影响托盘 */ }
     },
-    getBounds: () => {
-      const id = new Uint8Array(40);
-      const dv = new DataView(id.buffer);
-      dv.setUint32(0, 40, true);
-      dv.setBigUint64(8, ptrValue(hwnd), true);
-      dv.setUint32(16, 1, true);
-      const rect = new Int32Array(4);
-      const hr = shell32.symbols.Shell_NotifyIconGetRect(
-        Deno.UnsafePointer.of(id),
-        Deno.UnsafePointer.of(rect),
-      );
-      if (hr !== 0) return null;
-      return {
-        x: rect[0]!,
-        y: rect[1]!,
-        width: rect[2]! - rect[0]!,
-        height: rect[3]! - rect[1]!,
-      };
-    },
+    getBounds: boundsOf,
     destroy: () => {
       clearInterval(pump);
+      clearInterval(selfCheck);
       try {
         shell32.symbols.Shell_NotifyIconW(NIM_DELETE, Deno.UnsafePointer.of(nid));
         user32.symbols.DestroyWindow(hwnd);
