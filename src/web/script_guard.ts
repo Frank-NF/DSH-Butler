@@ -56,6 +56,7 @@ const BUILTIN_GLOBALS = new Set([
   "setInterval",
   "clearInterval",
   "EventSource",
+  "URL",
   "URLSearchParams",
   "Function",
   "Symbol",

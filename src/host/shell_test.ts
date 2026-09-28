@@ -12,7 +12,8 @@
  *   2) 常规超时路径仍然有效：超时后立刻收工，不拖满宽限期。
  * 只在 Windows + 本机有 node 时跑（其它平台直接跳过）。
  */
-import { locate, run } from "./shell.ts";
+import { isSafeExternalUrl, locate, run } from "./shell.ts";
+
 
 function assert(cond: unknown, msg: string): void {
   if (!cond) throw new Error(`断言失败：${msg}`);
@@ -91,4 +92,15 @@ Deno.test({
     assert(r.timedOut, "应标记为超时");
     assert(elapsed < 5_000, `超时后要立刻收工，实测 ${elapsed} ms`);
   },
+});
+
+Deno.test("跨源链接白名单：只放行干净的 http/https（页面递过来的字符串不能直接进 cmd）", () => {
+  assert(isSafeExternalUrl("http://127.0.0.1:64119/"), "本机服务地址要放行");
+  assert(isSafeExternalUrl("https://github.com/Frank-NF/DSH-Butler"), "普通网址要放行");
+  assert(isSafeExternalUrl("http://127.0.0.1:3081/?token=abc"), "带查询串没问题");
+  assert(!isSafeExternalUrl("file:///C:/Windows/System32/calc.exe"), "不是 http(s) 一律拒绝");
+  assert(!isSafeExternalUrl("javascript:alert(1)"), "伪协议要拒绝");
+  assert(!isSafeExternalUrl("http://x/ & calc.exe"), "带 cmd 特殊字符要拒绝");
+  assert(!isSafeExternalUrl('http://x/"y'), "带引号要拒绝");
+  assert(!isSafeExternalUrl("http://x/ y"), "带空格要拒绝");
 });

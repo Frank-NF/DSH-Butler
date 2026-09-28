@@ -292,6 +292,20 @@ export async function which(name: string): Promise<string | null> {
  */
 const CMD_METACHARS = /[&|<>%"\r\n]/;
 
+/**
+ * 「可以交给系统浏览器打开的地址」白名单。
+ *
+ * 【为什么单独判一次】跨源链接是页面递过来的（见 web/bar.ts 的点击拦截），
+ * 最终会走 cmd /c start 打开 —— 页面能塞任何字符串进来，所以这里只放行干净的
+ * http/https 地址：带引号、空格、控制字符的一律拒绝。
+ * （CMD_METACHARS 那套是给 npm 参数用的，链接还要额外挡掉空格与单引号。）
+ */
+export function isSafeExternalUrl(url: string): boolean {
+  if (!/^https?:\/\//i.test(url)) return false;
+  if (/[\s"'<>|^%`]/.test(url)) return false;
+  return true;
+}
+
 export function assertSafeCmdArgs(args: readonly string[], what = "cmd 参数"): void {
   for (const a of args) {
     if (CMD_METACHARS.test(a)) {

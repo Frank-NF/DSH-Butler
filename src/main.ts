@@ -61,6 +61,7 @@ import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
 import { BUTLER_BAR_JS } from "./web/bar.ts";
 import { redactUrl, windowLooksStuck } from "./host/window_health.ts";
+import { isSafeExternalUrl } from "./host/shell.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -338,6 +339,17 @@ function setupButlerOverlay(butlerUrl: string): void {
       // 页面自己发现"我是 Chromium 的错误页"时的求救（注入进去的悬浮条发的）
       // 页面发现自己是 Chromium 错误页（且 history.back() 没能救回来）时的求救
       if (c === "recover") return recoverWindow("页面求救");
+      // 跨源链接改由系统浏览器打开：别让一条本机链接把整个壳顶掉（见 bar.ts 那段注释）
+      if (c === "open-external") {
+        const url = String((arg as { url?: unknown } | null)?.url ?? "");
+        if (!isSafeExternalUrl(url)) {
+          log.warn("main", "拒绝打开可疑链接（只允许 http/https，且不允许带引号等字符）");
+          return { ok: false, error: "链接不合法" };
+        }
+        log.info("main", `跨源链接改由系统浏览器打开：${redactUrl(url)}`);
+        openBrowser(url);
+        return { ok: true };
+      }
       if (c === "back") {
         back();
         return { ok: true };

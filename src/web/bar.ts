@@ -137,6 +137,30 @@ export const BUTLER_BAR_JS = `(function () {
     }, 1200);
   }
 
+  /*
+   * 【点开"别的地址"时别把整个界面顶掉】—— 交给系统浏览器打开。
+   *
+   * 现场（2026-09-28 抓到实据）：日志里那次失败"想去的是 http://127.0.0.1:64119/"，
+   * 上一站是 DSH（3081）—— 就是这个壳被一条本机链接顶掉了。聊天与插件面板里到处都是
+   * 本机开发服务的地址（AI 五笔的 ui-host 就是随机端口，重启一次端口就变），
+   * 点一下过期的链接，整个界面就变成「127.0.0.1 拒绝连接」，而 WebView2 没有后退按钮。
+   * 同源链接一律放行（那是 DSH 自己的页面跳转），只有跨源才拦下来交给宿主。
+   */
+  document.addEventListener('click', function (ev) {
+    var el = ev.target;
+    while (el && el.tagName !== 'A') el = el.parentNode;
+    if (!el || !el.getAttribute) return;
+    var href = el.getAttribute('href') || '';
+    if (href.slice(0, 6).toLowerCase() !== 'http:/' && href.slice(0, 7).toLowerCase() !== 'https:/') return;
+    var u;
+    try { u = new URL(el.href, location.href); } catch (e) { return; }
+    if (u.origin === location.origin) return;             // 同源：DSH 自己的跳转，放行
+    if (el.target && el.target !== '_self') return;       // 本来就开新窗口的，交给宿主
+    ev.preventDefault();
+    ev.stopPropagation();
+    try { call('open-external', { url: u.href }); } catch (e) { /* 宿主不在就算了，还有救援兜底 */ }
+  }, true);
+
   var busy = false;
   function say(text) { $('dbb-msg').textContent = text || ''; }
   function setBusy(on) {
