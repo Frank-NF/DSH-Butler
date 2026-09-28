@@ -23,6 +23,13 @@ export interface WindowHealthOptions {
   blankGraceMs?: number;
 }
 
+/** 日志里只留"协议 + 主机 + 端口 + 路径"：地址里可能带令牌。 */
+export function redactUrl(u: string): string {
+  const q = u.indexOf("?");
+  if (q < 0) return u;
+  return u.slice(0, q) + "?…";
+}
+
 /** 这个源是不是本机回环地址（本地服务没了才会出现的那种）。 */
 export function isLoopbackOrigin(origin: string): boolean {
   if (!origin.startsWith("http://") && !origin.startsWith("https://")) return false;

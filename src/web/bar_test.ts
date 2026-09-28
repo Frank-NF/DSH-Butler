@@ -60,6 +60,25 @@ Deno.test("悬浮条：启停/重启三个按钮都要真的接到命令上", ()
   );
 });
 
+Deno.test("悬浮条：被注入到 Chromium 错误页时立刻请宿主救援", () => {
+  assertEquals(
+    BUTLER_BAR_JS.includes("document.querySelector('#main-frame-error,#error-code,.neterror')"),
+    true,
+    "没检测错误页 —— 用户会一直盯着「拒绝连接」，只能重开程序",
+  );
+  assertEquals(
+    BUTLER_BAR_JS.includes("history.back()"),
+    true,
+    "应当先尝试 history.back() 秒退回上一页（不重刷、不丢草稿）",
+  );
+  assertEquals(BUTLER_BAR_JS.includes("call('recover')"), true, "退回失败时没向宿主求救");
+  assertEquals(
+    BUTLER_BAR_JS.includes("}, 1200);"),
+    true,
+    "缺少 back() 之后的复查：连续两次失败时 back() 可能回到的还是错误页",
+  );
+});
+
 Deno.test("悬浮条必须幂等：注入前先查探针 id（防止 SPA 下叠加出好几条）", () => {
   assertEquals(
     BUTLER_BAR_JS.includes("dsh-butler-dock"),

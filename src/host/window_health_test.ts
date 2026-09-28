@@ -6,7 +6,7 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { isLoopbackOrigin, windowLooksStuck } from "./window_health.ts";
+import { isLoopbackOrigin, redactUrl, windowLooksStuck } from "./window_health.ts";
 
 const EXPECTED = "http://127.0.0.1:64290";
 
@@ -97,6 +97,15 @@ Deno.test("窗口判据：刚导航完的空白不算卡死（启动时第一次
 Deno.test("窗口判据：还不知道期望的源时，只认错误页与空白页", () => {
   assertEquals(windowLooksStuck({ origin: "http://127.0.0.1:1234", href: "x" }, null), false);
   assertEquals(windowLooksStuck({ origin: "http://127.0.0.1:1234", href: "x", error: true }, null), true);
+});
+
+Deno.test("日志脱敏：地址里的令牌不许进日志", () => {
+  assertEquals(
+    redactUrl("http://127.0.0.1:3081/?token=SECRET123"),
+    "http://127.0.0.1:3081/?…",
+    "令牌段必须被截掉（但要留下主机与端口，那是排查的关键）",
+  );
+  assertEquals(redactUrl("http://127.0.0.1:39999/"), "http://127.0.0.1:39999/", "没有查询串就原样");
 });
 
 Deno.test("回环地址识别", () => {

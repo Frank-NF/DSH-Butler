@@ -60,7 +60,7 @@ import {
 import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
 import { BUTLER_BAR_JS } from "./web/bar.ts";
-import { windowLooksStuck } from "./host/window_health.ts";
+import { redactUrl, windowLooksStuck } from "./host/window_health.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -335,6 +335,9 @@ function setupButlerOverlay(butlerUrl: string): void {
       const c = String(cmd ?? "");
       // 页面自己报的"我现在就在管家界面上"（停止/重启之后要不要切页面看它）
       const atHome = Boolean(arg && (arg as { atHome?: unknown }).atHome);
+      // 页面自己发现"我是 Chromium 的错误页"时的求救（注入进去的悬浮条发的）
+      // 页面发现自己是 Chromium 错误页（且 history.back() 没能救回来）时的求救
+      if (c === "recover") return recoverWindow("页面求救");
       if (c === "back") {
         back();
         return { ok: true };
@@ -616,7 +619,10 @@ const WINDOW_STATE_JS =
   // 标题要 encodeURIComponent：实测 executeJs 回来的非 ASCII 字符会被弄花
   // （日志里出现过「DSH ,0??」这种），编码成纯 ASCII 才搬得回来，取到后再解码
   "var t='';try{t=encodeURIComponent(document.title||'')}catch(x){}" +
-  "return JSON.stringify({href:location.href,origin:location.origin,title:t,error:!!e});})()";
+  // 错误页虽然把 location 换成了 chrome-error://，但 performance 里留着那次失败想去的地址
+  // （真机实测：perf=["http://127.0.0.1:39999/?t=whatever"]）—— 这是查"谁把页面带偏了"的唯一线索
+  "var nv='';try{var n=performance.getEntriesByType('navigation');nv=(n&&n[0]&&n[0].name)||''}catch(x){}" +
+  "return JSON.stringify({href:location.href,origin:location.origin,title:t,error:!!e,nav:nv});})()";
 
 /** 探针把标题做了百分号编码（非 ASCII 过 FFI 会花），这里解回来；解不开就用原文。 */
 function decodeProbeText(s: string | undefined): string {
@@ -632,6 +638,10 @@ function decodeProbeText(s: string | undefined): string {
 let stuckSeen: { href: string; at: number } | null = null;
 /** 上次自愈的时间：救完给一分钟静默期，别把页面刷成幻灯片。 */
 let lastHealAt = 0;
+/** 上次"页面求救"式救援的时间：给几秒静默，防止两条路同时救打架。 */
+let lastRecoverAt = 0;
+/** 最近的救援时间戳：一分钟内救太多说明在打转（例如目标本身也是死的），得停手。 */
+let recoverHistory: number[] = [];
 /** 连续几次问不出页面的话（渲染进程卡死时 executeJs 会一直抛）。 */
 let probeFailures = 0;
 /** 第一次成功探测记一条日志：出问题时要能确认"看护真的在跑"，平时不刷屏。 */
@@ -656,7 +666,7 @@ let probeLogged = false;
 async function healStuckWindow(): Promise<void> {
   const win = getMainWindow();
   if (!win?.executeJs) return;
-  let st: { href?: string; origin?: string; title?: string; error?: boolean } | null = null;
+  let st: { href?: string; origin?: string; title?: string; error?: boolean; nav?: string } | null = null;
   try {
     const raw = await evalJs(win, WINDOW_STATE_JS);
     st = typeof raw === "string" ? JSON.parse(raw) : (raw as typeof st);
@@ -691,22 +701,53 @@ async function healStuckWindow(): Promise<void> {
     return;
   }
   const href = st.href ?? "(读不到地址)";
-  if (!stuckSeen || stuckSeen.href !== href) {
-    stuckSeen = { href, at: now };
-    return; // 第一轮只是记账：可能是导航中途
+  // 错误页是"已经加载失败"的终态，不会出现在正常加载过程中 —— 不必等第二轮
+  if (st.error !== true) {
+    if (!stuckSeen || stuckSeen.href !== href) {
+      stuckSeen = { href, at: now };
+      return; // 第一轮只是记账：可能是导航中途
+    }
+    if (now - stuckSeen.at < 20_000) return; // 上一轮到现在还没到 20 秒
   }
-  // 上一轮（30 秒前）看到的是同一个坏页面 → 确认卡住；救完一分钟内不重复救
-  if (now - stuckSeen.at < 20_000 || now - lastHealAt < 60_000) return;
+  if (now - lastHealAt < 60_000) return; // 救完一分钟内不重复救
   lastHealAt = now;
   stuckSeen = null;
-  const butlerOrigin = shellButlerUrl.split("?")[0] ?? "";
   log.warn(
     "main",
     `窗口卡住了：${href}（标题「${decodeProbeText(st.title)}」${st.error ? "，错误页" : ""}）` +
-      ` —— 期望的源是 ${expected ?? "(未知)"}，正在重新导航`,
+      ` —— 想去的是 ${st.nav ? redactUrl(st.nav) : "(错误页没留下地址)"}，` +
+      `上一站是 ${expected ?? "(未知)"}，正在救援`,
   );
-  if (origin === butlerOrigin || blank) backToButler();
-  else goToDsh();
+  recoverWindow("看护发现卡住");
+}
+
+/**
+ * 把窗口从死页面上救回去（看护发现的、页面自己求救的，都走这里）。
+ *
+ * 目标选"用户原来待的那个界面"：跑偏前在 DSH 就回 DSH（他的对话还在那儿），
+ * 否则回管家页。DSH 起不来时 goToDsh 自己会退回管家页。
+ */
+function recoverWindow(why: string): { ok: boolean; to: "butler" | "dsh" } {
+  const now = Date.now();
+  if (now - lastRecoverAt < 5_000) return { ok: false, to: "butler" };
+  // 一分钟内救超过 3 次 = 在打转（多半是救回去的目标本身也是死的）。
+  // 这时停手并说清楚：再救只会把页面刷成幻灯片，交给用户从托盘处理。
+  recoverHistory = [...recoverHistory.filter((t) => now - t < 60_000), now];
+  if (recoverHistory.length > 3) {
+    log.warn("main", `窗口救援暂停：一分钟内已经救过 ${recoverHistory.length - 1} 次，像是在打转 —— 请从托盘「回到管家」手动处理`);
+    return { ok: false, to: "butler" };
+  }
+  lastRecoverAt = now;
+  const expected = lastNavigatedOrigin();
+  const butlerOrigin = shellButlerUrl.split("?")[0] ?? "";
+  const toDsh = expected !== null && expected !== "" && expected !== butlerOrigin;
+  log.warn(
+    "main",
+    `窗口救援（${why}）：${toDsh ? "回 DSH 界面" : "回管家界面"}（上一站 ${expected ?? "(未知)"}）`,
+  );
+  if (toDsh) goToDsh();
+  else backToButler();
+  return { ok: true, to: toDsh ? "dsh" : "butler" };
 }
 
 // ── 后台保活 ─────────────────────────────────────────────────────────

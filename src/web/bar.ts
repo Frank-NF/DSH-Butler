@@ -110,6 +110,33 @@ export const BUTLER_BAR_JS = `(function () {
    */
 
   function $(id) { return document.getElementById(id); }
+
+  /*
+   * 【这一页如果是 Chromium 的错误页，立刻请宿主把界面救回去】
+   *
+   * 用户根本不该看到「127.0.0.1 拒绝连接」这种页面 —— 实测多半是页面上某条指向本机
+   * 某个已经没在跑的服务地址的链接被点了一下（聊天里到处都是 127.0.0.1:端口 这种字样），
+   * 一点就把整个界面顶掉，而 WebView2 里没有"后退"按钮，用户只能靠托盘或重开程序。
+   * 宿主收到 recover 会重新导航（回到他原来待的那个界面）；真接不上时宿主那边还有
+   * 30 秒一轮的看护兜底。这条检测放在最前面：晚一瞬用户就看见那张错误页了。
+   */
+  if (document.querySelector('#main-frame-error,#error-code,.neterror')) {
+    // 真机实测（无头 Edge + 死端口）：错误页也在会话历史里，history.back() 能**秒回**
+    // 被顶掉之前那一页，而且不用重刷 —— DSH 里的对话、输入框草稿都还在。
+    //
+    // 但不能只靠它：连续两次失败时，退回上一页可能落到的还是错误页（实测过），
+    // 所以 1.2 秒后再看一眼 —— 还在错误页上就请宿主重新导航。
+    // 退回成功的话，这个定时器随页面一起消失，宿主那边一点动静都不需要。
+    try {
+      if (history.length > 1) history.back();
+    } catch (e) { /* 退回失败就等下面那次兜底 */ }
+    setTimeout(function () {
+      try {
+        if (document.querySelector('#main-frame-error,#error-code,.neterror')) call('recover');
+      } catch (e) { /* 通道不可用就算了，宿主 30 秒看护兜底 */ }
+    }, 1200);
+  }
+
   var busy = false;
   function say(text) { $('dbb-msg').textContent = text || ''; }
   function setBusy(on) {
