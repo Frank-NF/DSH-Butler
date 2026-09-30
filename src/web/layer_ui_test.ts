@@ -60,6 +60,40 @@ Deno.test("插件页：页头 1 主 1 次，低频与危险动作收进 ⋯，�
   );
 });
 
+Deno.test("指路按钮清零：方案 12 行清单三条落地，页内直达", () => {
+  // ① 外壳状态卡「去一键部署」→ 原地开部署表单弹窗（btn-bootstrap-form），不跳页
+  const shell = between(CLIENT_JS, "function shellCard()", "function renderFindings(");
+  assertEquals(shell.length > 200, true, "shellCard 段没截到（锚点要检查）");
+  assertEquals(CLIENT_JS.includes("navBtn('deploy'"), false, "外壳卡还有「去一键部署」指路");
+  const dep = between(shell, "这台机器还没装 DSH", "s.next === 'enter'");
+  assertEquals(dep.includes('id="btn-bootstrap-form"'), true, "外壳卡该原地开部署表单弹窗");
+  assertEquals(dep.includes('class="btn primary"'), true, "外壳卡部署按钮该是主按钮");
+
+  // ② 总览可更新卡「先看本体状态」→ 两个版本号卡内已写全，按钮删掉
+  assertEquals(CLIENT_JS.includes("先看本体状态"), false, "总览「先看本体状态」指路还在");
+
+  // ③ 部署页已装卡「去 DSH 本体页」→ 更新动作页内直达
+  const inst = between(CLIENT_JS, "这台机器已经装过 DSH", "} else if (plan.blockers");
+  assertEquals(inst.length > 100, true, "已装卡段没截到（锚点要检查）");
+  assertEquals(
+    CLIENT_JS.includes("navBtn('box', '去 DSH 本体页'"),
+    false,
+    "部署页还有「去 DSH 本体页」指路",
+  );
+  assertEquals(
+    inst.includes("writeBtn('upload', '更新本体', 'core.update', {}, 'primary')"),
+    true,
+    "已装卡该给页内直达的「更新本体」主按钮",
+  );
+
+  // ④ 快捷入口是命名跳板卡（方案 12 行清单外），不许顺手删
+  assertEquals(
+    CLIENT_JS.includes("navBtn('sliders', '环境与配置', 'env')"),
+    true,
+    "快捷入口被误删了 —— 它不是指路补丁，是设计好的跳板卡",
+  );
+});
+
 Deno.test("本体页六卡：卡内不摆指路按钮，双名单详情页内直达", () => {
   const core = between(CLIENT_JS, "function renderCore(r) {", "function fillChangelog()");
   assertEquals(core.length > 400, true, "本体页渲染段没截到（锚点要检查）");

@@ -325,7 +325,7 @@ export const CLIENT_JS = `(function () {
   /**
    * 外壳状态卡 —— 打开程序第一眼看到的东西。
    *
-   * 这一屏只允许有一个主行动：能进就直接进 DSH；没装就去部署；服务没起就起了再进。
+   * 这一屏只允许有一个主行动：能进就直接进 DSH；没装就当场开部署表单（页内直达，不跳页）；服务没起就起了再进。
    * 四种状态各对应一句人话 + 一个按钮，别让用户自己想"我该点哪"。
    */
   function shellCard() {
@@ -335,7 +335,9 @@ export const CLIENT_JS = `(function () {
     if (!s || s.next === 'deploy') {
       html += '<div class="hero-title">这台机器还没装 DSH</div>'
         + '<div class="hero-desc">' + esc(s ? s.note : '先做一次一键部署；装完之后这个窗口就是 DSH 本体。') + '</div>'
-        + '<div class="btn-row" style="margin-top:12px">' + navBtn('deploy', '去一键部署', 'bootstrap', 'primary') + '</div>';
+        // 阶段一 T4（方案 196 行）：删「去一键部署」指路 —— 部署表单本来就是弹窗，在这儿点开、看完计划、确认执行，全程不跳页。
+        + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-bootstrap-form">'
+        + icon('deploy') + '<span>一键部署…</span></button></div>';
     } else if (s.next === 'enter') {
       html += '<div class="hero-title">DSH 已就绪</div><div class="hero-desc">' + esc(s.note) + '</div>'
         + '<div class="btn-row" style="margin-top:12px">'
@@ -1167,9 +1169,9 @@ export const CLIENT_JS = `(function () {
             ? '上游 ' + esc(ov.dsh.latestChannel || '') + ' 通道已经发到 ' + esc(ov.dsh.latestVersion || '') + '，本机还是 ' + esc(ov.dsh.version || '未知') + '。'
             : '源码提交比界面产物新，缺的只是最后的重建这一步。')
           + '一次更新 = 停服 → 拉取 → 重建 → 重启，点一次就全做完，不用再点第二个按钮；动手前会把步骤摊给你确认，也可以先建个回滚点。</div>'
+          // 阶段一 T4（方案 196 行）：删掉跳去本体页的路条 —— 两个版本号上面已经写全，本卡只剩更新这一个主行动。
           + '<div class="btn-row" style="margin-top:10px">'
           + '<button class="btn primary" data-write="' + upAction + '">' + icon(upAction === 'core.update' ? 'upload' : 'check') + '<span>' + upLabel + '</span></button>'
-          + '<button class="btn" data-page="core">' + icon('box') + '<span>先看本体状态</span></button>'
           + '</div></div></div>';
       }
       html += '<div class="card"><div class="card-title">问题概览<span class="sub">来自最近一次体检</span></div><div id="overview-findings">'
@@ -2671,8 +2673,11 @@ export const CLIENT_JS = `(function () {
     if (plan.verdict === 'already-installed') {
       html += '<div class="card hero warn"><div class="hero-title">这台机器已经装过 DSH</div>'
         + '<div class="hero-desc">本体在 ' + esc(plan.installed ? plan.installed.path : plan.targetRoot)
-        + '。日常更新请用「DSH 本体 → 更新本体」；确实要从零重装，可以强制重装 —— 旧目录会先移进隔离区（不删除，可还原）。</div>'
-        + '<div class="btn-row" style="margin-top:12px">' + navBtn('box', '去 DSH 本体页', 'core')
+        + '。日常更新点下面的「更新本体」（停服 → 拉取 → 重建 → 重启，点一次就全做完）；'
+        + '确实要从零重装，可以强制重装 —— 旧目录会先移进隔离区（不删除，可还原）。</div>'
+        // 阶段一 T4（方案 196 行）：删「去 DSH 本体页」指路 —— 日常更新这一步页内直达，更新计划照样先摊给你确认；细看状态走侧栏「DSH 本体」。
+        + '<div class="btn-row" style="margin-top:12px">'
+        + writeBtn('upload', '更新本体', 'core.update', {}, 'primary')
         + '<button class="btn" id="btn-bootstrap-form">' + icon('deploy') + '<span>强制重装…</span></button></div></div>';
     } else if (plan.blockers && plan.blockers.length) {
       html += '<div class="card hero err"><div class="hero-title">现在还不能开始</div>'
