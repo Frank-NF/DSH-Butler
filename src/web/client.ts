@@ -406,14 +406,30 @@ export const CLIENT_JS = `(function () {
     $('progress-detail').textContent = '';
     $('progress-fill').style.width = '0%';
     $('progress-steps').innerHTML = '';
+    $('sb-task').textContent = title;
+    $('sb-task').classList.add('running');
   }
-  function hideProgress() { $('progress-wrap').classList.remove('show'); }
+  function hideProgress() {
+    $('progress-wrap').classList.remove('show');
+    $('sb-task').textContent = '空闲';
+    $('sb-task').classList.remove('running');
+  }
   function renderSteps(steps) {
     var html = '';
     for (var i = 0; i < steps.length; i++) {
       html += '<span class="step ' + esc(steps[i].status) + '">' + esc(steps[i].title) + '</span>';
     }
     $('progress-steps').innerHTML = html;
+  }
+
+  // ── 底部状态栏（阶段一 T5，方案第 98/106 行）─────────────────────
+  // 28px 常显四段：版本 · 服务地址 · 任务指示 · 最近回滚点。
+  // 版本与回滚点时间来自首屏快照；任务段跟着 showProgress/hideProgress 走。
+  function fillStatusBar(ov) {
+    $('sb-version').textContent = 'v' + ((ov && ov.app && ov.app.version) || '');
+    $('sb-url').textContent = location.origin || 'http://127.0.0.1:8731';
+    var at = ov && ov.backup ? ov.backup.latestRollbackAt : null;
+    $('sb-backup').textContent = at ? '最近回滚点 ' + fmtAgo(at) : '最近回滚点 无';
   }
 
   /**
@@ -1132,6 +1148,7 @@ export const CLIENT_JS = `(function () {
       api('/api/notices').catch(function () { return null; }),
     ]).then(function (res) {
       var ov = res[0];
+      fillStatusBar(ov);
       state.shell = res[1] && res[1].state ? res[1].state : null;
       if (res[2] && res[2].notices) state.notices = res[2].notices;
       var html = pageHead('总览', 'DSH 本体、服务与插件的当前状况。', '<button class="btn sm" id="btn-refresh-page">' + icon('refresh') + '<span>刷新</span></button>');
@@ -3297,6 +3314,13 @@ export const CLIENT_JS = `(function () {
     if (jr) { openJob(jr.getAttribute('data-job')); return; }
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
+    // 底部状态栏「任务」段（阶段一 T5）：跑着就点开/收起进度面板，空闲就说明一句
+    var sbTask = hit('#sb-task');
+    if (sbTask) {
+      if (state.job) $('progress-wrap').classList.toggle('show');
+      else toast('当前空闲，没有进行中的任务');
+      return;
+    }
     if (hit('#btn-refresh-changelog')) { fillChangelog(); return; }
     // 设置页左侧分组导航：切组只切 hidden，不重渲染 —— 已经改过的输入不会丢
     // 主题下拉：选完立刻预览（保存时再落进配置），不用非点保存才看得见
@@ -3480,6 +3504,7 @@ export const CLIENT_JS = `(function () {
   applyNavTips();
   api('/api/state/overview').then(function (ov) {
     $('app-version').textContent = 'v' + (ov.app.version || '');
+    fillStatusBar(ov);
     go('overview', false);
     // ④ 窗口刚打开时，若后台还有在跑的任务（如上一轮没走完的卸载），把进度条挂回去
     adoptRunningJob();

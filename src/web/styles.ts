@@ -112,7 +112,7 @@ button { cursor: pointer; }
 
 /* ── 骨架 ───────────────────────────────────────────────────────── */
 
-.app { display: grid; grid-template-rows: var(--topbar-h) 1fr; height: 100vh; }
+.app { display: grid; grid-template-rows: var(--topbar-h) 1fr 28px; height: 100vh; }
 
 .topbar {
   display: flex; align-items: center; gap: 12px;
@@ -393,10 +393,30 @@ button { cursor: pointer; }
 .textarea { font-family: var(--font-mono); font-size: 12.5px; min-height: 84px; resize: vertical; }
 .field-help { color: var(--text-3); font-size: 12px; margin-top: 4px; }
 
+/* ── 底部状态栏（阶段一 T5，方案第 98 行：28px 常显四段）────────────── */
+
+.statusbar {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 26px;
+  background: var(--surface-2);
+  border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+  overflow: hidden; white-space: nowrap;
+}
+.statusbar .sb-sep { opacity: .55; }
+.statusbar .sb-url { font-family: var(--font-mono); }
+.sb-task {
+  font: inherit; color: var(--text-3);
+  background: none; border: 0; padding: 0; cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+.sb-task:hover { color: var(--text); text-decoration: underline; }
+.sb-task.running { color: var(--brand); }
+
 /* ── 底部任务条 ─────────────────────────────────────────────────── */
 
 .progress-wrap {
-  position: fixed; left: var(--sidebar-w); right: 0; bottom: 0; z-index: 40;
+  position: fixed; left: var(--sidebar-w); right: 0; bottom: 28px; z-index: 40;
   background: var(--surface); border-top: 1px solid var(--border);
   padding: 10px 26px 12px; display: none;
 }

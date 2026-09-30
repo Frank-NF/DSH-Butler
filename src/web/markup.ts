@@ -61,6 +61,15 @@ export const INDEX_HTML = `<!doctype html>
     </nav>
     <main class="main" id="main" tabindex="-1"></main>
   </div>
+  <footer class="statusbar" id="statusbar" aria-label="底部状态栏">
+    <span class="sb-seg" id="sb-version" title="当前版本">—</span>
+    <span class="sb-sep" aria-hidden="true">·</span>
+    <span class="sb-seg sb-url" id="sb-url" title="服务地址">—</span>
+    <span class="sb-sep" aria-hidden="true">·</span>
+    <button type="button" class="sb-task" id="sb-task" title="点一下展开或收起进度面板">空闲</button>
+    <span class="sb-sep" aria-hidden="true">·</span>
+    <span class="sb-seg" id="sb-backup" title="最近一次回滚点的创建时间">最近回滚点 无</span>
+  </footer>
 </div>
 
 <div class="progress-wrap" id="progress-wrap">
