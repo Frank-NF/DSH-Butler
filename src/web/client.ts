@@ -288,6 +288,16 @@ export const CLIENT_JS = `(function () {
   function navBtn(iconName, label, page, cls) {
     return '<button class="btn ' + (cls || 'sm') + '" data-page="' + esc(page) + '">' + icon(iconName) + '<span>' + esc(label) + '</span></button>';
   }
+  // 「⋯ 更多」下拉：页级低频与危险动作收进这里（原生 details 开合，不依赖额外样式表）。
+  // 菜单项就是普通按钮，写操作照走 plan→确认；点菜单外面由全局委托负责收起。
+  function moreMenu(itemsHtml, title) {
+    return '<details class="more" style="position:relative;display:inline-block;vertical-align:middle">'
+      + '<summary class="btn sm" style="cursor:pointer;list-style:none;justify-content:center" title="' + esc(title || '更多操作')
+      + '"><span>⋯</span></summary>'
+      + '<div style="position:absolute;right:0;top:calc(100% + 4px);z-index:40;display:flex;flex-direction:column;gap:4px;'
+      + 'min-width:184px;padding:6px;background:var(--surface);border:1px solid var(--border);'
+      + 'border-radius:var(--radius-sm);box-shadow:0 10px 26px rgba(0,0,0,.18)">' + itemsHtml + '</div></details>';
+  }
   /**
    * 「进入 DSH」——同一个窗口从管家界面换成 DSH 界面（不是另开一扇窗）。
    *
@@ -1237,11 +1247,11 @@ export const CLIENT_JS = `(function () {
     // 合并成一个智能按钮 —— 有新版就拉取+重建+重启（core.update，本身就含重建那六步），
     // 只是产物落后就直接重建（core.finishUpdate）。两个动作用户点的是同一个按钮。
     var smartUpdate = r.needsFinishUpdate
-      ? writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate')
-      : writeBtn('upload', '更新本体', 'core.update');
+      ? writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate', {}, 'primary')
+      : writeBtn('upload', '更新本体', 'core.update', {}, 'primary');
     var tools = actBtn('shield', '校验本体', 'core.verify')
       + smartUpdate
-      + writeBtn('history', '回滚本体', 'core.rollback');
+      + moreMenu(writeBtn('history', '回滚本体', 'core.rollback', {}, 'sm danger'), '更多操作');
     var html = pageHead('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', tools);
     if (!r.sourceRoot) {
       html += '<div class="card hero err"><div class="hero-title">未找到 DSH 本体</div><div class="hero-desc">没有检测到 DSH 源码树（判据：目录下存在 apps/cli）。</div></div>';
@@ -1563,15 +1573,17 @@ export const CLIENT_JS = `(function () {
   // ── 页面：插件 ───────────────────────────────────────────────────
 
   function renderPlugins(r) {
-    // 任务3：批量更新挪去了「插件市场」（用户在那儿看到谁有新版）。这里留个指路按钮，
-    // 免得以为功能没了。
+    // 阶段一分层（方案 196 行）：页头只留 1 主（安装插件）1 次（插件诊断），
+    // 低频与危险动作收进「⋯ 更多」；批量更新住在「插件市场」页（任务3），这里不再摆指路按钮。
     var tools = actBtn('shield', '插件诊断', 'plugin.diagnose')
-      + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
-      + navBtn('store', '去市场批量更新', 'market')
-      + writeBtn('plus', '安装插件', 'plugin.install')
-      + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline')
-      + actBtn('activity', '测安装源速度', 'network.testSources')
-      + writeBtn('wrench', '清理残留', 'plugin.cleanResidue');
+      + writeBtn('plus', '安装插件', 'plugin.install', {}, 'primary')
+      + moreMenu(
+        actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
+          + actBtn('activity', '测安装源速度', 'network.testSources')
+          + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline')
+          + writeBtn('wrench', '清理残留', 'plugin.cleanResidue', {}, 'sm danger'),
+        '更多操作',
+      );
     var html = pageHead('插件', '双名单（依赖 ∩ 生效名单）、包实体与作层资格。装/卸/修都会先摊开计划再执行。', tools);
     html += '<div class="card"><div class="stats">'
       + stat('依赖清单', r.summary.deps)
@@ -3263,6 +3275,13 @@ export const CLIENT_JS = `(function () {
     var t = e.target;
     if (!t) return;
     var hit = function (sel) { return t.closest ? t.closest(sel) : null; };
+
+    // 「⋯ 更多」菜单：点到菜单外、或点了菜单里的按钮，就收起（原生 details 不会自己关）
+    var om = document.querySelectorAll('details.more[open]');
+    for (var oi = 0; oi < om.length; oi++) {
+      var btnIn = hit('button');
+      if (!om[oi].contains(t) || (btnIn && om[oi].contains(btnIn))) om[oi].removeAttribute('open');
+    }
 
     var w = hit('[data-write]');
     if (w) { startWrite(w.getAttribute('data-write'), w); return; }

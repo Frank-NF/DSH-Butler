@@ -60,12 +60,12 @@ Deno.test("任务2：插件页有「装了却没加载」清单，并能开/收�
   assertEquals(CLIENT_JS.includes('data-write="runtime.restart"'), true, "开完通行证没给重启入口");
 });
 
-Deno.test("任务3：批量更新按钮在插件市场，插件页只留指路", () => {
+Deno.test("任务3：批量更新按钮在插件市场，插件页不再摆指路", () => {
   assertEquals(CLIENT_JS.includes("'plugin.batchUpdate'"), true, "批量更新动作没了");
   assertEquals(
     CLIENT_JS.includes("navBtn('store', '去市场批量更新', 'market')"),
-    true,
-    "插件页没指向市场",
+    false,
+    "插件页不该再指路 —— 批量更新就住在市场页，侧栏直达",
   );
   const pluginsHead = between("function renderPlugins(r) {", "function fillSkippedBundles()");
   assertEquals(
@@ -84,12 +84,14 @@ Deno.test("任务5：本体更新只有一个智能按钮（有新版拉取+重�
     "本体页没有智能按钮",
   );
   assertEquals(
-    CLIENT_JS.includes("writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate')"),
+    CLIENT_JS.includes(
+      "writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate', {}, 'primary')",
+    ),
     true,
     "缺少「只差重建」那一支",
   );
   assertEquals(
-    CLIENT_JS.includes("writeBtn('upload', '更新本体', 'core.update')"),
+    CLIENT_JS.includes("writeBtn('upload', '更新本体', 'core.update', {}, 'primary')"),
     true,
     "缺少「更新本体」那一支",
   );
