@@ -1291,8 +1291,9 @@ export const CLIENT_JS = `(function () {
       + '</div></div>';
 
     if (r.plugins) {
-      html += '<div class="card"><div class="card-title">插件双名单<span class="sub">生效 = 依赖 ∩ 名单</span>'
-        + '<span class="spacer"></span>' + navBtn('puzzle', '去插件页', 'plugins') + '</div>'
+      // 阶段一 T3（方案 196 行）：删掉指往插件中心的路条 —— 双名单的六项详情本卡已经列全，
+      // 管理插件走侧栏「插件中心」，不再让页面互相递路条。
+      html += '<div class="card"><div class="card-title">插件双名单<span class="sub">生效 = 依赖 ∩ 名单</span></div>'
         + kv('依赖清单', String(r.plugins.dependencies.length))
         + kv('bundles 名单', String(r.plugins.bundles.length))
         + kv('实际生效', String(r.plugins.active.length))

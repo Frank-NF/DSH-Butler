@@ -60,6 +60,22 @@ Deno.test("插件页：页头 1 主 1 次，低频与危险动作收进 ⋯，�
   );
 });
 
+Deno.test("本体页六卡：卡内不摆指路按钮，双名单详情页内直达", () => {
+  const core = between(CLIENT_JS, "function renderCore(r) {", "function fillChangelog()");
+  assertEquals(core.length > 400, true, "本体页渲染段没截到（锚点要检查）");
+  assertEquals(
+    core.includes("navBtn("),
+    false,
+    "本体页卡里还有指路按钮：双名单卡的「去插件页」要删，详情本卡已列全",
+  );
+  assertEquals(core.includes("去插件页"), false, "「去插件页」文案还在页面上");
+  assertEquals(
+    core.includes("btn-refresh-changelog"),
+    true,
+    "更新日志卡的「刷新」要留着 —— 这是页内次级动作，不是指路",
+  );
+});
+
 Deno.test("本体页：更新是唯一主按钮，回滚（危险）收进 ⋯，校验本体做次按钮", () => {
   const region = between(CLIENT_JS, "function renderCore(r) {", "var html = pageHead('DSH 本体'");
   assertEquals(
