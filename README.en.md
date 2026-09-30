@@ -32,12 +32,12 @@ A single executable that **binds to loopback only**, writes no registry keys and
 
 ## Quick start
 
-**Download and run (recommended)**: get `DSH-Butler-v2.0.0-rc.4-win-x64.zip` (~32 MB) from <https://dsh.huilinsh.cn>, unzip and run `dsh-butler.exe`.
+**Download and run (recommended)**: get `DSH-Butler-v2.0.0-win-x64.zip` (~32 MB) from <https://dsh.huilinsh.cn>, unzip and run `dsh-butler.exe`.
 
 Verify the download (SHA256 is published in <https://dsh.huilinsh.cn/butler/version.json>):
 
 ```powershell
-Get-FileHash .\DSH-Butler-v2.0.0-rc.4-win-x64.zip -Algorithm SHA256
+Get-FileHash .\DSH-Butler-v2.0.0-win-x64.zip -Algorithm SHA256
 ```
 
 **Build from source** (Deno 2.x, Windows 10/11 with WebView2):

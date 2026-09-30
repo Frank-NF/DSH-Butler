@@ -32,12 +32,12 @@
 
 ## 快速开始
 
-**下载即用（推荐）**：到 <https://dsh.huilinsh.cn> 下载 `DSH-Butler-v2.0.0-rc.4-win-x64.zip`（约 32 MB）→ 解压 → 双击 `dsh-butler.exe`。
+**下载即用（推荐）**：到 <https://dsh.huilinsh.cn> 下载 `DSH-Butler-v2.0.0-win-x64.zip`（约 32 MB）→ 解压 → 双击 `dsh-butler.exe`。
 
 校验完整性（SHA256 公布在 <https://dsh.huilinsh.cn/butler/version.json>）：
 
 ```powershell
-Get-FileHash .\DSH-Butler-v2.0.0-rc.4-win-x64.zip -Algorithm SHA256
+Get-FileHash .\DSH-Butler-v2.0.0-win-x64.zip -Algorithm SHA256
 ```
 
 **从源码构建**（需要 Deno 2.x，Windows 10/11 + WebView2 运行时）：

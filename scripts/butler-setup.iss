@@ -1,4 +1,4 @@
-﻿; DSH 管家 —— Windows 安装版脚本
+﻿﻿; DSH 管家 —— Windows 安装版脚本
 ;
 ; 编译方式（Inno Setup 6）：
 ;   ISCC.exe scripts\butler-setup.iss
@@ -10,7 +10,7 @@
 ;   3) AppId 固定：升级安装靠它识别同一个应用，改了会装出两份。
 
 #define MyAppName "DSH 管家"
-#define MyAppVersion "2.0.0-rc.4"
+#define MyAppVersion "2.0.0"
 #define MyAppPublisher "昊天工作室"
 #define MyAppURL "https://dsh.huilinsh.cn"
 #define MyAppExeName "dsh-butler.exe"
