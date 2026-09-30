@@ -1,11 +1,11 @@
 /**
  * 守卫：阶段一「止血」的主/次/危险分层（docs/UI-REDESIGN-PLAN-2026-09-30.md 第 196 行）。
  *
- *  - 插件页 / 本体页页级按钮：主按钮 1 个、次按钮 1 个，低频与危险动作收进「⋯ 更多」下拉；
+ *  - 本体页页级按钮：主按钮 1 个、次按钮 1 个，低频与危险动作收进「⋯ 更多」下拉；
  *  - 危险动作在菜单里带 danger 样式（红），点菜单外面自动收起；
- *  - 插件页删掉「去市场批量更新」指路按钮 —— 批量更新就住在插件市场页，侧栏直达。
- * 行内动作本阶段不收 ⋯：.rows 有 overflow:hidden 会裁剪下拉，且行级 ⋯ 属阶段二
- * 插件中心（方案 4.1 图样）的设计，等页签合并时一起做。
+ *  - 阶段二 T7 后插件页头改由「插件中心」pluginShell 统一提供（见 plugins_center_ui_test.ts）：
+ *    页头仍守 1 主 1 次、零指路，低频/危险动作迁到维护页签。
+ * 行内动作仍不收 ⋯：.rows 有 overflow:hidden 会裁剪下拉（阶段一已裁决，T7 复核行内动作 ≤2）。
  */
 
 import { assertEquals } from "@std/assert";
@@ -36,27 +36,28 @@ Deno.test("分层基础：有「⋯ 更多」下拉菜单，点外面自动收�
   assertEquals(CLIENT_JS.includes("details.more[open]"), true, "菜单点外面不会自动收起");
 });
 
-Deno.test("插件页：页头 1 主 1 次，低频与危险动作收进 ⋯，指路按钮删掉", () => {
-  const flat = between(CLIENT_JS, "function renderPlugins(r) {", "moreMenu(");
-  assertEquals(countIn(flat, "actBtn("), 1, "页头平铺的次按钮只该剩「插件诊断」一个");
-  assertEquals(countIn(flat, "writeBtn("), 1, "页头平铺的主按钮只该剩「安装插件」一个");
-  assertEquals(flat.includes("navBtn("), false, "指路按钮要删掉，别再让用户绕路");
-
-  const head = between(CLIENT_JS, "function renderPlugins(r) {", "var html = pageHead('插件'");
-  const menu = head.slice(head.indexOf("moreMenu("));
-  assertEquals(menu.includes("依赖冲突体检"), true, "依赖冲突体检没进菜单");
-  assertEquals(menu.includes("测安装源速度"), true, "测安装源速度没进菜单");
-  assertEquals(menu.includes("离线安装（.tgz）"), true, "离线安装没进菜单");
+Deno.test("插件中心页头：1 主 1 次，低频/危险迁维护页签，指路按钮删掉", () => {
+  const shell = between(CLIENT_JS, "function pluginShell(", "function setMain(");
+  assertEquals(shell.length > 300, true, "pluginShell 段没截到（锚点要检查）");
+  assertEquals(countIn(shell, "actBtn("), 1, "页头平铺的次按钮只该剩「插件诊断」一个");
+  assertEquals(countIn(shell, "writeBtn("), 1, "页头平铺的主按钮只该剩「安装插件」一个");
+  assertEquals(shell.includes("navBtn("), false, "指路按钮要删掉，别再让用户绕路");
+  assertEquals(countIn(shell, "'primary'"), 1, "插件中心页头主按钮必须唯一");
   assertEquals(
-    menu.includes("writeBtn('wrench', '清理残留', 'plugin.cleanResidue', {}, 'sm danger')"),
-    true,
-    "清理残留是危险动作，进菜单还要带 danger 红样式",
-  );
-  assertEquals(countIn(head, "'primary'"), 1, "插件页主按钮必须唯一");
-  assertEquals(
-    head.includes("writeBtn('plus', '安装插件', 'plugin.install', {}, 'primary')"),
+    shell.includes("writeBtn('plus', '安装插件', 'plugin.install', {}, 'primary')"),
     true,
     "「安装插件」该是唯一主按钮",
+  );
+
+  const maint = between(CLIENT_JS, "function renderMaint(", "function fillSkippedBundles()");
+  assertEquals(maint.length > 300, true, "renderMaint 段没截到（锚点要检查）");
+  assertEquals(maint.includes("依赖冲突体检"), true, "依赖冲突体检没进维护页签");
+  assertEquals(maint.includes("测安装源速度"), true, "测安装源速度没进维护页签");
+  assertEquals(maint.includes("离线安装（.tgz）"), true, "离线安装没进维护页签");
+  assertEquals(
+    maint.includes("writeBtn('wrench', '清理残留', 'plugin.cleanResidue', {}, 'sm danger')"),
+    true,
+    "清理残留是危险动作，进维护页签还要带 danger 红样式",
   );
 });
 

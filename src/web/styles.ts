@@ -162,6 +162,13 @@ button { cursor: pointer; }
 .page-desc { color: var(--text-2); margin: 4px 0 0; font-size: 13px; }
 .page-tools { margin-left: auto; display: flex; gap: 8px; flex: none; }
 
+/* ── 插件中心页签（阶段二 T7）────────────────────────────────────── */
+.ptabs { display: flex; gap: 2px; margin: -8px 0 16px; border-bottom: 1px solid var(--border); }
+.ptab { background: none; border: 0; border-bottom: 2px solid transparent; padding: 7px 13px; font-size: 13px; color: var(--text-3); cursor: pointer; }
+.ptab:hover { color: var(--text); }
+.ptab.on { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+.ptab:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+
 /* ── 卡片 ───────────────────────────────────────────────────────── */
 
 .card {

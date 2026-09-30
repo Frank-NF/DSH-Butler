@@ -33,6 +33,8 @@ export const CLIENT_JS = `(function () {
     lastFocus: null,
     pendingPlan: null,
     logFilter: '',
+    /** 插件中心页签（阶段二 T7）：installed=已装 / market=市场 / maint=维护。 */
+    plugins: { tab: 'installed' },
     /** 插件市场：搜索词、分类、排序、状态筛选与页码（界面上切换时只改这里再重渲染）。 */
     market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [], view: 'list' }
   };
@@ -262,6 +264,20 @@ export const CLIENT_JS = `(function () {
   }
   function pageHead(title, desc, tools) {
     return '<div class="page-head"><div><h1 class="page-title">' + esc(title) + '</h1><p class="page-desc">' + esc(desc) + '</p></div>' + (tools ? '<div class="page-tools">' + tools + '</div>' : '') + '</div>';
+  }
+  /** 阶段二 T7：插件中心统一页头 + 页签（已装|市场|维护，role=tablist 复用设置页范式）。 */
+  function pluginShell(tab, inner) {
+    var tabs = [['installed', '已装'], ['market', '市场'], ['maint', '维护']];
+    var html = pageHead('插件中心', '让插件装得上、跑得动 —— 装/卸/修都会先把计划摊开给你确认。',
+      actBtn('shield', '插件诊断', 'plugin.diagnose')
+        + writeBtn('plus', '安装插件', 'plugin.install', {}, 'primary'));
+    html += '<div class="ptabs" role="tablist">';
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i][0] === tab;
+      html += '<button class="ptab' + (on ? ' on' : '') + '" role="tab" data-ptab="' + tabs[i][0]
+        + '" aria-selected="' + (on ? 'true' : 'false') + '">' + tabs[i][1] + '</button>';
+    }
+    return html + '</div>' + inner;
   }
   function setMain(html) { $('main').innerHTML = '<div class="wrap">' + html + '</div>'; }
   function loading(text) {
@@ -1593,18 +1609,9 @@ export const CLIENT_JS = `(function () {
   // ── 页面：插件 ───────────────────────────────────────────────────
 
   function renderPlugins(r) {
-    // 阶段一分层（方案 196 行）：页头只留 1 主（安装插件）1 次（插件诊断），
-    // 低频与危险动作收进「⋯ 更多」；批量更新住在「插件市场」页（任务3），这里不再摆指路按钮。
-    var tools = actBtn('shield', '插件诊断', 'plugin.diagnose')
-      + writeBtn('plus', '安装插件', 'plugin.install', {}, 'primary')
-      + moreMenu(
-        actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
-          + actBtn('activity', '测安装源速度', 'network.testSources')
-          + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline')
-          + writeBtn('wrench', '清理残留', 'plugin.cleanResidue', {}, 'sm danger'),
-        '更多操作',
-      );
-    var html = pageHead('插件', '双名单（依赖 ∩ 生效名单）、包实体与作层资格。装/卸/修都会先摊开计划再执行。', tools);
+    // 阶段二 T7：页头（插件中心 + 诊断/安装）与页签由 pluginShell 统一提供，这里只渲染「已装」内容；
+    // 低频动作迁到「维护」页签，批量更新在「市场」页签（阶段一的 ⋯ 分层见 git 历史）。
+    var html = pluginShell('installed', '');
     html += '<div class="card"><div class="stats">'
       + stat('依赖清单', r.summary.deps)
       + stat('生效名单', r.summary.bundles)
@@ -1675,6 +1682,28 @@ export const CLIENT_JS = `(function () {
       html += '</div>';
     }
     html += '</div>';
+    return html;
+  }
+
+  /** 阶段二 T7：维护页签 —— 离线安装（.tgz）、诊断、清理（危险）只摆这里。 */
+  function renderMaint(r) {
+    var html = pluginShell('maint', '');
+    html += '<div class="card"><div class="card-title">离线安装<span class="sub">手上已有 .tgz 包时用它，不走网络</span></div>'
+      + '<div class="muted" style="margin-bottom:10px">挑本地 .tgz 装进 ' + esc(r.profileDir)
+      + '，装之前照样先摊开计划给你确认。</div>'
+      + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline') + '</div>';
+    html += '<div class="card"><div class="card-title">体检与诊断<span class="sub">装不上、跑不动时先跑这两项</span></div>'
+      + '<div class="btn-row">'
+      + actBtn('puzzle', '依赖冲突体检', 'plugin.deps')
+      + actBtn('activity', '测安装源速度', 'network.testSources')
+      + '</div>'
+      + (state.extra.pluginDiag ? diagCard('插件诊断结论', state.extra.pluginDiag) : '')
+      + '</div>';
+    html += '<div class="card"><div class="card-title">清理<span class="sub">危险动作，都会先把计划摊开给你确认</span></div>'
+      + '<div class="btn-row">'
+      + writeBtn('wrench', '清理残留', 'plugin.cleanResidue', {}, 'sm danger')
+      + writeBtn('history', '清理历史备份', 'plugin.cleanBackups', {}, 'sm danger')
+      + '</div></div>';
     return html;
   }
 
@@ -2395,7 +2424,7 @@ export const CLIENT_JS = `(function () {
 
   function renderMarket(res) {
     var m = state.market;
-    var head = pageHead('插件市场', '线上目录挑插件，装与卸都先摊开计划、你确认了才动手。', '');
+    var head = pluginShell('market', '');
     if (!res || (res.ok === false)) {
       var why = (res && res.error) || '市场没有返回内容';
       return head
@@ -2406,8 +2435,10 @@ export const CLIENT_JS = `(function () {
     // 有可更新项时按钮上直接写个数，一眼知道要更几个。
     var tools = writeBtn('upload', res.outdatedCount ? ('全部更新（' + res.outdatedCount + ' 个）') : '全部更新', 'plugin.batchUpdate')
       + '<button class="btn sm" id="btn-market-refresh">' + icon('refresh') + '<span>刷新目录</span></button>';
-    var html = pageHead('插件市场', '线上目录共 ' + res.total + ' 个插件，数据更新于 ' + esc(res.updated || '未知') + '。', tools);
-    html += '<div class="card"><div class="stats">'
+    var html = pluginShell('market', '');
+    html += '<div class="card"><div class="card-title">市场目录'
+      + '<span class="sub">共 ' + res.total + ' 个 · 更新于 ' + esc(res.updated || '未知') + '</span>'
+      + '<span class="spacer"></span>' + tools + '</div><div class="stats">'
       + stat('目录插件', p.total)
       + stat('当前筛出', p.matched)
       + stat('本机已装', res.installedCount, '来自本机 profile 的依赖清单')
@@ -3040,14 +3071,14 @@ export const CLIENT_JS = `(function () {
   var PAGES = [
     { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
     { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
-    { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场' },
+    { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场', hiddenFromNav: true },
     // 设置不在左栏中间列表里 —— 它在侧栏最底部（markup.ts 的 nav-foot），
     // 但路由仍要注册：data-page="settings" 靠它解析。
     { id: 'settings', label: '设置', group: '记录', icon: 'sliders', load: loadSettings, render: renderSettings, title: '设置', hiddenFromNav: true },
     { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
     { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
     { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
-    { id: 'plugins', label: '插件', group: '诊断', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
+    { id: 'plugins', label: '插件中心', group: '诊断', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
     { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集' },
     { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
     { id: 'ai', label: 'AI 助手', group: '诊断', icon: 'chat', load: loadAiConfig, render: renderAi, title: 'AI 助手' },
@@ -3257,9 +3288,34 @@ export const CLIENT_JS = `(function () {
     adoptRunningJob();
   }
 
+  /**
+   * 阶段二 T7：插件中心共用路由 id 'plugins'，按页签换加载器/渲染器/缓存键。
+   * 旧 id 'market'（书签、老链接）仍在 PAGES 注册，由 go() 重定向进来。
+   */
+  function routeDef(page) {
+    if (page !== 'plugins') return pageById(page);
+    var tabs = {
+      installed: {},
+      market: { load: loadMarket, render: renderMarket, title: '插件市场', cacheKey: 'market' },
+      maint: { action: 'plugin.scan', render: renderMaint, title: '插件维护', cacheKey: 'plugins' },
+    };
+    var over = tabs[state.plugins.tab] || tabs.installed;
+    var base = pageById(page);
+    if (!base) return base;
+    var out = {};
+    for (var key in base) out[key] = base[key];
+    for (var k in over) out[k] = over[k];
+    return out;
+  }
+
   function go(page, force) {
-    var def = pageById(page);
+    // 阶段二 T7：旧 id 'market' 重定向到市场页签；从别处进插件中心回默认「已装」，
+    // 页内点页签时 state.page 已是 'plugins'，不会触发重置。
+    if (page === 'market') { page = 'plugins'; state.plugins.tab = 'market'; }
+    else if (page === 'plugins' && state.page !== 'plugins') { state.plugins.tab = 'installed'; }
+    var def = routeDef(page);
     if (!def) return;
+    var ck = def.cacheKey || page;
     state.page = page;
     var items = document.querySelectorAll('.nav-item');
     for (var i = 0; i < items.length; i++) {
@@ -3270,15 +3326,15 @@ export const CLIENT_JS = `(function () {
       pageOverview().catch(function (e) { showError(e); });
       return;
     }
-    if (!force && state.cache[page]) {
-      setMain(def.render(state.cache[page]));
+    if (!force && state.cache[ck]) {
+      setMain(def.render(state.cache[ck]));
       afterRender(page);
       return;
     }
     loading();
     var job = def.load ? def.load() : runAction(def.action, {}, def.title);
     job.then(function (result) {
-      state.cache[page] = result;
+      state.cache[ck] = result;
       setMain(def.render(result));
       afterRender(page);
     }).catch(function (e) { showError(e); });
@@ -3314,6 +3370,13 @@ export const CLIENT_JS = `(function () {
     if (jr) { openJob(jr.getAttribute('data-job')); return; }
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
+    // 插件中心页签（阶段二 T7）：只切渲染不跳路由，缓存按页签各存各的
+    var pt = hit('[data-ptab]');
+    if (pt) {
+      state.plugins.tab = pt.getAttribute('data-ptab') || 'installed';
+      go('plugins', false);
+      return;
+    }
     // 底部状态栏「任务」段（阶段一 T5）：跑着就点开/收起进度面板，空闲就说明一句
     var sbTask = hit('#sb-task');
     if (sbTask) {
