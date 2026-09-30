@@ -26,7 +26,7 @@ export const WINDOW_TITLE = `${APP_NAME} · ${APP_TAGLINE}`;
 /** 旧产品名，仅用于识别历史数据目录。 */
 export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";
-export const APP_VERSION = "2.0.0-rc.1";
+export const APP_VERSION = "2.0.0-rc.4";
 
 /** 官网地址（界面「官网」入口与更新日志下载页共用）。 */
 export const OFFICIAL_SITE = "https://dsh.huilinsh.cn";
@@ -75,11 +75,26 @@ export const DSH_PORT_CANDIDATES = [3081, 3080, 8787] as const;
 
 /**
  * 管家自己的本地服务端口。
- * - 桌面态：不指定端口，由 deno desktop 运行时决定（webview 会打开那个地址）
  * - --headless：固定用这个端口，脚本/其它程序才找得到我们
+ * （桌面态以前是"不指定、由运行时随机决定"，2026-09-29 起改为同样首选这个端口、被占才顺延，
+ *   详见下面的 BUTLER_PORT_PREFERRED）
  * 选 8731 是为了避开 DSH 自己用的 3080/3081/8787，以及官网上站的 8072/8073。
  */
 export const BUTLER_PORT_HEADLESS = 8731;
+
+/**
+ * 桌面态首选端口。
+ *
+ * 【2026-09-29 改动】桌面态以前**故意不指定端口** —— 好处是永远不会因端口冲突开不了窗，
+ * 代价是每次启动端口都不一样（日志里 54606 / 59672 / 53324 一路飘），用户想存个书签、
+ * 或让别的工具连过来都用不了。
+ * 现在改成：先试这个端口，被别的软件占了就往后顺延（见 BUTLER_PORT_FALLBACK_SPAN），
+ * 全都占着才回退随机 —— 稳定地址和"永远打得开"两头都要。
+ */
+export const BUTLER_PORT_PREFERRED = 8731;
+
+/** 首选端口被占用时，最多再往后顺延多少个端口。占满则回退为随机端口。 */
+export const BUTLER_PORT_FALLBACK_SPAN = 16;
 
 /** DSH 源码树里 CLI 的相对子目录。 */
 export const DSH_CLI_SUBDIR = "apps/cli";

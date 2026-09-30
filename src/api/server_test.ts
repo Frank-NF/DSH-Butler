@@ -6,7 +6,8 @@
  *   2) 没有任何 Host 校验 —— DNS rebinding 让攻击者域名解析到 127.0.0.1 后即为同源。
  */
 import { assertEquals } from "@std/assert";
-import { createApiServer } from "./server.ts";
+import { createApiServer, resolvePort } from "./server.ts";
+import { BUTLER_PORT_FALLBACK_SPAN } from "../version.ts";
 
 const TOKEN = "test-token-0123456789abcdef";
 
@@ -92,6 +93,109 @@ Deno.test("接口边界：非回环 Host 一律 403（防 DNS rebinding，SEC-01
 
     const localhost = await rawGet(s.port, `localhost:${s.port}`, "/healthz");
     assertEquals(localhost.startsWith("HTTP/1.1 200"), true);
+  } finally {
+    s.shutdown();
+  }
+});
+
+/**
+ * 找一段**连续**空闲的端口，用来模拟"首选端口被占"的场景。
+ * 必须连续 —— 否则"顺延到下一个"到底该落在哪个端口就不确定了。
+ */
+function freePortBlock(count: number): number {
+  for (let base = 20000; base < 60000; base += count + 1) {
+    const held: Deno.Listener[] = [];
+    let ok = true;
+    for (let i = 0; i < count; i++) {
+      try {
+        held.push(Deno.listen({ hostname: "127.0.0.1", port: base + i }));
+      } catch {
+        ok = false;
+        break;
+      }
+    }
+    for (const l of held) {
+      try {
+        l.close();
+      } catch { /* 关不掉不影响 */ }
+    }
+    if (ok) return base;
+  }
+  throw new Error(`找不到 ${count} 个连续空闲端口`);
+}
+
+/** 占住 [base, base+count) 这些端口，跑完自动放开。 */
+async function withPortsHeld<T>(
+  base: number,
+  count: number,
+  fn: () => T,
+): Promise<T> {
+  const held: Deno.Listener[] = [];
+  for (let i = 0; i < count; i++) {
+    try {
+      held.push(Deno.listen({ hostname: "127.0.0.1", port: base + i }));
+    } catch { /* 被别人占了也算"不可用"，不影响结论 */ }
+  }
+  try {
+    return fn();
+  } finally {
+    for (const l of held) {
+      try {
+        l.close();
+      } catch { /* 忽略 */ }
+    }
+  }
+}
+
+Deno.test("端口：首选端口空闲时就用它（桌面态地址要稳定）", () => {
+  const base = freePortBlock(2);
+  assertEquals(resolvePort(base, true), base);
+});
+
+Deno.test("端口：首选被占时顺延到下一个可用端口", async () => {
+  const base = freePortBlock(3);
+  await withPortsHeld(base, 1, () => {
+    const got = resolvePort(base, true);
+    assertEquals(got === base, false, "不该再选被占住的那个");
+    assertEquals(got, base + 1, "顺延应该落在紧邻的下一个空闲端口");
+  });
+});
+
+Deno.test("端口：连着被占就继续往后找", async () => {
+  const base = freePortBlock(4);
+  await withPortsHeld(base, 2, () => {
+    const got = resolvePort(base, true);
+    assertEquals(got, base + 2, "前两个都被占，应该落到第三个");
+  });
+});
+
+Deno.test(
+  "端口：首选及后续全被占时回退随机端口，而不是启动失败",
+  async () => {
+    const base = freePortBlock(BUTLER_PORT_FALLBACK_SPAN + 2);
+    await withPortsHeld(base, BUTLER_PORT_FALLBACK_SPAN + 1, () => {
+      // 返回 0 = 交给系统随机分配。这条最要紧：端口全被占也必须能起来，
+      // 否则用户看到的就是"这软件打不开"，而不是"端口飘了"。
+      assertEquals(resolvePort(base, true), 0);
+    });
+  },
+);
+
+Deno.test("端口：headless 不做兜底，严格用指定端口（脚本要靠它找到我们）", () => {
+  const base = freePortBlock(2);
+  assertEquals(resolvePort(base, false), base);
+});
+
+Deno.test("端口：没有指定就随机分配（保持原有行为）", () => {
+  assertEquals(resolvePort(undefined, true), 0);
+});
+
+Deno.test("端口：桌面态实际起服务时，地址就是首选端口", () => {
+  const base = freePortBlock(2);
+  const s = createApiServer({ token: TOKEN, port: base, allowPortFallback: true });
+  try {
+    assertEquals(s.port, base, "首选端口空闲就该绑在它上面");
+    assertEquals(s.origin, `http://127.0.0.1:${base}`);
   } finally {
     s.shutdown();
   }

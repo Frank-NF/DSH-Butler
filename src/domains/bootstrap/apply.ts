@@ -19,6 +19,13 @@ import { dirname, p, quarantineStampDir, stampOf } from "../../util/paths.ts";
 import { DSH_PORT_DEFAULT, TIMEOUTS } from "../../version.ts";
 import { probeRuntimes } from "../env/probe.ts";
 import {
+  applyToolchainPath,
+  hasTool,
+  installTool,
+  TOOL_ORDER,
+  TOOL_SPECS,
+} from "../env/toolchain.ts";
+import {
   detectPnpm,
   runBuildWithRetry,
   startDshServer,
@@ -143,26 +150,13 @@ async function bootstrapPreflight(params: BootstrapApplyParams): Promise<Finding
     );
   }
 
-  const rt = await probeRuntimes();
-  const has = (n: string) => rt.find((r) => r.name === n)?.found === true;
-  if (!has("git") || !has("node")) {
-    out.push(
-      finding("bootstrap.apply.runtime", "error", "运行时不全，无法部署", {
-        cause: `git ${has("git") ? "有" : "缺失"} · node ${has("node") ? "有" : "缺失"}`,
-        impact: "获取源码与构建都跑不起来",
-        action: "先装好 Git 与 Node.js（22 LTS 以上）再试",
-      }),
-    );
-  }
-  if (!has("pnpm") && !has("npm")) {
-    out.push(
-      finding("bootstrap.apply.no-pkg", "error", "没有可用的包管理器", {
-        cause: "pnpm 与 npm 都找不到",
-        impact: "装不了依赖",
-        action: "安装 Node.js（自带 npm）后重试",
-      }),
-    );
-  }
+  /*
+   * 运行时（git / node / pnpm）缺失不再算"写前检查不通过"。
+   *
+   * 【2026-09-29 改动】过去这里会因为缺 Node 直接拒绝执行，让用户自己去官网装 ——
+   * 现在 s2 会先自动补齐（env/toolchain.ts 的内置免安装版），所以缺什么都不是阻碍，
+   * 真正的硬阻碍只有磁盘空间与目录权限这两类"管家也无能为力"的事。
+   */
   return out;
 }
 
@@ -297,28 +291,36 @@ async function runBootstrap(
   }
   ensureDir(root);
 
+  // 运行时补齐（「一键部署」的一键就在这里）────
+  // 缺哪个补哪个：系统里已有的不重复下载，只把缺的以"免安装版"取进管家目录。
   let tc = await detectPnpm();
   if (!tc) {
-    line("pnpm 未安装，先用 npm 装上…");
-    const npmR = await run("npm", ["install", "-g", "pnpm"], {
-      timeoutMs: 600_000,
-      allowNonZero: true,
-      scope: "build",
-      signal: ctx.signal,
-    });
-    if (npmR.code !== 0) {
-      throw new Error(
-        `安装 pnpm 失败（退出码 ${npmR.code}）：${
-          tailLines(npmR.stdout + npmR.stderr, 2).join(" / ")
-        }`,
-      );
+    const rt = await probeRuntimes();
+    const missing = TOOL_ORDER.filter((n) => !rt.find((r) => r.name === n)?.found && !hasTool(n));
+    if (missing.length > 0) {
+      line(`运行时不全，正在自动获取：${missing.map((n) => TOOL_SPECS[n].label).join(" / ")}`);
+      line("（免安装版，装进管家目录；不改系统 PATH、不需要管理员权限）");
+      for (let i = 0; i < missing.length; i++) {
+        const name = missing[i]!;
+        ctx.throwIfCancelled();
+        ctx.detail(`正在获取 ${TOOL_SPECS[name].label}（${i + 1}/${missing.length}）`);
+        const outcome = await installTool(name, {
+          onLine: line,
+          onProgress: (pr) => ctx.progress(0.06 + (0.05 * (i + pr)) / missing.length),
+          signal: ctx.signal,
+        });
+        if (!outcome.ok) {
+          throw new Error(`自动获取 ${outcome.label} 失败：${outcome.error ?? "未知原因"}`);
+        }
+      }
+      applyToolchainPath();
+      report.pnpmInstalled = true;
     }
     tc = await detectPnpm();
     if (!tc) {
-      throw new Error("pnpm 装好之后仍然找不到 —— 请重开一次管家让 PATH 生效，然后重试");
+      throw new Error("运行时已就绪但仍检测不到 pnpm —— 请重试一次");
     }
-    report.pnpmInstalled = true;
-    line("pnpm 安装完成");
+    line(`pnpm 已就绪（node ${tc.node}）`);
   } else {
     line(`pnpm 已就绪（node ${tc.node}）`);
   }

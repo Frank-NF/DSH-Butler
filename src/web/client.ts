@@ -190,6 +190,7 @@ export const CLIENT_JS = `(function () {
 
   var ACT_TITLE = {
     'diag.healthCheck': '全面体检', 'env.probe': '环境体检', 'core.status': '本体状态',
+    'env.toolchainInstall': '一键获取运行环境', 'env.toolchain-install': '一键获取运行环境',
     'core.verify': '本体校验', 'core.update': '更新 DSH 本体', 'core.finishUpdate': '完成更新',
     'core.rollback': '回滚本体', 'core.fetchUpstreamTags': '拉取上游更新记录',
     'runtime.status': '服务状态', 'runtime.logs': '日志收集',
@@ -1195,7 +1196,14 @@ export const CLIENT_JS = `(function () {
     html += '<div class="card"><div class="card-title">运行时</div>';
     for (var i = 0; i < r.runtime.length; i++) {
       var t = r.runtime[i];
-      html += kv(t.label, t.found ? (t.version || '已安装') : (t.required ? '缺失（必需）' : '缺失（可选）'), true);
+      var tVal;
+      if (t.found) {
+        // 如实标注来源：用户自己装的那套归他管，管家内置的那套管家能升级
+        tVal = (t.version || '已安装') + (t.origin ? ' · 来自' + t.origin : '');
+      } else {
+        tVal = (t.required ? '缺失（必需）' : '缺失（可选）') + (t.installable ? ' · 可一键获取' : '');
+      }
+      html += kv(t.label, tVal, true);
     }
     html += '</div>';
     html += '<div class="card"><div class="card-title">目录</div>'
@@ -2683,10 +2691,13 @@ export const CLIENT_JS = `(function () {
         : '')
       + '</div>';
 
-    html += '<div class="card"><div class="card-title">运行时</div>';
+    html += '<div class="card"><div class="card-title">运行时<span class="sub">缺失的可由管家自动获取，不需要你去官网下载</span></div>';
     for (var i = 0; i < plan.runtime.length; i++) {
       var t = plan.runtime[i];
-      html += kv(t.label + (t.required ? '（必需）' : '（可选）'), t.found ? (t.version || '已安装') : '缺失', true);
+      var pv = t.found
+        ? (t.version || '已安装') + (t.origin ? ' · 来自' + t.origin : '')
+        : (t.installable ? '缺失 · 点「开始部署」会自动获取' : '缺失 · 需手动安装');
+      html += kv(t.label + (t.required ? '（必需）' : '（可选）'), pv, true);
     }
     html += '</div>';
 

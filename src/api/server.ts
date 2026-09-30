@@ -23,7 +23,13 @@ import {
 } from "../domains/ai/ai.ts";
 import { collectDshChannels, publicChannel } from "../domains/ai/dsh_channels.ts";
 import { maskSecrets } from "../util/redact.ts";
-import { APP_NAME, APP_VERSION, BUTLER_PORT_HEADLESS } from "../version.ts";
+import {
+  APP_NAME,
+  APP_VERSION,
+  BUTLER_PORT_FALLBACK_SPAN,
+  BUTLER_PORT_HEADLESS,
+  BUTLER_PORT_PREFERRED,
+} from "../version.ts";
 import { collectShellState, enterDsh } from "../domains/runtime/enter.ts";
 import {
   desktopAvailable,
@@ -144,8 +150,61 @@ async function gatherAiContext(): Promise<string> {
   return maskSecrets(parts.join("\n\n"));
 }
 
-export function createApiServer(opts: { token: string; port?: number }): ServerHandle {
+/**
+ * 挑一个真正能用的端口。返回 0 表示「让系统随机分配」。
+ *
+ * 为什么不直接把首选端口丢给 Deno.serve？因为端口被占时它只会抛 AddrInUse ——
+ * 结果就是「别的软件占了 8731，管家直接打不开」，用户看到的就是"这软件不稳定"，
+ * 这正是要避开的后果。所以先探测：首选被占就往后顺延，连着十几个都占着才退回随机端口。
+ * 探测与真正绑定之间理论上存在极小的抢跑可能，随机兜底就是给这种情况留的后路 ——
+ * 无论发生什么，都不会出现"因为端口问题开不了窗"。
+ */
+export function resolvePort(preferred: number | undefined, allowFallback: boolean): number {
+  if (!preferred || preferred <= 0) return 0;
+  // headless / 脚本场景要的是确定地址，顺延了脚本照样连不上，不如明确失败。
+  if (!allowFallback) return preferred;
+
+  if (portFree(preferred)) return preferred;
+  for (let i = 1; i <= BUTLER_PORT_FALLBACK_SPAN; i++) {
+    const next = preferred + i;
+    if (next > 65535) break;
+    if (portFree(next)) {
+      log.warn("api", `首选端口 ${preferred} 已被占用，顺延到 ${next}`);
+      return next;
+    }
+  }
+  log.warn(
+    "api",
+    `端口 ${preferred} 及后续 ${BUTLER_PORT_FALLBACK_SPAN} 个都被占用，改用随机端口`,
+  );
+  return 0;
+}
+
+/** 试着独占绑一下再立刻放开：能绑上就说明这个端口现在没人用。 */
+function portFree(port: number): boolean {
+  try {
+    const listener = Deno.listen({ hostname: "127.0.0.1", port });
+    try {
+      listener.close();
+    } catch { /* 关不掉也不影响"能绑上"这个结论 */ }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function createApiServer(opts: {
+  token: string;
+  port?: number;
+  /**
+   * 端口被占时是否自动顺延。
+   * 桌面态要（既想给稳定地址，又绝不能因为端口开不了窗）；
+   * headless 不要（脚本写死了地址，顺延反而让它连不上还更难排查）。
+   */
+  allowPortFallback?: boolean;
+}): ServerHandle {
   const token = opts.token;
+  const listenPort = resolvePort(opts.port, opts.allowPortFallback === true);
 
   // 【2026-09-25 审计 QUAL-02】Deno.serve 会优先采用环境变量 DENO_SERVE_ADDRESS，
   // 而且它**覆盖**我们显式传的 port（实测：显式传 port 也照样绑到变量里那个）。
@@ -157,7 +216,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
   // 写成 tcp:127.0.0.1:8731 就会老老实实绑 8731。
   const serveOverride = Deno.env.get("DENO_SERVE_ADDRESS");
   if (serveOverride) {
-    const want = opts.port ?? 0;
+    const want = listenPort;
     Deno.env.set("DENO_SERVE_ADDRESS", `tcp:127.0.0.1:${want}`);
     log.warn(
       "api",
@@ -997,7 +1056,7 @@ export function createApiServer(opts: { token: string; port?: number }): ServerH
   const server = Deno.serve(
     {
       hostname: "127.0.0.1",
-      ...(opts.port ? { port: opts.port } : {}),
+      ...(listenPort ? { port: listenPort } : {}),
       onListen: () => {/* 端口在下方读取 */},
     },
     (req) => {

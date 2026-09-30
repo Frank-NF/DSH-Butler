@@ -8,9 +8,11 @@
 import type { ActionDef } from "../../jobs/types.ts";
 import { type Finding, finding, ok } from "../../util/result.ts";
 import { diskSpace, platformLabel, systemInfo } from "../../host/mod.ts";
-import { locate, versionAt } from "../../host/shell.ts";
+import { explainOrigin, locate, versionAt } from "../../host/shell.ts";
 import { fsx } from "../../host/mod.ts";
+import { toolchainRoot } from "./toolchain.ts";
 import { checkWritable, elevationStatus } from "../../host/privileges.ts";
+import { isWindows } from "../../util/paths.ts";
 import { describePort } from "../../host/port.ts";
 import {
   butlerLogsDir,
@@ -37,6 +39,13 @@ export interface RuntimeProbe {
   required: boolean;
   /** 缺失时的建议。 */
   hint?: string;
+  /**
+   * 来源：PATH / 标准安装位置 / 管家内置。
+   * 界面要如实区分 —— 用户自己装的那套归他管，管家内置的那套管家能升级。
+   */
+  origin?: "PATH" | "标准安装位置" | "管家内置" | null;
+  /** 缺失时能否由管家一键获取（Windows 上 Git/Node/pnpm 都可以）。 */
+  installable?: boolean;
 }
 
 export interface EnvReport {
@@ -86,20 +95,21 @@ const RUNTIMES: Array<Omit<RuntimeProbe, "found" | "path" | "version">> = [
     label: "Node.js",
     required: true,
     hint:
-      "DSH 本体需要 Node.js 运行。可到 nodejs.org 下载 LTS 版本，或用 winget install OpenJS.NodeJS.LTS 安装。",
+      "点「一键获取运行环境」由管家自动装好（免安装版，不需要管理员权限）；也可自行到 nodejs.org 装 LTS。",
   },
   {
     name: "pnpm",
     label: "pnpm",
     required: true,
     hint:
-      "DSH 源码版用 pnpm 管理依赖。安装命令：npm install -g pnpm（或用 corepack enable pnpm）。",
+      "点「一键获取运行环境」由管家自动获取；也可在有 Node 的前提下执行 npm install -g pnpm。",
   },
   {
     name: "git",
     label: "Git",
     required: true,
-    hint: "更新 DSH 本体源码需要 Git。下载：git-scm.com 或用 winget install Git.Git 安装。",
+    hint:
+      "点「一键获取运行环境」由管家自动装好；也可自行到 git-scm.com 下载安装。",
   },
   {
     name: "npm",
@@ -124,21 +134,28 @@ export async function collectEnv(): Promise<EnvReport> {
 
   for (const r of runtime) {
     if (r.found) continue;
+    // 能由管家自己装好的，给「一键获取」入口 —— 别只丢一句"请自行到官网下载"。
+    const auto = r.installable
+      ? {
+        fixAction: "env.toolchain-install",
+        action: `点「一键获取运行环境」，管家会自动下载免安装版 ${r.label}（不需要管理员权限）`,
+      }
+      : { action: r.hint ?? `请先安装 ${r.label}` };
     if (r.required) {
       findings.push(
         finding(`env.missing-${r.name}`, "error", `缺少 ${r.label}`, {
-          cause: `在系统 PATH 中找不到 ${r.name}`,
+          cause: `PATH 与常见安装位置都没找到 ${r.name}`,
           impact: "DSH 无法安装或更新",
-          action: r.hint ?? `请先安装 ${r.label}`,
+          ...auto,
           evidence: [`where ${r.name} 无结果`],
         }),
       );
     } else {
       findings.push(
         finding(`env.missing-${r.name}`, "warn", `未检测到 ${r.label}`, {
-          cause: `在系统 PATH 中找不到 ${r.name}`,
+          cause: `PATH 与常见安装位置都没找到 ${r.name}`,
           impact: "部分依赖安装操作可能受影响",
-          action: r.hint ?? `建议安装 ${r.label}`,
+          ...auto,
         }),
       );
     }
@@ -337,7 +354,16 @@ export async function probeRuntimes(): Promise<RuntimeProbe[]> {
     RUNTIMES.map(async (r): Promise<RuntimeProbe> => {
       const path = await locate(r.name);
       const version = path ? await versionAt(path) : null;
-      return { ...r, found: version !== null, path, version };
+      const found = version !== null;
+      return {
+        ...r,
+        found,
+        path,
+        version,
+        origin: found ? explainOrigin(path, toolchainRoot()) : null,
+        // Windows 上管家自己能把这几个装进内置工具链；其它平台暂只能走系统包管理器
+        installable: !found && isWindows,
+      };
     }),
   );
 }

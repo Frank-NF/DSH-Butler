@@ -229,12 +229,67 @@ export async function locate(name: string): Promise<string | null> {
 
 const locateCache = new Map<string, string | null>();
 
+/** 清空定位缓存（PATH 变化、或刚装完内置工具链时必须调，否则"装好了还找不到"）。 */
+export function clearLocateCache(): void {
+  locateCache.clear();
+}
+
+/**
+ * 额外搜索目录（管家内置工具链等）。
+ *
+ * 【为什么需要它】过去 locate 只扫系统 PATH，于是三类"明明装了却读不出来"全都中招：
+ *   1) 装在标准位置但 PATH 是旧快照（刚装完没重开程序，explorer 不会刷新已运行进程的环境）；
+ *   2) 装在用户目录（如 %LOCALAPPDATA%\Programs\Git）而安装器没写进 PATH；
+ *   3) 管家自己下载的免安装版（本就不该进系统 PATH）。
+ * 由上层注册目录，locate 在 PATH 之后继续找 —— 顺序仍保证"系统的优先"。
+ */
+let extraSearchDirs: () => string[] = () => [];
+export function addSearchDirs(provider: () => string[]): void {
+  extraSearchDirs = provider;
+  locateCache.clear();
+}
+
+/**
+ * Windows 上各运行时常见的安装位置。
+ *
+ * 这些目录**即便不在 PATH 里也认**：官方安装器一般会写 PATH，但写的是注册表里的
+ * 系统/用户 PATH，而**已经在跑的进程拿到的是它启动那一刻的环境副本** —— 用户装完
+ * Node 不重启管家，管家就永远看不见。按标准位置兜底一找，这个坑就没了。
+ */
+function standardSearchDirs(): string[] {
+  if (!isWindows) return [];
+  const env = (k: string) => Deno.env.get(k) ?? "";
+  const pf = env("ProgramFiles") || "C:\\Program Files";
+  const pf86 = env("ProgramFiles(x86)") || "C:\\Program Files (x86)";
+  const local = env("LOCALAPPDATA") || p(env("USERPROFILE"), "AppData", "Local");
+  const roaming = env("APPDATA") || p(env("USERPROFILE"), "AppData", "Roaming");
+
+  return [
+    // Node.js：官方安装器与 nvm-windows 的常见落点
+    p(pf, "nodejs"),
+    p(pf86, "nodejs"),
+    p(roaming, "npm"), // 全局 npm 包（pnpm 装在这里时是 npm 的 shim）
+    p(local, "Programs", "nodejs"),
+    // Git
+    p(pf, "Git", "cmd"),
+    p(pf86, "Git", "cmd"),
+    p(local, "Programs", "Git", "cmd"),
+    // 包管理器托管的入口（winget / scoop / volta / fnm）
+    p(local, "Microsoft", "WinGet", "Links"),
+    p(env("USERPROFILE"), "scoop", "shims"),
+    p(env("USERPROFILE"), ".volta", "bin"),
+    p(local, "fnm_multishells"),
+    p(roaming, "nvm"),
+  ].filter((d) => d && d.length > 2);
+}
+
 function locateOnWindows(name: string): string | null {
   if (locateCache.has(name)) return locateCache.get(name) ?? null;
 
   const rawPath = Deno.env.get("PATH") ?? "";
   const rawExts = Deno.env.get("PATHEXT") ?? ".COM;.EXE;.BAT;.CMD";
-  const dirs = rawPath.split(";").map((d) => d.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  const pathDirs = rawPath.split(";").map((d) => d.trim().replace(/^"|"$/g, "")).filter(Boolean);
+  const dirs = [...pathDirs, ...standardSearchDirs(), ...extraSearchDirs()];
   const exts = rawExts.split(";").map((e) => e.trim()).filter(Boolean);
   const hasExt = /\.[A-Za-z0-9]{1,4}$/.test(name);
 
@@ -259,8 +314,52 @@ function locateOnWindows(name: string): string | null {
     if (hit) break;
   }
 
+  // .cmd / .bat 也要认：Node 的 npm、pnpm 在 Windows 上都是批处理入口，
+  // 过去只找 .exe 会让"npm 明明在却报缺失"。
+  if (!hit && !hasExt) {
+    for (const dir of dirs) {
+      const clean = dir.replace(/[/\\]+$/, "");
+      if (!clean) continue;
+      for (const ext of [".cmd", ".bat"]) {
+        const candidate = p(clean, name + ext);
+        if (isFileSync(candidate)) {
+          hit = candidate;
+          break;
+        }
+      }
+      if (hit) break;
+    }
+  }
+
   locateCache.set(name, hit);
   return hit;
+}
+
+/**
+ * 判断一个可执行来自哪里 —— 界面要如实告诉用户"这个是系统里已有的、这个是管家内置的"。
+ * 这直接决定用户该不该点「一键获取」：系统里已经有就别重复下载 60MB。
+ */
+export function explainOrigin(
+  path: string | null,
+  toolchainDirHint?: string,
+): "PATH" | "标准安装位置" | "管家内置" | null {
+  if (!path) return null;
+  const norm = (s: string) => s.replace(/[/\\]+$/, "").toLowerCase();
+  const target = norm(path);
+  if (toolchainDirHint && target.startsWith(norm(toolchainDirHint).toLowerCase())) {
+    return "管家内置";
+  }
+  const pathDirs = (Deno.env.get("PATH") ?? "")
+    .split(";")
+    .map((d) => norm(d.replace(/^"|"$/g, "")))
+    .filter(Boolean);
+  if (pathDirs.some((d) => target.startsWith(d + "\\") || target.startsWith(d + "/"))) {
+    return "PATH";
+  }
+  if (standardSearchDirs().some((d) => target.startsWith(norm(d) + "\\"))) {
+    return "标准安装位置";
+  }
+  return "PATH";
 }
 
 /** 本地实现而非引入 fs.ts：shell 是更底层的模块，不该反向依赖它。 */

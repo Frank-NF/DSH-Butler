@@ -10,6 +10,7 @@
 import { engine } from "./engine.ts";
 import type { AnyActionDef } from "./types.ts";
 import { envProbeAction } from "../domains/env/probe.ts";
+import { toolchainInstallAction } from "../domains/env/toolchain.ts";
 import { coreStatusAction } from "../domains/core/status.ts";
 import { coreVerifyAction } from "../domains/core/verify.ts";
 import { runtimeStatusAction } from "../domains/runtime/status.ts";
@@ -64,6 +65,7 @@ import { log } from "../util/log.ts";
 export function registerAllActions(): void {
   const defs = [
     envProbeAction,
+    toolchainInstallAction,
     coreStatusAction,
     coreVerifyAction,
     runtimeStatusAction,

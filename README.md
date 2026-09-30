@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-302%20passed-brightgreen.svg)](src)
 [![Deno](https://img.shields.io/badge/Deno-2.x-black.svg)](https://deno.com)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg)](https://dsh.huilinsh.cn)
-[![Release](https://img.shields.io/badge/release-v2.0.0--rc.1-orange.svg)](https://dsh.huilinsh.cn)
+[![Release](https://img.shields.io/badge/release-v2.0.0--rc.2-orange.svg)](https://dsh.huilinsh.cn)
 
 > **让 DSH 始终好用。** 一个本地桌面运维台，把「装 DSH、修 DSH、管插件、护数据」收进一个窗口。
 
@@ -32,12 +32,12 @@
 
 ## 快速开始
 
-**下载即用（推荐）**：到 <https://dsh.huilinsh.cn> 下载 `DSH-Butler-v2.0.0-rc.1-win-x64.zip`（约 32 MB）→ 解压 → 双击 `dsh-butler.exe`。
+**下载即用（推荐）**：到 <https://dsh.huilinsh.cn> 下载 `DSH-Butler-v2.0.0-rc.4-win-x64.zip`（约 32 MB）→ 解压 → 双击 `dsh-butler.exe`。
 
 校验完整性（SHA256 公布在 <https://dsh.huilinsh.cn/butler/version.json>）：
 
 ```powershell
-Get-FileHash .\DSH-Butler-v2.0.0-rc.1-win-x64.zip -Algorithm SHA256
+Get-FileHash .\DSH-Butler-v2.0.0-rc.4-win-x64.zip -Algorithm SHA256
 ```
 
 **从源码构建**（需要 Deno 2.x，Windows 10/11 + WebView2 运行时）：

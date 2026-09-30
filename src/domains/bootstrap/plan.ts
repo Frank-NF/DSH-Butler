@@ -18,6 +18,7 @@ import { checkWritable } from "../../host/privileges.ts";
 import { isDir } from "../../host/fs.ts";
 import { dirname, homeDir, normalize, p, resolveDshSourceRoot } from "../../util/paths.ts";
 import { probeRuntimes, type RuntimeProbe } from "../env/probe.ts";
+import { TOOL_SPECS, TOOL_VERSIONS, type ToolName } from "../env/toolchain.ts";
 import { readBootstrapJournal } from "./journal.ts";
 
 /** 计划里每一步当前的状态。 */
@@ -140,45 +141,35 @@ export async function collectBootstrapPlan(
   const pnpm = has("pnpm");
   const npm = has("npm");
 
-  if (!git?.found) {
-    blockers.push(
-      finding("bootstrap.no-git", "error", "缺少 Git，无法拉取 DSH 源码", {
-        cause: "在系统 PATH 中找不到 git",
-        impact: "第 3 步「获取源码」无法执行，部署根本开不了头",
-        action: "到 git-scm.com 下载安装，或执行 winget install Git.Git，装完重开管家再试",
-      }),
-    );
-  }
-  if (!node?.found) {
-    blockers.push(
-      finding("bootstrap.no-node", "error", "缺少 Node.js，无法安装依赖与构建", {
-        cause: "在系统 PATH 中找不到 node",
-        impact: "依赖安装与全量构建都跑不起来",
-        action:
-          "到 nodejs.org 下载 LTS（要求 22.19 以上或 24 以上），或用 winget install OpenJS.NodeJS.LTS",
-      }),
-    );
-  } else {
+  /*
+   * 【2026-09-29 的关键改动：缺运行时不再当"阻障"，而是当"待办"】
+   * 过去的写法是：缺 Git / Node / pnpm 就往 blockers 里塞三条 error，界面显示三个红叉，
+   * 建议全是"请自行到官网下载安装" —— 那就不叫一键部署（昊天原话）。
+   * 现在管家能自己把这三个装进内置工具链（env/toolchain.ts），所以它们降级成
+   * 计划里一个 status="action" 的步骤：点下去管家自己会办好。
+   * 只有"管家办不了"的事才配留在 blockers 里：磁盘不够、目录不可写、已装过。
+   */
+  const autoTools: ToolName[] = [];
+  if (!git?.found) autoTools.push("git");
+  if (!node?.found) autoTools.push("node");
+  // pnpm 由内置 npm 安装，node 缺失时它自然也在待办里
+  if (!pnpm?.found) autoTools.push("pnpm");
+  const autoBytes = autoTools.reduce((a, n) => a + TOOL_SPECS[n].sizeBytes, 0);
+
+  // Node 版本偏低：这台机器上的 Node 跑不动 DSH，但仍可自动解决（改用内置版）
+  if (node?.found) {
     const major = Number(/^v?(\d+)/.exec(node.version ?? "")?.[1] ?? 0);
     if (major > 0 && major < 22) {
       blockers.push(
         finding("bootstrap.node-old", "error", `Node.js 版本偏低（${node.version}）`, {
           cause: "DSH 0.1.7 要求 node ^22.19.0 || >=24.0.0",
           impact: "依赖安装或构建可能直接失败",
-          action: "升级到 Node.js 22 LTS 或更高版本",
+          action: `用「一键获取运行环境」装一个内置的 Node.js ${TOOL_VERSIONS.node}（与系统版互不影响）`,
+          fixAction: "env.toolchain-install",
           evidence: [node.path ?? "", node.version ?? ""],
         }),
       );
     }
-  }
-  if (!pnpm?.found && !npm?.found) {
-    blockers.push(
-      finding("bootstrap.no-pkg-manager", "error", "既没有 pnpm 也没有 npm，装不了依赖", {
-        cause: "PATH 中 pnpm 与 npm 都找不到",
-        impact: "第 4 步「安装依赖」无法执行",
-        action: "先装 Node.js（自带 npm），再用 npm install -g pnpm 装 pnpm",
-      }),
-    );
   }
   if (disk && disk.freeBytes < BOOTSTRAP_ESTIMATES.diskBytes) {
     blockers.push(
@@ -221,6 +212,11 @@ export async function collectBootstrapPlan(
   // 「已经装过」是"别从零装"的结论，不是"这一步做不了" —— 它不该把每一步都标成被挡住
   const hardBlocked = blockers.some((b) => b.id !== "bootstrap.already-installed");
   const cloneEst = BOOTSTRAP_ESTIMATES;
+  const runtimeDetail = autoTools.length === 0
+    ? `node ${node?.version ?? "?"} · pnpm ${pnpm?.version ?? "?"} · git ${git?.version ?? "?"}`
+    : `将自动获取：${
+      autoTools.map((n) => `${TOOL_SPECS[n].label} ${TOOL_VERSIONS[n]}`).join(" / ")
+    }（免安装版，装进管家目录，不改系统环境）`;
   const steps: PlanStep[] = [
     {
       id: "check",
@@ -233,23 +229,24 @@ export async function collectBootstrapPlan(
     },
     {
       id: "runtime",
-      title: pnpm?.found ? "准备运行时" : "安装 pnpm 并准备运行时",
-      detail: pnpm?.found
-        ? `node ${node?.version ?? "?"} · pnpm ${pnpm.version ?? "?"} · git ${git?.version ?? "?"}`
-        : `pnpm 缺失，将用 npm 执行 npm install -g pnpm`,
-      status: blockers.some((b) => b.id.startsWith("bootstrap.no-pkg"))
+      title: autoTools.length > 0 ? "自动获取运行环境" : "准备运行时",
+      detail: runtimeDetail,
+      status: hardBlocked
         ? "blocked"
-        : pnpm?.found
-        ? "ready"
-        : "action",
-      estimateMs: pnpm?.found ? 0 : 60_000,
-      downloadBytes: pnpm?.found ? 0 : 10 * MB,
+        : autoTools.length > 0
+        ? "action"
+        : "ready",
+      // 下载耗时按体积粗估（约 1.5 MB/s 保守值），解压再算 20 秒
+      estimateMs: autoTools.length > 0
+        ? Math.round((autoBytes / (1.5 * MB)) * 1000) + 20_000
+        : 0,
+      downloadBytes: autoBytes,
     },
     {
       id: "fetch",
       title: "拉取 DSH 源码",
       detail: `${params.url ?? cloneEst.repoUrl} → ${targetRoot}（浅克隆，约 480 MB）`,
-      status: git?.found ? "ready" : "blocked",
+      status: hardBlocked ? "blocked" : git?.found ? "ready" : "action",
       estimateMs: cloneEst.cloneMs[1],
       downloadBytes: cloneEst.cloneDownloadBytes,
     },
@@ -257,7 +254,7 @@ export async function collectBootstrapPlan(
       id: "deps",
       title: "安装依赖",
       detail: "pnpm install（约 1.1 GB，首次最慢）",
-      status: pnpm?.found || npm?.found ? "ready" : "blocked",
+      status: hardBlocked ? "blocked" : pnpm?.found || npm?.found ? "ready" : "action",
       estimateMs: cloneEst.depsMs[1],
       downloadBytes: cloneEst.depsDownloadBytes,
     },
@@ -265,28 +262,28 @@ export async function collectBootstrapPlan(
       id: "build",
       title: "全量构建",
       detail: "pnpm run build：原生组件 + 主进程 + 界面模块 + 网页外壳，并写入构建记录",
-      status: node?.found ? "ready" : "blocked",
+      status: hardBlocked ? "blocked" : node?.found ? "ready" : "action",
       estimateMs: cloneEst.buildMs[1],
     },
     {
       id: "verify",
       title: "核对构建产物",
       detail: "走 DSH 官方校验：产物文件数与构建记录对得上才算成",
-      status: node?.found ? "ready" : "blocked",
+      status: hardBlocked ? "blocked" : node?.found ? "ready" : "action",
       estimateMs: 60_000,
     },
     {
       id: "start",
       title: "启动 DSH 服务",
       detail: "后台起服务并等它真的能响应 HTTP",
-      status: "ready",
+      status: hardBlocked ? "blocked" : "ready",
       estimateMs: cloneEst.startMs[1],
     },
     {
       id: "final",
       title: "部署后三连验证",
       detail: "构建记录一致性 / 插件名单无异常 / 健康检查通过",
-      status: "ready",
+      status: hardBlocked ? "blocked" : "ready",
       estimateMs: 20_000,
     },
   ];
@@ -327,9 +324,9 @@ export async function collectBootstrapPlan(
       ? "blocked"
       : blockers.some((b) => b.id === "bootstrap.already-installed")
       ? "already-installed"
-      : pnpm?.found
-      ? "ready"
-      : "needs-setup",
+      : autoTools.length > 0
+      ? "needs-setup"
+      : "ready",
   };
 }
 

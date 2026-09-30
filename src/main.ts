@@ -10,6 +10,11 @@
 
 import { engine } from "./jobs/engine.ts";
 import { assertStageSafety, registerAllActions } from "./jobs/registry.ts";
+import {
+  applyToolchainPath,
+  TOOL_ORDER,
+  toolBinDirs,
+} from "./domains/env/toolchain.ts";
 import { recoverPluginTxn } from "./domains/plugin/mutate.ts";
 import { loadConfig } from "./domains/state/config.ts";
 import { startScheduler, type SchedulerHandle } from "./domains/state/scheduler.ts";
@@ -25,6 +30,7 @@ import {
   APP_TAGLINE,
   APP_VERSION,
   BUTLER_PORT_HEADLESS,
+  BUTLER_PORT_PREFERRED,
   STAGE_LABEL,
   WINDOW_TITLE,
 } from "./version.ts";
@@ -61,7 +67,7 @@ import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
 import { BUTLER_BAR_JS } from "./web/bar.ts";
 import { redactUrl, windowLooksStuck } from "./host/window_health.ts";
-import { isSafeExternalUrl } from "./host/shell.ts";
+import { addSearchDirs, isSafeExternalUrl } from "./host/shell.ts";
 
 async function main(): Promise<void> {
   const argv = Deno.args;
@@ -107,6 +113,18 @@ async function main(): Promise<void> {
     }
   }
 
+  /*
+   * 内置工具链：开机就把已下载的 Git / Node / pnpm 追加进本进程 PATH（只影响管家自己，
+   * 不碰系统环境变量）。必须在任何环境探测之前调用 —— 否则"刚装好的运行时还是探测不到"。
+   * 同时把 toolchain 目录注册给 locate，让装在管家目录里的工具能被正常找到。
+   */
+  try {
+    applyToolchainPath();
+    addSearchDirs(() => TOOL_ORDER.flatMap((n) => toolBinDirs(n)));
+  } catch (err) {
+    log.warn("main", `内置工具链接入失败（不影响启动）：${(err as Error).message}`);
+  }
+
   registerAllActions();
   assertStageSafety();
 
@@ -142,9 +160,16 @@ async function main(): Promise<void> {
   const headless = headlessMode; // 上面已经算过（单实例保护要用它）
   const server = createApiServer({
     token,
-    // 桌面态不指定端口：deno desktop 运行时会把 webview 指到它实际绑定的地址。
-    // headless 态固定端口，否则每次都是随机端口，脚本根本接不上。
-    ...(headless ? { port: BUTLER_PORT_HEADLESS } : {}),
+    // 【2026-09-29 改动】桌面态以前不指定端口 —— 于是每次启动端口都是随机的（54606/59672…一路飘），
+    // 用户想存个书签、或让别的工具连过来都用不了。
+    // 现在桌面态也先用固定端口（设置里改过就用设置的），被占才由 createApiServer 自动顺延、
+    // 全占满才回退随机 —— 地址稳定，又永远不会因为端口冲突打不开窗。
+    // headless 态依旧严格固定：脚本写死了地址，顺延反而连不上且更难排查。
+    // 注意：配置里的 server_port 是旧版「服务器同步」的远程端口（LegacyConfig，迁移时有意淘汰），
+    // 跟管家自己监听哪个端口无关 —— 别拿它当本地端口用。
+    ...(headless
+      ? { port: BUTLER_PORT_HEADLESS }
+      : { port: BUTLER_PORT_PREFERRED, allowPortFallback: true }),
   });
 
   const appUrl = `${server.origin}/?t=${token}`;
