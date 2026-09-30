@@ -2847,8 +2847,7 @@ export const CLIENT_JS = `(function () {
   function renderAi(cfg) {
     AI.cfg = cfg;
     var ready = !!(cfg.baseUrl && cfg.model && cfg.hasKey);
-    var tools = '<button class="btn sm" id="btn-ai-settings">' + icon('sliders') + '<span>API 设置</span></button>'
-      + '<button class="btn sm" id="btn-ai-test-top">' + icon('check') + '<span>测试连接</span></button>';
+    var tools = '<button class="btn sm" id="btn-ai-settings">' + icon('sliders') + '<span>API 设置</span></button>';
     var html = pageHead('AI 助手', '自带 API 的对话助手：DSH 起不来的时候，管家还在 —— 把现场喂给它，照它说的修。密钥只存本机配置文件，绝不回传原文。', tools);
     html += '<div class="card"><div class="card-title">当前通道<span class="sub">配置在右上角「API 设置」里</span></div>';
     if (ready) {
@@ -2858,8 +2857,7 @@ export const CLIENT_JS = `(function () {
         + kv('诊断现场', cfg.attachDiagnostics ? '每次提问自动附带（已脱敏）' : '不附带');
     } else {
       html += '<div class="finding warn"><div class="finding-title"><span class="tag warn">还没配好</span>填上 API 地址、模型名和密钥才能对话</div>'
-        + '<div class="finding-row">DSH 里已经配过的话，最省事的办法是打开「API 设置」，用里面的「从 DSH 导入」一键把地址、模型、密钥搬过来。</div>'
-        + '<div class="finding-fix"><button class="btn primary" id="btn-ai-settings-2">' + icon('sliders') + '<span>打开 API 设置</span></button></div></div>';
+        + '<div class="finding-row">点右上角「API 设置」，用里面的「从 DSH 导入」一键把 DSH 里已配好的地址、模型、密钥搬过来，不用手抄。</div></div>';
     }
     html += '</div>';
     html += '<div class="card" style="margin-top:14px"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
@@ -2933,14 +2931,9 @@ export const CLIENT_JS = `(function () {
     });
     $('ai-send').addEventListener('click', send);
     $('ai-clear').addEventListener('click', function () { AI.messages = []; aiRenderAll(); });
-    // 「API 设置」收进弹窗后，页面上只剩这两个入口按钮（任务7）
-    var openers = ['btn-ai-settings', 'btn-ai-settings-2'];
-    for (var oi = 0; oi < openers.length; oi++) {
-      var ob = $(openers[oi]);
-      if (ob) ob.addEventListener('click', openAiSettings);
-    }
-    var tt = $('btn-ai-test-top');
-    if (tt) tt.addEventListener('click', function () { runAiTest(tt); });
+    // 设置入口全页只有右上角这一个，点开是弹窗（页面去重后卡内不再重复摆按钮）
+    var ob = $('btn-ai-settings');
+    if (ob) ob.addEventListener('click', openAiSettings);
   }
 
   /**
@@ -2995,7 +2988,7 @@ export const CLIENT_JS = `(function () {
     }
   }
 
-  /** 测一次连通性：页面右上角与弹窗里各有一个按钮，共用这一份实现。 */
+  /** 测一次连通性：入口只在「API 设置」弹窗里这一个（页面去重后顶部不再放）。 */
   function runAiTest(btn) {
     if (!btn) return;
     var label = btn.innerHTML;
