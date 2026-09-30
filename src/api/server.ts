@@ -40,6 +40,8 @@ import {
 } from "../host/desktop.ts";
 import { MIRROR_CANDIDATES } from "../domains/net/sources.ts";
 import { collectPluginFacts } from "../domains/plugin/facts.ts";
+import { profileListAction } from "../domains/profile/manage.ts";
+import type { ActionContext } from "../jobs/types.ts";
 import {
   loadCatalog,
   type MarketSort,
@@ -640,6 +642,25 @@ export function createApiServer(opts: {
         // 现在实际用的是哪个目录、怎么找到的（任务1：设置页要能显示"当前生效的是谁"）
         sourceRoot: resolveDshSourceRoot(),
       });
+    }
+    if (req.method === "GET" && path === "/api/profiles") {
+      try {
+        // 阶段二 T8：多 profile 收进设置页 —— 直调 profile.list 动作（no-op ctx，只读，不需要 undo）。
+        const ctx = {
+          jobId: "settings-profiles",
+          signal: new AbortController().signal,
+          step: function () {},
+          detail: function () {},
+          log: function () {},
+          progress: function () {},
+          onUndo: function () {},
+          throwIfCancelled: function () {},
+        } as unknown as ActionContext;
+        const report = await profileListAction.run(ctx, {} as Record<string, never>);
+        return json({ ok: true, ...report });
+      } catch (e) {
+        return json({ ok: false, error: (e as Error).message }, 500);
+      }
     }
     if (req.method === "POST" && path === "/api/settings") {
       let body: Record<string, unknown>;

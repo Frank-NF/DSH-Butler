@@ -36,7 +36,11 @@ export const CLIENT_JS = `(function () {
     /** 插件中心页签（阶段二 T7）：installed=已装 / market=市场 / maint=维护。 */
     plugins: { tab: 'installed' },
     /** 插件市场：搜索词、分类、排序、状态筛选与页码（界面上切换时只改这里再重渲染）。 */
-    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [], view: 'list' }
+    market: { q: '', cat: '', sort: 'downloads', state: 'all', page: 1, force: false, picked: [], view: 'list' },
+    /** 阶段二 T8：合并页页签 —— 本体（状态|更新|服务）、备份与恢复（回滚点|数据搬家|日志）、体检（报告|运维统计）。 */
+    core: { tab: 'status' },
+    backups: { tab: 'rollback' },
+    report: { tab: 'report' }
   };
 
   // ── 基础工具 ─────────────────────────────────────────────────────
@@ -265,6 +269,23 @@ export const CLIENT_JS = `(function () {
   function pageHead(title, desc, tools) {
     return '<div class="page-head"><div><h1 class="page-title">' + esc(title) + '</h1><p class="page-desc">' + esc(desc) + '</p></div>' + (tools ? '<div class="page-tools">' + tools + '</div>' : '') + '</div>';
   }
+
+  /** 阶段二 T8：通用页签壳 —— 合并页的统一「页头 + 页签条」，正文由各页签渲染器产出（套用 pluginShell 的 role=tablist 范式）。 */
+  function tabShell(title, desc, tabs, active, inner, tools) {
+    var html = pageHead(title, desc, tools);
+    html += '<div class="ptabs" role="tablist">';
+    for (var i = 0; i < tabs.length; i++) {
+      var on = tabs[i][0] === active;
+      html += '<button class="ptab' + (on ? ' on' : '') + '" role="tab" data-ptab="' + tabs[i][0]
+        + '" aria-selected="' + (on ? 'true' : 'false') + '">' + tabs[i][1] + '</button>';
+    }
+    return html + '</div>' + inner;
+  }
+  /** 阶段二 T8：三个合并页的页签定义（[id, 中文名]）—— 顺序即界面顺序。 */
+  var CORE_TABS = [['status', '状态'], ['update', '更新'], ['service', '服务']];
+  var BACKUP_TABS = [['rollback', '回滚点'], ['data', '数据搬家'], ['logs', '日志']];
+  var REPORT_TABS = [['report', '报告'], ['stats', '运维统计']];
+
   /** 阶段二 T7：插件中心统一页头 + 页签（已装|市场|维护，role=tablist 复用设置页范式）。 */
   function pluginShell(tab, inner) {
     var tabs = [['installed', '已装'], ['market', '市场'], ['maint', '维护']];
@@ -825,6 +846,11 @@ export const CLIENT_JS = `(function () {
       $('modal-close').addEventListener('click', closeModal);
       return;
     }
+    if (action === 'profile.switch') {
+      // 阶段二 T8：设置里的多 profile 卡切换成功后，清缓存再走 go() 重取（清单与「当前使用」要刷新）。
+      delete state.cache.settings;
+      if (state.page === 'settings') go('settings', false);
+    }
     if (action === 'profile.list') {
       var pr = result.port || {};
       var body = '<div class="finding ' + (pr.free ? 'info' : 'warn') + '">'
@@ -1278,48 +1304,67 @@ export const CLIENT_JS = `(function () {
   // ── 页面：DSH 本体 ───────────────────────────────────────────────
 
   function renderCore(r) {
+    // 阶段二 T8：状态页签只留「版本与源码 + 问题清单」；更新日志/构建对比挪到「更新」页签，
+    // 服务整页挪到「服务」页签；页头与页签条由 tabShell 统一提供，工具条三个页签共用 coreTools(r)。
+    var inner = '';
+    if (!r.sourceRoot) {
+      inner += '<div class="card hero err"><div class="hero-title">未找到 DSH 本体</div><div class="hero-desc">没有检测到 DSH 源码树（判据：目录下存在 apps/cli）。</div></div>';
+      return tabShell('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', CORE_TABS, 'status',
+        inner + '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>', coreTools(r));
+    }
+    if (state.extra.coreVerify) inner += verifyCard(state.extra.coreVerify);
+
+    inner += '<div class="card"><div class="card-title">版本与源码</div>'
+      + kv('位置', r.sourceRoot, true)
+      + kv('版本', r.version || '未知');
+    if (r.git) {
+      inner += kv('分支', r.git.branch || '-')
+        + kv('提交', (r.git.headShort || '-') + ' （' + String(r.git.head || '').slice(0, 12) + '…）', true)
+        + kv('已跟踪文件改动', String(r.git.dirtyTracked));
+    }
+    inner += '</div>';
+
+    inner += '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
+    return tabShell('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', CORE_TABS, 'status', inner, coreTools(r));
+  }
+
+  /** 阶段二 T8：DSH 本体三个页签共用一套页头工具 —— 更新（或完成更新）是全页唯一主按钮，校验次之，回滚（危险）收进 ⋯。 */
+  function coreTools(r) {
     // 任务5：以前「完成更新」和「更新本体」并排站着，用户不知道点哪个、也不知道点完算不算完。
     // 合并成一个智能按钮 —— 有新版就拉取+重建+重启（core.update，本身就含重建那六步），
     // 只是产物落后就直接重建（core.finishUpdate）。两个动作用户点的是同一个按钮。
     var smartUpdate = r.needsFinishUpdate
       ? writeBtn('check', '完成更新（重建界面）', 'core.finishUpdate', {}, 'primary')
       : writeBtn('upload', '更新本体', 'core.update', {}, 'primary');
-    var tools = actBtn('shield', '校验本体', 'core.verify')
+    return actBtn('shield', '校验本体', 'core.verify')
       + smartUpdate
       + moreMenu(writeBtn('history', '回滚本体', 'core.rollback', {}, 'sm danger'), '更多操作');
-    var html = pageHead('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', tools);
-    if (!r.sourceRoot) {
-      html += '<div class="card hero err"><div class="hero-title">未找到 DSH 本体</div><div class="hero-desc">没有检测到 DSH 源码树（判据：目录下存在 apps/cli）。</div></div>';
-      return html + '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
-    }
-    if (state.extra.coreVerify) html += verifyCard(state.extra.coreVerify);
+  }
 
-    html += '<div class="card"><div class="card-title">版本与源码</div>'
-      + kv('位置', r.sourceRoot, true)
-      + kv('版本', r.version || '未知');
-    if (r.git) {
-      html += kv('分支', r.git.branch || '-')
-        + kv('提交', (r.git.headShort || '-') + ' （' + String(r.git.head || '').slice(0, 12) + '…）', true)
-        + kv('已跟踪文件改动', String(r.git.dirtyTracked));
+  /** 阶段二 T8：「更新」页签 —— 版本怎么变的、怎么落盘（更新日志 / 构建对比 / 双名单 / 安装残留）。 */
+  function renderCoreUpdate(r) {
+    var inner = '';
+    if (!r.sourceRoot) {
+      inner += '<div class="card hero err"><div class="hero-title">未找到 DSH 本体</div><div class="hero-desc">没有检测到 DSH 源码树（判据：目录下存在 apps/cli）。</div></div>';
+      return tabShell('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', CORE_TABS, 'update', inner, coreTools(r));
     }
-    html += '</div>';
 
     // ③ 本体更新日志：最近 20 条提交（来自源码仓库 git log，异步拉取）
-    html += '<div class="card"><div class="card-title">本体更新日志<span class="sub" id="changelog-sub">最近 20 条提交 · 来自源码仓库</span>'
+    inner += '<div class="card"><div class="card-title">本体更新日志<span class="sub" id="changelog-sub">最近 20 条提交 · 来自源码仓库</span>'
       + '<span class="spacer"></span><button class="btn sm" id="btn-refresh-changelog">' + icon('refresh') + '<span>刷新</span></button></div>'
       + '<div id="changelog-list"><div class="empty"><span class="spinner"></span> 正在读取提交记录…</div></div></div>';
 
-    html += '<div class="card"><div class="card-title">构建记录对比</div>';
+    inner += '<div class="card"><div class="card-title">构建记录对比</div>';
     if (r.build) {
-      html += kv('记录中的提交', r.build.commit || '-', true)
+      inner += kv('记录中的提交', r.build.commit || '-', true)
         + kv('记录中的版本', r.build.version || '-')
         + kv('构建时是否脏工作区', r.build.dirty ? '是' : '否')
         + kv('产物文件数', r.build.fileCount === null ? '-' : String(r.build.fileCount))
         + kv('产物摘要', String(r.build.artifactsSha256 || '-').slice(0, 32) + '…', true);
     } else {
-      html += '<div class="empty"><div class="empty-title">没有构建记录文件</div><div>还没在这台机器上构建过 DSH。</div></div>';
+      inner += '<div class="empty"><div class="empty-title">没有构建记录文件</div><div>还没在这台机器上构建过 DSH。</div></div>';
     }
-    html += '<div class="finding ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '" style="margin-top:10px">'
+    inner += '<div class="finding ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '" style="margin-top:10px">'
       + '<div class="finding-title"><span class="tag ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '">' + (r.needsFinishUpdate ? '需要处理' : '一致') + '</span>'
       + (r.needsFinishUpdate ? '需要执行「完成更新」' : '源码与产物一致') + '</div>'
       + (r.finishReason ? '<div class="finding-row">' + esc(r.finishReason) + '</div>' : '')
@@ -1328,7 +1373,7 @@ export const CLIENT_JS = `(function () {
     if (r.plugins) {
       // 阶段一 T3（方案 196 行）：删掉指往插件中心的路条 —— 双名单的六项详情本卡已经列全，
       // 管理插件走侧栏「插件中心」，不再让页面互相递路条。
-      html += '<div class="card"><div class="card-title">插件双名单<span class="sub">生效 = 依赖 ∩ 名单</span></div>'
+      inner += '<div class="card"><div class="card-title">插件双名单<span class="sub">生效 = 依赖 ∩ 名单</span></div>'
         + kv('依赖清单', String(r.plugins.dependencies.length))
         + kv('bundles 名单', String(r.plugins.bundles.length))
         + kv('实际生效', String(r.plugins.active.length))
@@ -1339,12 +1384,11 @@ export const CLIENT_JS = `(function () {
     }
 
     if (r.suspectedOrphans && r.suspectedOrphans.length) {
-      html += '<div class="card"><div class="card-title">安装残留<span class="sub">' + r.suspectedOrphans.length + ' 处</span></div>'
+      inner += '<div class="card"><div class="card-title">安装残留<span class="sub">' + r.suspectedOrphans.length + ' 处</span></div>'
         + '<div class="finding-evidence">' + esc(r.suspectedOrphans.map(function (x) { return x.name + '（' + x.kind + '）'; }).join(NL)) + '</div></div>';
     }
 
-    html += '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
-    return html;
+    return tabShell('DSH 本体', '版本、源码提交与构建记录的一致性。写操作会先把计划摊给你确认。', CORE_TABS, 'update', inner, coreTools(r));
   }
 
   // ③ 本体更新日志：优先回答"上游新版本相对本机改了什么"，取不到再退回"本机最近 20 条提交"
@@ -1553,13 +1597,15 @@ export const CLIENT_JS = `(function () {
   // ── 页面：运行状态 ───────────────────────────────────────────────
 
   function renderRuntime(r) {
-    var tools = '<button class="btn sm" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
+    // 阶段二 T8：页头归合并页壳（DSH 本体·服务页签），动作条降级到内容区顶部 —— 页级按钮 ≤2（方案 105 行）。
+    var html = '<div class="btn-row">'
+      + '<button class="btn sm" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
       + actBtn('activity', '运行时诊断', 'runtime.diagnose')
       + writeBtn('wrench', '修复僵尸锁', 'runtime.repair')
       + writeBtn('play', '启动服务', 'runtime.start')
       + writeBtn('stop', '停止服务', 'runtime.stop', {}, 'sm danger')
-      + writeBtn('refresh', '重启服务', 'runtime.restart');
-    var html = pageHead('运行状态', '服务进程、HTTP 健康检查、僵尸锁与 profile 残留物。', tools);
+      + writeBtn('refresh', '重启服务', 'runtime.restart')
+      + '</div>';
     if (state.extra.runtimeDiag) html += diagCard('运行时诊断结论', state.extra.runtimeDiag);
     html += '<div class="card"><div class="card-title">服务</div>'
       + kv('状态', r.running ? '运行中' : '未运行')
@@ -1604,6 +1650,11 @@ export const CLIENT_JS = `(function () {
 
     html += '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
     return html;
+  }
+
+  /** 阶段二 T8：「服务」页签 = 原「运行状态」页正文；页头与页签条由合并页壳统一提供。 */
+  function renderCoreService(r) {
+    return tabShell('DSH 本体', '服务进程、HTTP 健康检查、僵尸锁与 profile 残留物。', CORE_TABS, 'service', renderRuntime(r), '');
   }
 
   // ── 页面：插件 ───────────────────────────────────────────────────
@@ -1789,7 +1840,8 @@ export const CLIENT_JS = `(function () {
   function renderLogs(r) {
     var kw = (state.logFilter || '').toLowerCase();
     var logTools = '<button class="btn sm" id="btn-export-logs">' + icon('upload') + '<span>导出日志</span></button>';
-    var html = pageHead('日志', '自动从最近的启动日志里挑出真正的错误行。', logTools);
+    // 阶段二 T8：日志并进「备份与恢复」页签 —— 导出动作降级到内容区顶部。
+    var html = '<div class="btn-row">' + logTools + '</div>';
     html += '<div class="card"><div class="card-title">过滤</div><input class="input" id="log-filter" placeholder="只看含这个关键词的行（例如 error / 端口 / 插件名）" value="' + esc(state.logFilter) + '" spellcheck="false"><div class="field-help">过滤只作用于下面已经挑出来的错误摘录，不会重新读盘。</div></div>';
     html += '<div class="card"><div class="card-title">日志文件<span class="sub">共 ' + r.sources.length + ' 份 · ' + humanSize(r.totalBytes) + '</span></div>';
     if (!r.sources.length) {
@@ -1821,27 +1873,26 @@ export const CLIENT_JS = `(function () {
     }
     html += '</div>';
     html += '<div class="card"><div class="card-title">问题清单</div>' + renderFindings(r.findings) + '</div>';
-    return html;
+    return tabShell('备份与恢复', '自动从最近的启动日志里挑出真正的错误行。', BACKUP_TABS, 'logs', html, '');
   }
 
   // ── 页面：体检报告 ───────────────────────────────────────────────
 
   function renderReport(r) {
     if (typeof r === 'string') {
-      return pageHead('体检报告', '可直接复制分享（已自动脱敏用户名与路径）。')
-        + '<div class="card"><div class="btn-row" style="margin-bottom:10px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制报告</span></button></div>'
-        + '<div class="logbox" id="report-text" style="background:var(--surface-2);color:var(--text);max-height:none">' + esc(r) + '</div></div>';
+      return tabShell('体检', '可直接复制分享（已自动脱敏用户名与路径）。', REPORT_TABS, 'report',
+        '<div class="card"><div class="btn-row" style="margin-bottom:10px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制报告</span></button></div>'
+        + '<div class="logbox" id="report-text" style="background:var(--surface-2);color:var(--text);max-height:none">' + esc(r) + '</div></div>', '');
     }
     var v = r.verdict === 'error' ? '错误' : r.verdict === 'warn' ? '警告' : '正常';
-    var html = pageHead('体检报告', '生成于 ' + fmtTime(r.generatedAt) + ' · 耗时 ' + r.durationMs + ' ms',
-      writeBtn('box', '导出诊断包（脱敏）', 'data.diagnose'));
+    var html = '';
     html += '<div class="card hero ' + healthClass(r.verdict) + '"><div class="hero-title">结论：' + esc(v) + '</div><div class="hero-desc">错误 ' + r.summary.errors + ' 项 · 警告 ' + r.summary.warns + ' 项 · 提示 ' + r.summary.infos + ' 项</div>'
       + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制 Markdown 报告</span></button></div></div>';
     for (var i = 0; i < r.sections.length; i++) {
       var s = r.sections[i];
       html += '<div class="card"><div class="card-title">' + esc(s.label) + '</div>' + renderFindings(s.findings) + '</div>';
     }
-    return html;
+    return tabShell('体检', '生成于 ' + fmtTime(r.generatedAt) + ' · 耗时 ' + r.durationMs + ' ms', REPORT_TABS, 'report', html, writeBtn('box', '导出诊断包（脱敏）', 'data.diagnose'));
   }
 
   function copyReport() {
@@ -1928,7 +1979,8 @@ export const CLIENT_JS = `(function () {
   function renderStats(r) {
     var j = r.jobs || {};
     var tools = actBtn('refresh', '重新统计', 'diag.stats');
-    var html = pageHead('统计', '管家自己的账本：任务成功率与耗时、最常跑的动作、失败原因、数据目录体积，以及按天的趋势（每次打开都会补记今天的采样）。', tools);
+    // 阶段二 T8：统计并进「体检」页签 —— 重新统计随壳放页头，正文从这里开始。
+    var html = '';
 
     // 只看近 14 天：历史任务本来只有最近几天，拉 30 天会显得大片空白
     var daily = (j.daily || []).slice(-14).map(function (d) { return { label: d.date.slice(5), value: d.count }; });
@@ -1967,7 +2019,8 @@ export const CLIENT_JS = `(function () {
     } else {
       html += '<div class="card"><div class="card-title">体积趋势</div><div class="empty">还只有 ' + samples.length + ' 条采样 —— 明天起这里会出现曲线</div></div>';
     }
-    return html;
+    return tabShell('体检', '管家自己的账本：任务成功率与耗时、最常跑的动作、失败原因、数据目录体积，以及按天的趋势（每次打开都会补记今天的采样）。',
+      REPORT_TABS, 'stats', html, tools);
   }
   function loadHelp() { return api('/api/help'); }
 
@@ -2059,9 +2112,14 @@ export const CLIENT_JS = `(function () {
   function loadSettings() {
     // 顺便留一份给「安装源下拉」用：下拉的候选来自服务端的 MIRROR_CANDIDATES（单一真相源），
     // 不在前端复制一份列表 —— 否则以后加镜像要改两处。
-    return api('/api/settings').then(function (res) {
-      state.extra.settings = res;
-      return res;
+    // 阶段二 T8：多 profile 收进设置，顺路把 profile 清单一起拉回来（读不到不挡设置页）。
+    return Promise.all([
+      api('/api/settings'),
+      api('/api/profiles').catch(function () { return null; }),
+    ]).then(function (pair) {
+      state.extra.settings = pair[0];
+      state.extra.settingsProfiles = pair[1];
+      return pair[0];
     });
   }
 
@@ -2191,6 +2249,9 @@ export const CLIENT_JS = `(function () {
       + setRow('使用指引', '<button class="btn sm" id="btn-see-onboarding">' + icon('clipboard') + '<span>再看一遍首次使用指引</span></button>',
         '忘了哪个入口干什么用的，点一下就弹出来。')
       + '</div>';
+
+    // 阶段二 T8：多 profile 从独立页降级进设置 —— 顶层带 card-title 的卡，会自动成为左侧最后一个分组。
+    html += multiProfileCard(state.extra.settingsProfiles);
 
     html += '<div class="btn-row" style="margin-top:4px"><button class="btn primary" id="btn-save-settings">保存设置</button>'
       + '<button class="btn" id="btn-refresh-page">放弃修改</button></div>';
@@ -2561,7 +2622,8 @@ export const CLIENT_JS = `(function () {
     var tools = writeBtn('plus', '创建回滚点', 'backup.create')
       + actBtn('shield', '校验全部', 'backup.verify');
     var pt = r.points || [];
-    var html = pageHead('回滚点', '任何写操作动手前都会自动留一个回滚点；这里也能自己建、自己还原。', tools);
+    // 阶段二 T8：回滚点并进「备份与恢复」—— 页头/页签由 tabShell 提供，创建回滚点是全页唯一主按钮。
+    var html = '';
     html += '<div class="card"><div class="stats">'
       + stat('回滚点数量', pt.length)
       + stat('已验证', pt.filter(function (x) { return x.verified; }).length, '通过内容回读校验')
@@ -2569,7 +2631,8 @@ export const CLIENT_JS = `(function () {
       + stat('保存位置', r.root || '-', '', true)
       + '</div></div>';
     if (!pt.length) {
-      return html + '<div class="card">' + emptyBox('还没有回滚点', '写操作会自动创建；也可以点右上角「创建回滚点」手动留一个。') + '</div>';
+      return tabShell('备份与恢复', '任何写操作动手前都会自动留一个回滚点；这里也能自己建、自己还原。', BACKUP_TABS, 'rollback',
+        html + '<div class="card">' + emptyBox('还没有回滚点', '写操作会自动创建；也可以点右上角「创建回滚点」手动留一个。') + '</div>', tools);
     }
     // 【P0-4 · 2026-09-25】列表改成时间线：按时间倒序，一眼看出「谁在什么时候改了什么」；
     // 每条都能先点「影响预览」看清会覆盖什么，再决定要不要还原。
@@ -2597,10 +2660,29 @@ export const CLIENT_JS = `(function () {
         + '</div></div></div>';
     }
     html += '</div></div>';
-    return html;
+    return tabShell('备份与恢复', '任何写操作动手前都会自动留一个回滚点；这里也能自己建、自己还原。', BACKUP_TABS, 'rollback', html, tools);
   }
 
   // ── 页面：多 profile（P1-1） ─────────────────────────────────────
+
+  /** 阶段二 T8：profile 行抽成共享 —— 设置里的「多 profile」卡与多 profile 页用同一套行。 */
+  function profileRows(list) {
+    var html = '';
+    for (var i = 0; i < list.length; i++) {
+      var pf = list[i];
+      html += '<div class="row"><div class="row-main">'
+        + '<div class="row-name">' + esc(pf.name)
+        + (pf.active ? badge('ok', '正在使用') : '')
+        + (pf.hasManifest ? '' : badge('warn', '没有清单'))
+        + (pf.hasLock ? '' : badge('warn', '没有锁文件')) + '</div>'
+        + '<div class="row-meta"><span>' + pf.pluginCount + ' 个插件</span><span>依赖体积 '
+        + humanSize(pf.bytes || 0) + (pf.bytesComplete ? '' : '（至少）') + '</span><span class="mono muted">' + esc(pf.path) + '</span></div>'
+        + '<div class="row-actions">'
+        + (pf.active ? '' : writeBtn('history', '切到这个 profile', 'profile.switch', { params: { name: pf.name } }, 'sm'))
+        + '</div></div></div>';
+    }
+    return html;
+  }
 
   function renderProfiles(r) {
     var tools = actBtn('refresh', '重新体检', 'profile.list');
@@ -2616,22 +2698,24 @@ export const CLIENT_JS = `(function () {
     if (!list.length) {
       return html + '<div class="card">' + emptyBox('没找到 profile', '目录：' + esc(r.profilesRoot || '')) + '</div>';
     }
-    html += '<div class="card"><div class="card-title">profile 列表<span class="sub">目录：' + esc(r.profilesRoot || '') + '</span></div><div class="rows">';
-    for (var i = 0; i < list.length; i++) {
-      var pf = list[i];
-      html += '<div class="row"><div class="row-main">'
-        + '<div class="row-name">' + esc(pf.name)
-        + (pf.active ? badge('ok', '正在使用') : '')
-        + (pf.hasManifest ? '' : badge('warn', '没有清单'))
-        + (pf.hasLock ? '' : badge('warn', '没有锁文件')) + '</div>'
-        + '<div class="row-meta"><span>' + pf.pluginCount + ' 个插件</span><span>依赖体积 '
-        + humanSize(pf.bytes || 0) + (pf.bytesComplete ? '' : '（至少）') + '</span><span class="mono muted">' + esc(pf.path) + '</span></div>'
-        + '<div class="row-actions">'
-        + (pf.active ? '' : writeBtn('history', '切到这个 profile', 'profile.switch', { params: { name: pf.name } }, 'sm'))
-        + '</div></div></div>';
-    }
-    html += '</div></div>';
+    html += '<div class="card"><div class="card-title">profile 列表<span class="sub">目录：' + esc(r.profilesRoot || '') + '</span></div><div class="rows">'
+      + profileRows(list) + '</div></div>';
     return html;
+  }
+
+  /**
+   * 阶段二 T8：设置页里的「多 profile」卡 —— 原独立页降级为设置分组（方案 2.1 收敛）。
+   * 顶层带 card-title 的卡，layoutSettingsSections 才能把它收成一个分组；清单每次开设置都会重拉。
+   */
+  function multiProfileCard(rep) {
+    var head = '<div class="card-title">多 profile<span class="sub">本机有几个 profile、管家在指挥哪一个</span></div>';
+    if (!rep || rep.ok === false) {
+      return '<div class="card">' + head + emptyBox('读不到 profile 清单', (rep && rep.error) || '开设置时没拿到（右上角刷新试试）') + '</div>';
+    }
+    var list = rep.profiles || [];
+    return '<div class="card">' + head + '<div class="rows">'
+      + (list.length ? profileRows(list) : emptyBox('没找到 profile', '目录：' + esc(rep.profilesRoot || '')))
+      + '</div></div>';
   }
 
   // ── 页面：数据搬家（P1-2） ───────────────────────────────────────
@@ -2651,7 +2735,8 @@ export const CLIENT_JS = `(function () {
       + writeBtn('box', '一键恢复（换机）', 'data.restore');
     var list = r.backups || [];
     var lim = r.limits || { maxBackups: 0, maxBackupBytes: 0 };
-    var html = pageHead('数据搬家', '把配置、插件清单与技能打成搬移包，换机时拷过去就能恢复；备份目录里的旧包按保留策略自动清理。', tools);
+    // 阶段二 T8：数据搬家并进「备份与恢复」页签 —— 6 个按钮不进页头（页级按钮 ≤2），降级到内容区顶部。
+    var html = '<div class="btn-row">' + tools + '</div>';
     html += '<div class="card"><div class="stats">'
       + stat('备份数量', list.length)
       + stat('占用空间', humanSize(r.totalBytes || 0))
@@ -2664,7 +2749,8 @@ export const CLIENT_JS = `(function () {
         + esc(plan.trim.map(function (x) { return x.stamp; }).join('、')) + '</div></div>';
     }
     if (!list.length) {
-      return html + '<div class="card">' + emptyBox('还没有备份', '点右上角「立即备份一次」做一份精简备份；或「导出搬移包」按预设导出到指定位置。') + '</div>';
+      return tabShell('备份与恢复', '把配置、插件清单与技能打成搬移包，换机时拷过去就能恢复；备份目录里的旧包按保留策略自动清理。', BACKUP_TABS, 'data',
+        html + '<div class="card">' + emptyBox('还没有备份', '点上面的「立即备份一次」做一份精简备份；或「导出搬移包」按预设导出到指定位置。') + '</div>', '');
     }
     html += '<div class="card"><div class="card-title">备份与搬移包<span class="sub">按时间倒序 · 共 ' + list.length + ' 个</span></div><div class="rows">';
     for (var i = 0; i < list.length; i++) {
@@ -2680,7 +2766,7 @@ export const CLIENT_JS = `(function () {
         + '</div></div></div>';
     }
     html += '</div></div>';
-    return html;
+    return tabShell('备份与恢复', '把配置、插件清单与技能打成搬移包，换机时拷过去就能恢复；备份目录里的旧包按保留策略自动清理。', BACKUP_TABS, 'data', html, '');
   }
 
   // ── 页面：一键部署 ───────────────────────────────────────────────
@@ -3069,25 +3155,27 @@ export const CLIENT_JS = `(function () {
   }
 
   var PAGES = [
-    { id: 'overview', label: '总览', group: '概览', icon: 'grid' },
-    { id: 'bootstrap', label: '一键部署', group: '概览', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
+    // ── 阶段二 T8：侧栏四组（方案 2.2）—— 开始 / 使用 / 保障 / 更多；被合并的旧页隐身留在队尾，go() 负责重定向。
+    { id: 'overview', label: '总览', group: '开始', icon: 'grid' },
+    { id: 'bootstrap', label: '一键部署', group: '开始', icon: 'deploy', action: 'bootstrap.plan', render: renderBootstrap, title: '一键部署计划' },
+    { id: 'plugins', label: '插件中心', group: '使用', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
+    { id: 'core', label: 'DSH 本体', group: '使用', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
+    { id: 'ai', label: 'AI 助手', group: '使用', icon: 'chat', load: loadAiConfig, render: renderAi, title: 'AI 助手' },
+    { id: 'report', label: '体检', group: '保障', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
+    { id: 'backups', label: '备份与恢复', group: '保障', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' },
+    { id: 'help', label: '帮助', group: '更多', icon: 'book', load: loadHelp, render: renderHelp },
+    { id: 'env', label: '环境与配置', group: '更多', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
+    { id: 'jobs', label: '任务', group: '更多', icon: 'list', load: loadJobs, render: renderJobs },
     { id: 'market', label: '插件市场', group: '概览', icon: 'store', load: loadMarket, render: renderMarket, title: '插件市场', hiddenFromNav: true },
     // 设置不在左栏中间列表里 —— 它在侧栏最底部（markup.ts 的 nav-foot），
     // 但路由仍要注册：data-page="settings" 靠它解析。
     { id: 'settings', label: '设置', group: '记录', icon: 'sliders', load: loadSettings, render: renderSettings, title: '设置', hiddenFromNav: true },
-    { id: 'env', label: '环境与配置', group: '诊断', icon: 'sliders', action: 'env.probe', render: renderEnv, title: '环境体检' },
-    { id: 'core', label: 'DSH 本体', group: '诊断', icon: 'box', action: 'core.status', render: renderCore, title: '本体状态' },
-    { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态' },
-    { id: 'plugins', label: '插件中心', group: '诊断', icon: 'puzzle', action: 'plugin.scan', render: renderPlugins, title: '插件扫描' },
-    { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集' },
-    { id: 'report', label: '体检报告', group: '诊断', icon: 'clipboard', action: 'diag.healthCheck', render: renderReport, title: '全面体检' },
-    { id: 'ai', label: 'AI 助手', group: '诊断', icon: 'chat', load: loadAiConfig, render: renderAi, title: 'AI 助手' },
-    { id: 'stats', label: '统计', group: '诊断', icon: 'activity', action: 'diag.stats', render: renderStats, title: '运维统计' },
-    { id: 'jobs', label: '任务', group: '记录', icon: 'list', load: loadJobs, render: renderJobs },
-    { id: 'help', label: '帮助', group: '记录', icon: 'book', load: loadHelp, render: renderHelp },
-    { id: 'backups', label: '回滚点', group: '记录', icon: 'history', action: 'backup.list', render: renderBackups, title: '回滚点列表' },
-    { id: 'data', label: '数据搬家', group: '记录', icon: 'box', action: 'data.backups', render: renderData, title: '数据搬家' },
-    { id: 'profiles', label: '多 profile', group: '记录', icon: 'grid', action: 'profile.list', render: renderProfiles, title: '多 profile' }
+    // 阶段二 T8：以下旧页已并进合并页 —— 隐身保路由（go() 重定向），label 原样保留。
+    { id: 'runtime', label: '运行状态', group: '诊断', icon: 'activity', action: 'runtime.status', render: renderRuntime, title: '服务状态', hiddenFromNav: true },
+    { id: 'logs', label: '日志', group: '诊断', icon: 'terminal', action: 'runtime.logs', render: renderLogs, title: '日志收集', hiddenFromNav: true },
+    { id: 'stats', label: '统计', group: '诊断', icon: 'activity', action: 'diag.stats', render: renderStats, title: '运维统计', hiddenFromNav: true },
+    { id: 'data', label: '数据搬家', group: '记录', icon: 'box', action: 'data.backups', render: renderData, title: '数据搬家', hiddenFromNav: true },
+    { id: 'profiles', label: '多 profile', group: '记录', icon: 'grid', action: 'profile.list', render: renderProfiles, title: '多 profile', hiddenFromNav: true }
   ];
 
   try {
@@ -3147,6 +3235,10 @@ export const CLIENT_JS = `(function () {
         ? '体检 ' + val('set-sched-health') + 'h · 备份 ' + val('set-sched-backup') + 'h · 查更新 ' + val('set-sched-check') + 'h'
         : '已关闭';
       return head + ' · 留 ' + val('set-retention-count') + ' 个 / ' + val('set-retention-mb') + ' MB';
+    }
+    if (title === '多 profile') {
+      var rep = state.extra.settingsProfiles;
+      return rep && rep.ok !== false ? (rep.active || '-') + ' · ' + ((rep.profiles || []).length) + ' 个' : '读不到清单';
     }
     if (title === '更新') return '自动查本体 ' + (val('set-auto-core') ? '开' : '关') + ' · 自动查管家 ' + (val('set-auto-butler') ? '开' : '关');
     if (title === '网络与高级') {
@@ -3225,7 +3317,10 @@ export const CLIENT_JS = `(function () {
     }
     if (!cards.length) return;
     var idx = Number(state.extra.settingsSec);
-    if (!(idx >= 0 && idx < cards.length)) idx = 0;
+    if (!(idx >= 0)) idx = 0;
+    // 阶段二 T8：深链（profiles → 999）要落到最后一组，而不是跳回第一组；NaN 仍由上一行归 0。
+    if (idx >= cards.length) idx = cards.length - 1;
+    state.extra.settingsSec = idx;
 
     var layout = document.createElement('div');
     layout.className = 'set-layout';
@@ -3289,17 +3384,47 @@ export const CLIENT_JS = `(function () {
   }
 
   /**
-   * 阶段二 T7：插件中心共用路由 id 'plugins'，按页签换加载器/渲染器/缓存键。
-   * 旧 id 'market'（书签、老链接）仍在 PAGES 注册，由 go() 重定向进来。
+   * 阶段二 T8：合并页共用路由 —— TABS 把「合并页 → 页签状态字段 → 各页签的加载器/渲染器/缓存键」放一处。
+   * 旧 id（market/runtime/data/logs/stats/profiles）仍在 PAGES 注册，由 go() 重定向进对应页签。
    */
+  var TABS = {
+    plugins: {
+      stateKey: 'plugins', def: 'installed',
+      tabs: {
+        installed: {},
+        market: { load: loadMarket, render: renderMarket, title: '插件市场', cacheKey: 'market' },
+        maint: { action: 'plugin.scan', render: renderMaint, title: '插件维护', cacheKey: 'plugins' },
+      },
+    },
+    core: {
+      stateKey: 'core', def: 'status',
+      tabs: {
+        status: {},
+        update: { render: renderCoreUpdate, cacheKey: 'core' },
+        service: { action: 'runtime.status', render: renderCoreService, title: '服务状态', cacheKey: 'runtime' },
+      },
+    },
+    backups: {
+      stateKey: 'backups', def: 'rollback',
+      tabs: {
+        rollback: {},
+        data: { action: 'data.backups', render: renderData, title: '数据搬家', cacheKey: 'data' },
+        logs: { action: 'runtime.logs', render: renderLogs, title: '日志收集', cacheKey: 'logs' },
+      },
+    },
+    report: {
+      stateKey: 'report', def: 'report',
+      tabs: {
+        report: {},
+        stats: { action: 'diag.stats', render: renderStats, title: '运维统计', cacheKey: 'stats' },
+      },
+    },
+  };
+
   function routeDef(page) {
-    if (page !== 'plugins') return pageById(page);
-    var tabs = {
-      installed: {},
-      market: { load: loadMarket, render: renderMarket, title: '插件市场', cacheKey: 'market' },
-      maint: { action: 'plugin.scan', render: renderMaint, title: '插件维护', cacheKey: 'plugins' },
-    };
-    var over = tabs[state.plugins.tab] || tabs.installed;
+    var cfg = TABS[page];
+    if (!cfg) return pageById(page);
+    var over = cfg.tabs[state[cfg.stateKey].tab] || cfg.tabs[cfg.def];
     var base = pageById(page);
     if (!base) return base;
     var out = {};
@@ -3313,6 +3438,13 @@ export const CLIENT_JS = `(function () {
     // 页内点页签时 state.page 已是 'plugins'，不会触发重置。
     if (page === 'market') { page = 'plugins'; state.plugins.tab = 'market'; }
     else if (page === 'plugins' && state.page !== 'plugins') { state.plugins.tab = 'installed'; }
+    // 阶段二 T8：被合并的旧页一律重定向进对应页签；再进合并页统一回默认页签（页内切页签时 state.page 已相同，不重置）。
+    else if (page === 'runtime') { page = 'core'; state.core.tab = 'service'; }
+    else if (page === 'data') { page = 'backups'; state.backups.tab = 'data'; }
+    else if (page === 'logs') { page = 'backups'; state.backups.tab = 'logs'; }
+    else if (page === 'stats') { page = 'report'; state.report.tab = 'stats'; }
+    else if (page === 'profiles') { page = 'settings'; state.extra.settingsSec = 999; }
+    else if (TABS[page] && state.page !== page) { state[TABS[page].stateKey].tab = TABS[page].def; }
     var def = routeDef(page);
     if (!def) return;
     var ck = def.cacheKey || page;
@@ -3370,11 +3502,12 @@ export const CLIENT_JS = `(function () {
     if (jr) { openJob(jr.getAttribute('data-job')); return; }
     var nv = hit('[data-page]');
     if (nv) { go(nv.getAttribute('data-page'), false); return; }
-    // 插件中心页签（阶段二 T7）：只切渲染不跳路由，缓存按页签各存各的
+    // 合并页页签（阶段二 T7 起，T8 泛化）：只切渲染不跳路由，缓存按页签各存各的
     var pt = hit('[data-ptab]');
     if (pt) {
-      state.plugins.tab = pt.getAttribute('data-ptab') || 'installed';
-      go('plugins', false);
+      var tabCfg = TABS[state.page];
+      if (tabCfg) state[tabCfg.stateKey].tab = pt.getAttribute('data-ptab') || tabCfg.def;
+      go(state.page, false);
       return;
     }
     // 底部状态栏「任务」段（阶段一 T5）：跑着就点开/收起进度面板，空闲就说明一句

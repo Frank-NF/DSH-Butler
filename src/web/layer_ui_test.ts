@@ -112,7 +112,7 @@ Deno.test("本体页六卡：卡内不摆指路按钮，双名单详情页内直
 });
 
 Deno.test("本体页：更新是唯一主按钮，回滚（危险）收进 ⋯，校验本体做次按钮", () => {
-  const region = between(CLIENT_JS, "function renderCore(r) {", "var html = pageHead('DSH 本体'");
+  const region = between(CLIENT_JS, "function coreTools(r) {", "function renderCoreUpdate(");
   assertEquals(
     region.includes("writeBtn('upload', '更新本体', 'core.update', {}, 'primary')"),
     true,

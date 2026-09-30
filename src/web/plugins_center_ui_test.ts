@@ -40,14 +40,14 @@ Deno.test("插件中心：路由重定向与页签状态（旧 id 'market' 不�
     "点侧栏「市场」入口要重定向到市场页签",
   );
   assertEquals(
-    go.includes("state.plugins.tab = 'installed'"),
+    go.includes("state[TABS[page].stateKey].tab = TABS[page].def"),
     true,
-    "从别处进插件中心要回默认「已装」页签",
+    "从别处进合并页要回默认页签（T8 泛化：所有合并页共用同一条重置）",
   );
   assertEquals(
-    go.includes("state.page !== 'plugins'"),
+    go.includes("state.page !== page"),
     true,
-    "页内点页签不能触发重置（state.page 已是 plugins）",
+    "页内点页签不能触发重置（state.page 已是当前合并页）",
   );
   assertEquals(go.includes("routeDef(page)"), true, "go() 要按页签取路由");
   assertEquals(go.includes("def.cacheKey || page"), true, "缓存键要跟随页签");
@@ -169,11 +169,11 @@ Deno.test("插件中心：点击页签只切渲染，不跳出路由", () => {
   assertEquals(region.length > 60, true, "全局 click 的 data-page 分支没截到");
   assertEquals(region.includes("hit('[data-ptab]')"), true, "缺页签点击分支");
   assertEquals(
-    region.includes("state.plugins.tab = pt.getAttribute('data-ptab')"),
+    region.includes("state[tabCfg.stateKey].tab = pt.getAttribute('data-ptab')"),
     true,
-    "没把点到的页签写进 state",
+    "没把点到的页签写进对应合并页的 state",
   );
-  assertEquals(region.includes("go('plugins', false)"), true, "切页签应重渲染插件中心（走缓存）");
+  assertEquals(region.includes("go(state.page, false)"), true, "切页签应重渲染当前合并页（走缓存）");
 });
 
 Deno.test("插件中心：页签样式落在 styles.ts", async () => {
