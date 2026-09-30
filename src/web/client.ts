@@ -156,6 +156,8 @@ export const CLIENT_JS = `(function () {
     deploy: SVG_OPEN + '<path d="M12 3v10M8 9l4 4 4-4"/><path d="M4 16v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg>',
     store: SVG_OPEN + '<path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M3.2 10 5 5.2A1 1 0 0 1 5.9 4.5h12.2a1 1 0 0 1 .9.7L20.8 10"/><path d="M9.5 14h5"/></svg>',
     search: SVG_OPEN + '<circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>',
+    x: SVG_OPEN + '<path d="M6 6l12 12M18 6 6 18"/></svg>',
+    alert: SVG_OPEN + '<path d="M12 3 220h20z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
     external: SVG_OPEN + '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>'
   };
   function icon(name) { return ICON[name] || ''; }
@@ -167,11 +169,20 @@ export const CLIENT_JS = `(function () {
     if (!host) return;
     var d = document.createElement('div');
     d.className = 'toast' + (kind ? ' ' + kind : '');
-    d.textContent = msg;
+    // 阶段四 T9（方案 5.4）：图标区分 ok/warn/err，不只靠颜色传达。
+    var ic = kind === 'err' ? icon('x') : (kind === 'warn' ? icon('alert') : icon('check'));
+    d.innerHTML = '<span class="toast-ic" aria-hidden="true">' + ic + '</span><span>' + esc(msg) + '</span>';
     d.title = '点击关闭';
     d.addEventListener('click', function () { d.remove(); });
     host.appendChild(d);
     setTimeout(function () { d.remove(); }, kind === 'err' ? 9000 : 5200);
+  }
+
+  // ── 侧栏抽屉（阶段四 T9，方案 5.1：<640 汉堡开合）───────────────
+  function setNavOpen(open) {
+    document.body.classList.toggle('nav-open', !!open);
+    var nt = $('nav-toggle');
+    if (nt) nt.setAttribute('aria-expanded', open ? 'true' : 'false');
   }
 
   function api(path, opts) {
@@ -373,11 +384,11 @@ export const CLIENT_JS = `(function () {
       html += '<div class="hero-title">这台机器还没装 DSH</div>'
         + '<div class="hero-desc">' + esc(s ? s.note : '先做一次一键部署；装完之后这个窗口就是 DSH 本体。') + '</div>'
         // 阶段一 T4（方案 196 行）：删「去一键部署」指路 —— 部署表单本来就是弹窗，在这儿点开、看完计划、确认执行，全程不跳页。
-        + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-bootstrap-form">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)"><button class="btn primary" id="btn-bootstrap-form">'
         + icon('deploy') + '<span>一键部署…</span></button></div>';
     } else if (s.next === 'enter') {
       html += '<div class="hero-title">DSH 已就绪</div><div class="hero-desc">' + esc(s.note) + '</div>'
-        + '<div class="btn-row" style="margin-top:12px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + '<button class="btn primary" data-enter-dsh data-enter-label="进入 DSH">' + icon('external') + '<span>进入 DSH</span></button>'
         // 服务正在跑：这里得有一个"关掉它"的出口。以前首页只有一个主行动，
         // 想停服务要自己翻到「运行状态」页 —— 用户找不到（2026-09-27 反馈）。
@@ -385,12 +396,12 @@ export const CLIENT_JS = `(function () {
         + '</div>';
     } else if (s.next === 'start') {
       html += '<div class="hero-title">DSH 已装好，服务没在跑</div><div class="hero-desc">' + esc(s.note) + '</div>'
-        + '<div class="btn-row" style="margin-top:12px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + '<button class="btn primary" data-enter-dsh data-enter-label="启动并进入">' + icon('play') + '<span>启动并进入</span></button>'
         + '</div>';
     } else {
       html += '<div class="hero-title">DSH 已经在外面运行</div><div class="hero-desc">' + esc(s.note) + '</div>'
-        + '<div class="btn-row" style="margin-top:12px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + '<button class="btn primary" data-enter-dsh data-enter-label="接管并进入">' + icon('refresh') + '<span>接管并进入</span></button>'
         + '</div>';
     }
@@ -661,7 +672,7 @@ export const CLIENT_JS = `(function () {
         body += '<div class="finding info"><div class="finding-title"><span class="tag info">提示</span>该动作没有细分的步骤</div></div>';
       }
       if (findings.length) {
-        body += '<div class="card-title" style="margin-top:16px">写前检查<span class="sub">' + findings.length + ' 条</span></div>';
+        body += '<div class="card-title" style="margin-top:var(--sp-4)">写前检查<span class="sub">' + findings.length + ' 条</span></div>';
         body += renderFindings(findings);
       }
       var blocked = errors.length > 0;
@@ -682,6 +693,8 @@ export const CLIENT_JS = `(function () {
         foot += '<span class="spacer"></span><button class="btn ' + (danger ? 'danger-solid' : 'primary') + '" id="modal-exec" disabled>' + (danger ? '确认执行（有风险）' : '确认执行') + '</button>';
       }
       openModal({ title: esc(plan.title || '执行计划'), sub: plan.description || '', body: body, foot: foot });
+      // 阶段四 T9（方案 5.4）：危险确认把初始焦点落到「取消」，不落在执行上。
+      if (danger) { try { $('modal-cancel').focus(); } catch (e) { /* 焦点失败不拦执行 */ } }
       state.pendingPlan = resolve;
       var ack = $('plan-ack');
       if (ack) ack.addEventListener('change', function () { $('modal-exec').disabled = !ack.checked; });
@@ -817,7 +830,7 @@ export const CLIENT_JS = `(function () {
         + esc(rst.restored !== undefined ? ('写回 ' + rst.restored + ' 项') : '已按清单写回') + (rst.dir ? '　来源：' + esc(rst.dir) : '') + '</div></div>'
         + '<div class="finding"><div class="finding-title">接下来两步（换机必做）</div>'
         + '<div class="finding-row">① 重建插件依赖（约 1.1 GB，首次最慢）　② 重启服务并体检</div>'
-        + '<div class="btn-row" style="margin-top:10px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + actBtn('download', '① 重建依赖', 'bootstrap.apply')
         + actBtn('activity', '② 重启并体检', 'runtime.restart')
         + '</div></div>';
@@ -1174,7 +1187,7 @@ export const CLIENT_JS = `(function () {
     html += '</div>';
     // 两个出口：只想消掉红点就用「标记已读」，不想再看到这些条目就用「清空」
     if (unseen || list.length) {
-      html += '<div class="btn-row" style="margin-top:10px">'
+      html += '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + (unseen ? '<button class="btn sm" id="btn-notices-seen">全部标记已读</button>' : '')
         + '<button class="btn sm ghost" id="btn-notices-clear">清空提醒</button>'
         + '</div>';
@@ -1229,7 +1242,7 @@ export const CLIENT_JS = `(function () {
             : '源码提交比界面产物新，缺的只是最后的重建这一步。')
           + '一次更新 = 停服 → 拉取 → 重建 → 重启，点一次就全做完，不用再点第二个按钮；动手前会把步骤摊给你确认，也可以先建个回滚点。</div>'
           // 阶段一 T4（方案 196 行）：删掉跳去本体页的路条 —— 两个版本号上面已经写全，本卡只剩更新这一个主行动。
-          + '<div class="btn-row" style="margin-top:10px">'
+          + '<div class="btn-row" style="margin-top:var(--sp-3)">'
           + '<button class="btn primary" data-write="' + upAction + '">' + icon(upAction === 'core.update' ? 'upload' : 'check') + '<span>' + upLabel + '</span></button>'
           + '</div></div></div>';
       }
@@ -1246,6 +1259,9 @@ export const CLIENT_JS = `(function () {
             : { kind: 'ok', text: '本体正常' }));
       setBadge('badge-dsh', dshBadge.kind, dshBadge.text);
       setBadge('badge-service', ov.runtime.running ? 'ok' : '', ov.runtime.running ? '服务运行中' : '服务未运行');
+      // 阶段四 T9：窄窗口时顶栏徽标收进状态栏，内容在这里镜像一份
+      var sbm = $('sb-badges');
+      if (sbm) sbm.textContent = dshBadge.text + ' · ' + (ov.runtime.running ? '服务运行中' : '服务未运行');
       refreshCoreBadge(ov);
       setNavCount('plugins', ov.plugins.declared);
     });
@@ -1364,7 +1380,7 @@ export const CLIENT_JS = `(function () {
     } else {
       inner += '<div class="empty"><div class="empty-title">没有构建记录文件</div><div>还没在这台机器上构建过 DSH。</div></div>';
     }
-    inner += '<div class="finding ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '" style="margin-top:10px">'
+    inner += '<div class="finding ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '" style="margin-top:var(--sp-3)">'
       + '<div class="finding-title"><span class="tag ' + (r.needsFinishUpdate ? 'warn' : 'ok') + '">' + (r.needsFinishUpdate ? '需要处理' : '一致') + '</span>'
       + (r.needsFinishUpdate ? '需要执行「完成更新」' : '源码与产物一致') + '</div>'
       + (r.finishReason ? '<div class="finding-row">' + esc(r.finishReason) + '</div>' : '')
@@ -1474,7 +1490,7 @@ export const CLIENT_JS = `(function () {
       title: o.title,
       sub: o.sub,
       body: '<div id="cl-ai-out"></div>'
-        + '<div class="finding info" style="margin-bottom:10px"><div class="finding-title">' + changelogChips(o.counts) + '</div>'
+        + '<div class="finding info" style="margin-bottom:var(--sp-3)"><div class="finding-title">' + changelogChips(o.counts) + '</div>'
         + '<div class="finding-row">' + esc(o.note) + '</div></div>'
         + '<div class="rows" style="max-height:52vh;overflow:auto">' + rows + '</div>',
       foot: '<button class="btn" id="cl-ai">' + icon('chat') + '<span>用 AI 中文总结</span></button>'
@@ -1497,7 +1513,7 @@ export const CLIENT_JS = `(function () {
     for (var i = 0; i < o.entries.length && i < 120; i++) {
       subjects.push('- [' + (o.entries[i].type || 'other') + '] ' + (o.entries[i].subject || ''));
     }
-    out.innerHTML = '<div class="finding info" style="margin-bottom:10px"><div class="finding-title"><span class="spinner"></span> AI 正在读这 '
+    out.innerHTML = '<div class="finding info" style="margin-bottom:var(--sp-3)"><div class="finding-title"><span class="spinner"></span> AI 正在读这 '
       + subjects.length + ' 条改动…</div></div>';
     btn.disabled = true;
     var q = '下面是从 DSH ' + (o.installed || '?') + ' 到 ' + (o.latest || '?') + ' 的全部改动清单（每条是英文提交说明）。请用中文总结这次更新：'
@@ -1505,10 +1521,10 @@ export const CLIENT_JS = `(function () {
       + '每条讲清楚「改了什么、对用户有什么影响」；③ 不要逐条翻译，不要贴英文原文，不要贴 commit 号，不要编造清单里没有的内容。\\n\\n'
       + subjects.join('\\n');
     api('/api/ai/chat', { method: 'POST', body: { messages: [{ role: 'user', content: q }] } }).then(function (r) {
-      out.innerHTML = '<div class="finding ok" style="margin-bottom:10px"><div class="finding-title">AI 的中文概括</div>'
+      out.innerHTML = '<div class="finding ok" style="margin-bottom:var(--sp-3)"><div class="finding-title">AI 的中文概括</div>'
         + '<div class="finding-row explain-text" style="white-space:pre-wrap">' + esc(r.reply || '（AI 没给出内容）') + '</div></div>';
     }).catch(function (e) {
-      out.innerHTML = '<div class="finding warn" style="margin-bottom:10px"><div class="finding-title"><span class="tag warn">没能总结</span>'
+      out.innerHTML = '<div class="finding warn" style="margin-bottom:var(--sp-3)"><div class="finding-title"><span class="tag warn">没能总结</span>'
         + esc(e && e.message ? e.message : String(e)) + '</div>'
         + '<div class="finding-row">总结要用到你配的模型。先去「AI 助手」页把 API 地址、模型、密钥配好（也可以一键从 DSH 导入），再回来点一次。</div></div>';
     }).finally(function () { btn.disabled = false; });
@@ -1529,10 +1545,10 @@ export const CLIENT_JS = `(function () {
       latest: up.latest,
       note: modalNote
     };
-    box.innerHTML = '<div class="finding info" style="margin-bottom:10px"><div class="finding-title">' + esc(upstreamSummaryLine(up)) + '</div>'
+    box.innerHTML = '<div class="finding info" style="margin-bottom:var(--sp-3)"><div class="finding-title">' + esc(upstreamSummaryLine(up)) + '</div>'
       + '<div class="finding-row">' + changelogChips(up.counts) + '</div></div>'
       + changelogPreviewBox(up.entries)
-      + '<div class="btn-row" style="margin-top:10px">'
+      + '<div class="btn-row" style="margin-top:var(--sp-3)">'
       + '<button class="btn primary" id="cl-all">' + icon('list') + '<span>看全部 ' + up.entries.length + ' 条</span></button>'
       + '<button class="btn" id="cl-summary">' + icon('chat') + '<span>用 AI 中文总结</span></button>'
       + '</div>';
@@ -1575,7 +1591,7 @@ export const CLIENT_JS = `(function () {
       }
       var entries = res.entries;
       b.innerHTML = changelogPreviewBox(entries)
-        + '<div class="btn-row" style="margin-top:10px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + '<button class="btn primary" id="cl-all">' + icon('list') + '<span>看全部 ' + entries.length + ' 条</span></button>'
         + '</div>';
       var all = $('cl-all');
@@ -1740,7 +1756,7 @@ export const CLIENT_JS = `(function () {
   function renderMaint(r) {
     var html = pluginShell('maint', '');
     html += '<div class="card"><div class="card-title">离线安装<span class="sub">手上已有 .tgz 包时用它，不走网络</span></div>'
-      + '<div class="muted" style="margin-bottom:10px">挑本地 .tgz 装进 ' + esc(r.profileDir)
+      + '<div class="muted" style="margin-bottom:var(--sp-3)">挑本地 .tgz 装进 ' + esc(r.profileDir)
       + '，装之前照样先摊开计划给你确认。</div>'
       + writeBtn('box', '离线安装（.tgz）', 'plugin.installOffline') + '</div>';
     html += '<div class="card"><div class="card-title">体检与诊断<span class="sub">装不上、跑不动时先跑这两项</span></div>'
@@ -1781,7 +1797,7 @@ export const CLIENT_JS = `(function () {
           + esc((res && res.note) || '最近几轮 DSH 启动输出里没有"版本不兼容、已跳过"的记录。') + '</div></div>';
         return;
       }
-      var html = '<div class="finding warn" style="margin-bottom:10px"><div class="finding-title"><span class="tag warn">装了没生效</span>'
+      var html = '<div class="finding warn" style="margin-bottom:var(--sp-3)"><div class="finding-title"><span class="tag warn">装了没生效</span>'
         + items.length + ' 个插件被 DSH 跳过了</div>'
         + '<div class="finding-row">它们声明要的 DSH 内部包版本和本机运行时对不上，DSH 为了安全会把整包跳过 —— 包在、代码在，就是不加载。'
         + '确认你信任它（知道它是干什么的、从哪来的）之后，可以给它开一张只针对这个版本的通行证；开完要重启一次 DSH 才会加载。</div></div><div class="rows">';
@@ -1865,7 +1881,7 @@ export const CLIENT_JS = `(function () {
           if (!kw || String(lines[k]).toLowerCase().indexOf(kw) >= 0) shown.push(lines[k]);
         }
         if (kw && !shown.length) continue;
-        html += '<div style="margin-bottom:12px"><div class="card-title" style="margin-bottom:6px">' + esc(r.recentErrors[j].source) + '<span class="sub">' + shown.length + ' / ' + lines.length + ' 行</span></div>';
+        html += '<div style="margin-bottom:var(--sp-3)"><div class="card-title" style="margin-bottom:var(--sp-2)">' + esc(r.recentErrors[j].source) + '<span class="sub">' + shown.length + ' / ' + lines.length + ' 行</span></div>';
         var body = '';
         for (var m = 0; m < shown.length; m++) body += '<span class="ln">' + (m + 1) + '</span>' + esc(shown[m]) + NL;
         html += '<div class="logbox">' + body + '</div></div>';
@@ -1881,13 +1897,13 @@ export const CLIENT_JS = `(function () {
   function renderReport(r) {
     if (typeof r === 'string') {
       return tabShell('体检', '可直接复制分享（已自动脱敏用户名与路径）。', REPORT_TABS, 'report',
-        '<div class="card"><div class="btn-row" style="margin-bottom:10px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制报告</span></button></div>'
+        '<div class="card"><div class="btn-row" style="margin-bottom:var(--sp-3)"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制报告</span></button></div>'
         + '<div class="logbox" id="report-text" style="background:var(--surface-2);color:var(--text);max-height:none">' + esc(r) + '</div></div>', '');
     }
     var v = r.verdict === 'error' ? '错误' : r.verdict === 'warn' ? '警告' : '正常';
     var html = '';
     html += '<div class="card hero ' + healthClass(r.verdict) + '"><div class="hero-title">结论：' + esc(v) + '</div><div class="hero-desc">错误 ' + r.summary.errors + ' 项 · 警告 ' + r.summary.warns + ' 项 · 提示 ' + r.summary.infos + ' 项</div>'
-      + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制 Markdown 报告</span></button></div></div>';
+      + '<div class="btn-row" style="margin-top:var(--sp-3)"><button class="btn primary" id="btn-copy-report">' + icon('clipboard') + '<span>复制 Markdown 报告</span></button></div></div>';
     for (var i = 0; i < r.sections.length; i++) {
       var s = r.sections[i];
       html += '<div class="card"><div class="card-title">' + esc(s.label) + '</div>' + renderFindings(s.findings) + '</div>';
@@ -2233,7 +2249,7 @@ export const CLIENT_JS = `(function () {
     html += '<div class="card"><div class="card-title">网络与高级</div>'
       + setRow('npm 安装源',
         '<select class="select" id="set-npm-registry-pick"></select>'
-        + '<input class="input" id="set-npm-registry" value="' + esc(c.npmRegistry || '') + '" spellcheck="false" style="margin-top:8px">',
+        + '<input class="input" id="set-npm-registry" value="' + esc(c.npmRegistry || '') + '" spellcheck="false" style="margin-top:var(--sp-2)">',
         '装插件时用哪个源；留空走官方源。')
       + setRow('网络代理', '<input class="input" id="set-proxy" value="' + esc(c.proxyUrl || '') + '" placeholder="留空 = 直连" spellcheck="false">')
       + setRow('DSH 服务端口', '<input class="input set-num" id="set-dsh-port" type="number" min="1" max="65535" value="'
@@ -2253,7 +2269,7 @@ export const CLIENT_JS = `(function () {
     // 阶段二 T8：多 profile 从独立页降级进设置 —— 顶层带 card-title 的卡，会自动成为左侧最后一个分组。
     html += multiProfileCard(state.extra.settingsProfiles);
 
-    html += '<div class="btn-row" style="margin-top:4px"><button class="btn primary" id="btn-save-settings">保存设置</button>'
+    html += '<div class="btn-row" style="margin-top:var(--sp-1)"><button class="btn primary" id="btn-save-settings">保存设置</button>'
       + '<button class="btn" id="btn-refresh-page">放弃修改</button></div>';
     return html;
   }
@@ -2590,7 +2606,7 @@ export const CLIENT_JS = `(function () {
       if (job.params && Object.keys(job.params).length) {
         body += '<div style="height:12px"></div>' + kv('参数', JSON.stringify(job.params), true);
       }
-      body += '<div class="card-title" style="margin-top:16px">步骤</div>';
+      body += '<div class="card-title" style="margin-top:var(--sp-4)">步骤</div>';
       if (job.steps && job.steps.length) {
         body += '<div class="rows">';
         for (var i = 0; i < job.steps.length; i++) {
@@ -2605,7 +2621,7 @@ export const CLIENT_JS = `(function () {
         body += emptyBox('这个任务没有步骤记录', '');
       }
       if (job.error) body += '<div style="height:12px"></div><div class="finding error explain-text"><div class="finding-title"><span class="tag error">错误</span>任务没有成功</div><div class="finding-row">' + esc(job.error) + '</div></div>';
-      if (job.result) body += '<div class="card-title" style="margin-top:16px">结果</div><div class="logbox">' + esc(JSON.stringify(job.result, null, 2)) + '</div>';
+      if (job.result) body += '<div class="card-title" style="margin-top:var(--sp-4)">结果</div><div class="logbox">' + esc(JSON.stringify(job.result, null, 2)) + '</div>';
       openModal({
         title: esc(job.actionTitle) + '<span class="sub" style="font-size:12.5px;font-weight:400"> ' + esc(job.action) + '</span>',
         sub: '任务 ' + job.id,
@@ -2798,7 +2814,7 @@ export const CLIENT_JS = `(function () {
       html += '<div class="card hero warn"><div class="hero-title">上次部署没跑完</div>'
         + '<div class="hero-desc">停在「' + esc(plan.interrupted.step) + '」（开始于 ' + fmtTime(plan.interrupted.startedAt) + '）。'
         + '可以继续 —— 每一步都会先看现场再动手，不会把已经做完的事重做一遍；也可以放弃回滚，半成品会被移进隔离区。</div>'
-        + '<div class="btn-row" style="margin-top:12px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + writeBtn('play', '继续部署', 'bootstrap.apply', {}, 'primary')
         + writeBtn('trash', '放弃并回滚', 'bootstrap.discard', {}, 'sm danger')
         + '</div></div>';
@@ -2810,7 +2826,7 @@ export const CLIENT_JS = `(function () {
         + '。日常更新点下面的「更新本体」（停服 → 拉取 → 重建 → 重启，点一次就全做完）；'
         + '确实要从零重装，可以强制重装 —— 旧目录会先移进隔离区（不删除，可还原）。</div>'
         // 阶段一 T4（方案 196 行）：删「去 DSH 本体页」指路 —— 日常更新这一步页内直达，更新计划照样先摊给你确认；细看状态走侧栏「DSH 本体」。
-        + '<div class="btn-row" style="margin-top:12px">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)">'
         + writeBtn('upload', '更新本体', 'core.update', {}, 'primary')
         + '<button class="btn" id="btn-bootstrap-form">' + icon('deploy') + '<span>强制重装…</span></button></div></div>';
     } else if (plan.blockers && plan.blockers.length) {
@@ -2823,7 +2839,7 @@ export const CLIENT_JS = `(function () {
         + '<div class="hero-desc">预计下载 ' + humanSize(plan.estimates.downloadBytes) + ' · 占盘 '
         + humanSize(plan.estimates.diskBytes) + ' · 约 ' + plan.estimates.minutesMin + '-' + plan.estimates.minutesMax + ' 分钟。'
         + (plan.verdict === 'needs-setup' ? '（会顺带把 pnpm 装上）' : '') + '</div>'
-        + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-bootstrap-form">'
+        + '<div class="btn-row" style="margin-top:var(--sp-3)"><button class="btn primary" id="btn-bootstrap-form">'
         + icon('deploy') + '<span>开始部署…</span></button></div></div>';
     }
 
@@ -2942,7 +2958,7 @@ export const CLIENT_JS = `(function () {
    */
   function dshImportCard() {
     if (!AI.channels.length) return '';
-    var html = '<div class="card" style="margin-top:14px"><div class="card-title">从 DSH 导入'
+    var html = '<div class="card" style="margin-top:var(--sp-4)"><div class="card-title">从 DSH 导入'
       + '<span class="sub">DSH 里已经配好的通道，点一下搬过来</span></div><div class="rows">';
     for (var i = 0; i < AI.channels.length; i++) {
       var c = AI.channels[i];
@@ -2974,7 +2990,7 @@ export const CLIENT_JS = `(function () {
       + '<div class="field"><label class="field-label" for="ai-key">API 密钥</label><input class="input" id="ai-key" type="password" placeholder="' + esc(keyPh) + '" autocomplete="off"></div>'
       + '<div class="field"><label class="field-label" for="ai-model">模型名</label><input class="input" id="ai-model" placeholder="deepseek-chat" value="' + esc(cfg.model) + '"></div>'
       + '<label class="check"><input type="checkbox" id="ai-diag"' + (cfg.attachDiagnostics ? ' checked' : '') + '><span>对话时自动附带诊断现场（管家状态 + 日志尾部，已脱敏）—— DSH 起不来时靠它排障，建议开着</span></label>'
-      + '<div class="btn-row" style="margin-top:12px">'
+      + '<div class="btn-row" style="margin-top:var(--sp-3)">'
       + '<button class="btn primary" id="ai-save">保存配置</button>'
       + '<button class="btn" id="ai-test">测试连接</button>'
       + (cfg.hasKey ? '<button class="btn" id="ai-clearkey">清除已存密钥</button>' : '')
@@ -3012,11 +3028,11 @@ export const CLIENT_JS = `(function () {
         + '<div class="finding-row">点右上角「API 设置」，用里面的「从 DSH 导入」一键把 DSH 里已配好的地址、模型、密钥搬过来，不用手抄。</div></div>';
     }
     html += '</div>';
-    html += '<div class="card" style="margin-top:14px"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
+    html += '<div class="card" style="margin-top:var(--sp-4)"><div class="card-title">对话<span class="sub" id="ai-ctx-hint">' + (cfg.attachDiagnostics ? '将附带诊断现场' : '未附带诊断现场') + '</span></div>'
       + '<div id="ai-box" class="chat-box"></div>'
       + '<div class="chat-row"><textarea id="ai-input" class="textarea" rows="2" placeholder="描述你的问题，回车发送（Shift+回车换行）…"></textarea>'
       + '<button class="btn primary" id="ai-send">发送</button></div>'
-      + '<div class="btn-row" style="margin-top:8px"><button class="btn" id="ai-clear">清空对话</button>'
+      + '<div class="btn-row" style="margin-top:var(--sp-2)"><button class="btn" id="ai-clear">清空对话</button>'
       + '<span style="align-self:center;font-size:12px;color:var(--text-3)">AI 只给建议；真正动手仍走管家的计划确认。</span></div></div>';
     return html;
   }
@@ -3476,7 +3492,7 @@ export const CLIENT_JS = `(function () {
     var msg = e && e.message ? e.message : String(e);
     setMain('<div class="page-head"><div><h1 class="page-title">出错了</h1><p class="page-desc">这一步没能完成。</p></div></div>'
       + '<div class="card hero err"><div class="hero-title">检测失败</div><div class="hero-desc">' + esc(msg) + '</div>'
-      + '<div class="btn-row" style="margin-top:12px"><button class="btn primary" id="btn-refresh-page">' + icon('refresh') + '<span>重试</span></button></div></div>');
+      + '<div class="btn-row" style="margin-top:var(--sp-3)"><button class="btn primary" id="btn-refresh-page">' + icon('refresh') + '<span>重试</span></button></div></div>');
     toast('检测失败：' + msg, 'err');
   }
 
@@ -3494,14 +3510,19 @@ export const CLIENT_JS = `(function () {
       if (!om[oi].contains(t) || (btnIn && om[oi].contains(btnIn))) om[oi].removeAttribute('open');
     }
 
+    // 阶段四 T9：抽屉开着时点汉堡/导航以外的地方先收起（方案 5.1）
+    if (document.body.classList.contains('nav-open') && !hit('.nav') && !hit('#nav-toggle')) setNavOpen(false);
     var w = hit('[data-write]');
     if (w) { startWrite(w.getAttribute('data-write'), w); return; }
     var a = hit('[data-act]');
     if (a) { startRead(a.getAttribute('data-act'), a); return; }
     var jr = hit('[data-job]');
     if (jr) { openJob(jr.getAttribute('data-job')); return; }
+    // 阶段四 T9：汉堡开合侧栏抽屉（方案 5.1）
+    var nt = hit('#nav-toggle');
+    if (nt) { setNavOpen(!document.body.classList.contains('nav-open')); return; }
     var nv = hit('[data-page]');
-    if (nv) { go(nv.getAttribute('data-page'), false); return; }
+    if (nv) { go(nv.getAttribute('data-page'), false); setNavOpen(false); return; }
     // 合并页页签（阶段二 T7 起，T8 泛化）：只切渲染不跳路由，缓存按页签各存各的
     var pt = hit('[data-ptab]');
     if (pt) {
@@ -3650,6 +3671,7 @@ export const CLIENT_JS = `(function () {
 
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && state.modalOpen) { closeModal(); return; }
+    if (e.key === 'Escape' && document.body.classList.contains('nav-open')) { setNavOpen(false); return; }
     if (e.key === 'Enter' && e.target && e.target.id === 'market-q') { state.market.q = e.target.value; state.market.page = 1; go('market', true); return; }
     // 任务行是 role="button"：键盘上的 Enter / 空格也要能打开详情 —— 只用鼠标才算"能用"是不合格的。
     if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.closest) {
@@ -3733,7 +3755,7 @@ export const CLIENT_JS = `(function () {
   function showOnboarding() {
     var body =
       '<div class="finding info"><div class="finding-title"><span class="tag info">欢迎</span>DSH管家 · 首次使用指引</div>'
-      + '<ol class="steps-ol" style="margin:10px 0 0 18px;line-height:2">'
+      + '<ol class="steps-ol" style="margin:var(--sp-3) 0 0 var(--sp-4);line-height:2">'
       + '<li><b>总览</b>：一眼看 DSH 本体、服务与插件的当前状况，异常会直接给出下一步动作。</li>'
       + '<li><b>一键部署</b>：从零装一台 DSH；先出计划、你确认之后才动手。</li>'
       + '<li><b>插件市场</b>：线上目录挑插件；装 / 卸 / 更新都先摊开计划再执行，勾选多个可一次装完。</li>'

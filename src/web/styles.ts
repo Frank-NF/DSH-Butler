@@ -25,7 +25,7 @@ export const STYLE_CSS = `
   --border: #DAD7CD;
   --border-strong: #B9B6AB;
   --brand: #F06A3D;          /* VI 主橙红（装饰用，不承载正文）*/
-  --brand-text: #C24A1E;     /* 浅底上的品牌文字（4.6:1）*/
+  --brand-text: #BD471C;     /* 浅底上的品牌文字（实测 4.7:1 对 bg、5.1:1 对 surface，过 AA）*/
   --brand-fill: #C94A20;     /* 按钮实底：白字 4.7:1，过 AA */
   --brand-fill-hover: #B23C0B;
   --brand-weak: #FBEDE6;
@@ -48,6 +48,12 @@ export const STYLE_CSS = `
   --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", Consolas, "SF Mono", "Courier New", monospace;
   --sidebar-w: 200px;
+  /* 阶段四 T9：间距令牌（方案 5.2）—— 页面内联 margin 一律走这五档 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-6: 24px;
   --topbar-h: 52px;
 }
 
@@ -85,7 +91,7 @@ export const STYLE_CSS = `
 html, body { height: 100%; margin: 0; }
 body {
   font-family: var(--font-ui);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.55;
   color: var(--text);
   background: var(--bg);
@@ -456,10 +462,12 @@ button { cursor: pointer; }
 .toast-host { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 70; }
 .toast {
   background: var(--text); color: var(--bg); padding: 10px 14px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 8px;
   font-size: 13px; max-width: 440px; box-shadow: var(--shadow-2);
   animation: rise var(--dur-2) var(--ease);
 }
 .toast.err { background: var(--err); color: #fff; }
+.toast-ic svg { flex: none; vertical-align: -2px; }
 .toast.warn { background: var(--warn); color: #fff; }
 :root[data-theme="dark"] .toast { background: var(--surface-3); color: var(--text); border: 1px solid var(--border-strong); }
 
@@ -476,6 +484,30 @@ button { cursor: pointer; }
   .nav-group, .nav-item span.label, .nav-count, .nav-foot { display: none; }
   .nav-item { justify-content: center; padding: 9px 0; }
   .brand-sub { display: none; }
+}
+
+/* ── 阶段四 T9：汉堡按钮（常态隐藏，仅窄窗口抽屉出现，方案 5.1）── */
+.nav-toggle { display: none; }
+.sb-badges, #sb-badges-sep { display: none; }
+
+@media (max-width: 640px) {
+  .topbar-right .badge { display: none; }
+  .nav-toggle { display: inline-flex; }
+  .brand-tagline { display: none; }
+  #sb-badges-sep, .sb-badges { display: inline; }
+  .body { grid-template-columns: 1fr; }
+  .nav {
+    position: fixed; z-index: 40; top: var(--topbar-h); left: 0; bottom: 0;
+    width: min(78vw, 300px);
+    transform: translateX(-100%); visibility: hidden;
+    transition: transform var(--dur-1) var(--ease), visibility 0s linear var(--dur-1);
+    box-shadow: var(--shadow-2);
+  }
+  body.nav-open .nav { transform: none; visibility: visible; transition-delay: 0s; }
+  /* 抽屉是完整导航：把 900 档藏掉的标签与底部区还回来 */
+  .nav-group, .nav-foot { display: block; }
+  .nav-item span.label, .nav-count { display: inline; }
+  .nav-item { justify-content: flex-start; padding: 7px 10px; }
 }
 
 /* ── 插件市场 ───────────────────────────────────────────────────── */
