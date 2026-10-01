@@ -9,6 +9,7 @@
 
 import { engine } from "../jobs/engine.ts";
 import { collectOverview } from "./overview.ts";
+import { portCandidates } from "../host/port_memory.ts";
 import { INDEX_HTML } from "../web/markup.ts";
 import { STYLE_CSS } from "../web/styles.ts";
 import { STATS_CSS } from "../web/styles_stats.ts";
@@ -161,19 +162,28 @@ async function gatherAiContext(): Promise<string> {
  * 探测与真正绑定之间理论上存在极小的抢跑可能，随机兜底就是给这种情况留的后路 ——
  * 无论发生什么，都不会出现"因为端口问题开不了窗"。
  */
-export function resolvePort(preferred: number | undefined, allowFallback: boolean): number {
+export function resolvePort(
+  preferred: number | undefined,
+  allowFallback: boolean,
+  /** 上次用起来的端口（host/port_memory.ts）：用户书签和习惯都在它上面。 */
+  sticky?: number | null,
+  /** 端口探测（默认真绑一下；单测注入假的，省得占真端口）。 */
+  probe: (port: number) => boolean = portFree,
+): number {
   if (!preferred || preferred <= 0) return 0;
   // headless / 脚本场景要的是确定地址，顺延了脚本照样连不上，不如明确失败。
   if (!allowFallback) return preferred;
 
-  if (portFree(preferred)) return preferred;
-  for (let i = 1; i <= BUTLER_PORT_FALLBACK_SPAN; i++) {
-    const next = preferred + i;
-    if (next > 65535) break;
-    if (portFree(next)) {
-      log.warn("api", `首选端口 ${preferred} 已被占用，顺延到 ${next}`);
-      return next;
-    }
+  for (const cand of portCandidates(preferred, sticky ?? null, BUTLER_PORT_FALLBACK_SPAN)) {
+    if (!probe(cand)) continue;
+    if (cand === preferred) return cand;
+    log.warn(
+      "api",
+      cand === sticky
+        ? `首选端口 ${preferred} 已被占用，沿用上次用起来的 ${cand}`
+        : `首选端口 ${preferred} 已被占用，顺延到 ${cand}`,
+    );
+    return cand;
   }
   log.warn(
     "api",
@@ -204,9 +214,15 @@ export function createApiServer(opts: {
    * headless 不要（脚本写死了地址，顺延反而让它连不上还更难排查）。
    */
   allowPortFallback?: boolean;
+  /** 上次用起来的端口：首选被占时优先沿用它（桌面态才传）。 */
+  stickyPort?: number | null;
 }): ServerHandle {
   const token = opts.token;
-  const listenPort = resolvePort(opts.port, opts.allowPortFallback === true);
+  const listenPort = resolvePort(
+    opts.port,
+    opts.allowPortFallback === true,
+    opts.stickyPort ?? null,
+  );
 
   // 【2026-09-25 审计 QUAL-02】Deno.serve 会优先采用环境变量 DENO_SERVE_ADDRESS，
   // 而且它**覆盖**我们显式传的 port（实测：显式传 port 也照样绑到变量里那个）。

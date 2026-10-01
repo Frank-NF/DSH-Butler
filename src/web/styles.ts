@@ -471,6 +471,22 @@ button { cursor: pointer; }
 .toast.warn { background: var(--warn); color: #fff; }
 :root[data-theme="dark"] .toast { background: var(--surface-3); color: var(--text); border: 1px solid var(--border-strong); }
 
+/* ── 服务失联兜底（端口漂移，2026-09-30）──────────────────────────
+   用户不该看到浏览器原生的"拒绝连接"页：那是弃用的直接原因。 */
+
+.dead-host {
+  position: fixed; inset: 0; z-index: 90; display: flex; align-items: center;
+  justify-content: center; padding: 24px; background: var(--bg); color: var(--text);
+}
+.dead-host[hidden] { display: none; }
+.dead-card {
+  max-width: 440px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow-2);
+}
+.dead-t { font-size: 15px; font-weight: 600; margin: 0 0 var(--sp-2); }
+.dead-s { font-size: 13px; color: var(--text-2); margin: 0 0 var(--sp-4); line-height: 1.7; }
+.dead-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes rise { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }

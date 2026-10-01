@@ -157,7 +157,7 @@ export const CLIENT_JS = `(function () {
     store: SVG_OPEN + '<path d="M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M3.2 10 5 5.2A1 1 0 0 1 5.9 4.5h12.2a1 1 0 0 1 .9.7L20.8 10"/><path d="M9.5 14h5"/></svg>',
     search: SVG_OPEN + '<circle cx="11" cy="11" r="6"/><path d="M20 20l-3.6-3.6"/></svg>',
     x: SVG_OPEN + '<path d="M6 6l12 12M18 6 6 18"/></svg>',
-    alert: SVG_OPEN + '<path d="M12 3 220h20z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
+    alert: SVG_OPEN + '<path d="M12 3 2 20h20z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>',
     external: SVG_OPEN + '<path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>'
   };
   function icon(name) { return ICON[name] || ''; }
@@ -196,11 +196,90 @@ export const CLIENT_JS = `(function () {
         if (!r.ok) {
           var msg = t;
           try { var j = JSON.parse(t); if (j && j.error) msg = j.error; } catch (e) { /* 非 JSON */ }
-          throw new Error(msg || ('HTTP ' + r.status));
+          var he = new Error(msg || ('HTTP ' + r.status));
+          he.http = true; // 服务在正常应答（4xx/5xx），别当成"人没了"
+          throw he;
         }
+        apiMiss = 0; // 通了就把之前的失联清掉
+        var host = $('dead-host');
+        if (host && !host.hidden) { host.hidden = true; host.innerHTML = ''; }
         try { return JSON.parse(t); } catch (e) { return t; }
       });
+    }).catch(function (e) {
+      // 只有网络层失败（连不上/被拒）才往上数：fetch 在这两种情形下都是直接抛
+      if (!e || e.http) throw e;
+      apiMiss++;
+      if (apiMiss >= 2) probeNeighbors();
+      throw e;
     });
+  }
+
+  // ── 服务失联的最后一公里（端口漂移，2026-09-30）─────────────────────
+  // 页面还活着、API 却全连不上 —— 通常是端口被换掉了。用户看到浏览器原生的
+  // "拒绝连接"就会以为软件坏了，所以这里自己说人话，并给出「一键回到管家」。
+  var apiMiss = 0, probing = false;
+
+  function deadPortBase() {
+    var host = $('dead-host');
+    var b = host ? Number(host.getAttribute('data-base')) : 0;
+    return b > 0 ? b : (Number(location.port) || 8731);
+  }
+
+  function showDead(found) {
+    var host = $('dead-host');
+    if (!host || !host.hidden) return;
+    var title = found ? '管家搬到了 ' + found + ' 号端口' : '连不上管家服务';
+    var sub = found
+      ? '你打开的这个地址（' + (location.port || '旧端口') + '）已经没人应答了，管家在 ' + found +
+        ' 号端口上。地址变了，不是坏了 —— 点一下就回去。'
+      : '这个地址上已经没人应答，附近端口也没有。可能管家已经退出了：从托盘图标重新打开它，或过一会儿重试。';
+    host.innerHTML = '<div class="dead-card">' + icon('alert') +
+      '<p class="dead-t"></p><p class="dead-s"></p><div class="dead-acts">' +
+      (found ? '<button class="btn primary" id="dead-go">回到管家</button>' : '') +
+      '<button class="btn" id="dead-retry">重试连接</button></div></div>';
+    host.querySelector('.dead-t').textContent = title;
+    host.querySelector('.dead-s').textContent = sub;
+    var go = $('dead-go');
+    if (go) {
+      go.onclick = function () {
+        // replace 而不是赋值：别把死地址留在后退历史里，刷新也不要再回到它
+        location.replace('http://127.0.0.1:' + found + '/' + location.search);
+      };
+    }
+    var retry = $('dead-retry');
+    if (retry) {
+      retry.onclick = function () {
+        apiMiss = 0; probing = false;
+        host.hidden = true; host.innerHTML = '';
+        location.reload();
+      };
+    }
+    host.hidden = false;
+  }
+
+  // no-cors 是这里的关键：读不到正文不要紧，能分辨"有人应答"和"连接被拒"就够。
+  function probeNeighbors() {
+    if (probing) return;
+    probing = true;
+    var here = Number(location.port) || 0;
+    var base = deadPortBase();
+    var list = [];
+    if (here > 0) list.push(here);
+    for (var p = base; p <= base + 24 && list.length < 26; p++) {
+      if (list.indexOf(p) < 0) list.push(p);
+    }
+    var i = 0;
+    (function next() {
+      if (i >= list.length) { probing = false; showDead(null); return; }
+      var port = list[i++];
+      fetch('http://127.0.0.1:' + port + '/', { mode: 'no-cors', cache: 'no-store' })
+        .then(function () {
+          probing = false;
+          // 端口还在、人却连不上 —— 那不是漂移，别把人引到同一个死地址去
+          if (port === here) showDead(null); else showDead(port);
+        })
+        .catch(function () { next(); });
+    })();
   }
 
   // ── 动作元数据 ───────────────────────────────────────────────────

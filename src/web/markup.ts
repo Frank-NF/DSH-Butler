@@ -97,6 +97,10 @@ export const INDEX_HTML = `<!doctype html>
   </div>
 </div>
 
+<!-- 端口漂移兜底：页面自己活着、但 API 全部连不上时的自述（内容由 client.js 填）。
+     data-base = BUTLER_PORT_PREFERRED（version.ts），找不到新家时从这里开始挨个探。 -->
+<div class="dead-host" id="dead-host" data-base="8731" hidden></div>
+
 <div class="toast-host" id="toast-host"></div>
 <script src="/app.js"></script>
 </body>

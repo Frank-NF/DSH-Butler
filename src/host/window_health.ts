@@ -14,6 +14,8 @@ export interface WindowProbe {
   title?: string;
   /** 页面里有没有 Chromium 错误页的标记。 */
   error?: boolean;
+  /** 页面"想去"的地址（错误页上读不到 href，但导航目标还在）。 */
+  nav?: string;
 }
 
 export interface WindowHealthOptions {
@@ -36,6 +38,38 @@ export function isLoopbackOrigin(origin: string): boolean {
   const rest = origin.slice(origin.indexOf("://") + 3);
   const host = rest.split(":")[0] ?? "";
   return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+}
+
+/** 地址里的端口号；不是 http(s) 地址或解析不出来就 null（不猜）。 */
+export function portOf(url: string | null | undefined): number | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    const n = u.port ? Number(u.port) : u.protocol === "https:" ? 443 : 80;
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 页面是不是"停在端口被换掉之前的那个地址上"。
+ *
+ * 2026-09-30 用户反馈：「用着用着就页面拒绝访问了」—— 真因是端口漂移：
+ * 管家换了端口，窗口还指着没人监听的旧地址，Chromium 就摆出 ERR_CONNECTION_REFUSED。
+ * 这种情况是**终态**（旧端口上有人占着，永远等不来），所以看护不必再走 60s 冷却 ——
+ * 用户正盯着错误页，一分钟的等待就是又一层"这软件不靠谱"。
+ *
+ * 判据只认"错误页 + 端口对不上"两条同时成立：正常页面不算（免得误伤），
+ * 端口没变也不算（那种情况按老规矩等冷却，别急着打断用户）。
+ */
+export function isStalePort(p: WindowProbe, liveUrl: string | null | undefined): boolean {
+  if (p.error !== true) return false;
+  const want = portOf(p.nav);
+  const live = portOf(liveUrl);
+  if (want === null || live === null) return false;
+  return want !== live;
 }
 
 /**

@@ -6,9 +6,54 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { isLoopbackOrigin, redactUrl, windowLooksStuck } from "./window_health.ts";
+import {
+  isLoopbackOrigin,
+  isStalePort,
+  portOf,
+  redactUrl,
+  windowLooksStuck,
+} from "./window_health.ts";
 
 const EXPECTED = "http://127.0.0.1:64290";
+
+// ── 端口漂移（2026-09-30 用户反馈「用着用着页面拒绝访问」）────────────
+// 端口被换掉之后，窗口停在没人监听的旧地址上：这是"该立刻带回"，
+// 不该再等 60s 冷却——用户正在盯着一个错误页。
+Deno.test("端口漂移：错误页 + 目标端口 ≠ 存活端口 = 立刻带回", () => {
+  assertEquals(
+    isStalePort(
+      {
+        href: "chrome-error://chromewebdata/",
+        origin: "null",
+        error: true,
+        nav: "http://127.0.0.1:8731/?t=x",
+      },
+      "http://127.0.0.1:8732/?t=y",
+    ),
+    true,
+    "错误页 + 端口对不上 = 端口被换过",
+  );
+  assertEquals(
+    isStalePort({ error: true, nav: "http://127.0.0.1:8731/?t=x" }, "http://127.0.0.1:8731/?t=y"),
+    false,
+    "端口没变就别当端口问题（按老规矩等冷却）",
+  );
+  assertEquals(
+    isStalePort({ origin: "http://127.0.0.1:8731" }, "http://127.0.0.1:8732/?t=y"),
+    false,
+    "正常页面不算漂移",
+  );
+  assertEquals(
+    isStalePort({ error: true, nav: "http://127.0.0.1:8732/" }, "chrome-error://chromewebdata/"),
+    false,
+    "存活地址不可解析时别瞎判",
+  );
+  assertEquals(portOf("http://127.0.0.1:8732/?t=x"), 8732, "token 也要一起搬");
+  assertEquals(portOf("http://127.0.0.1/"), 80, "没写端口就是 80");
+  assertEquals(portOf("坏地址"), null);
+  assertEquals(portOf(undefined), null);
+  assertEquals(portOf(null), null);
+});
 
 Deno.test("窗口判据：停在别的本地端口上 = 卡死（真机出事那次）", () => {
   assertEquals(

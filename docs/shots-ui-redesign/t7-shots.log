@@ -1,0 +1,4 @@
+t7-installed => "installed"
+t7-market => {"tab":"market","bar":true}
+t7-maint => "maint"
+t7-redirect => {"tab":"market","act":"plugins","theme":"light"}

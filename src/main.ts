@@ -66,7 +66,8 @@ import {
 import { enterDsh } from "./domains/runtime/enter.ts";
 import { collectRuntimeStatus } from "./domains/runtime/status.ts";
 import { BUTLER_BAR_JS } from "./web/bar.ts";
-import { redactUrl, windowLooksStuck } from "./host/window_health.ts";
+import { isStalePort, redactUrl, windowLooksStuck } from "./host/window_health.ts";
+import { readLastPort, rememberPort } from "./host/port_memory.ts";
 import { addSearchDirs, isSafeExternalUrl } from "./host/shell.ts";
 
 async function main(): Promise<void> {
@@ -167,9 +168,11 @@ async function main(): Promise<void> {
     // headless 态依旧严格固定：脚本写死了地址，顺延反而连不上且更难排查。
     // 注意：配置里的 server_port 是旧版「服务器同步」的远程端口（LegacyConfig，迁移时有意淘汰），
     // 跟管家自己监听哪个端口无关 —— 别拿它当本地端口用。
+    // 【2026-09-30】桌面态再带一个"上次用起来的端口"：首选被占时优先沿用它，
+    // 而不是顺延到下一个 —— 用户刚记住的地址不该说废就废（详见 host/port_memory.ts）。
     ...(headless
       ? { port: BUTLER_PORT_HEADLESS }
-      : { port: BUTLER_PORT_PREFERRED, allowPortFallback: true }),
+      : { port: BUTLER_PORT_PREFERRED, allowPortFallback: true, stickyPort: readLastPort() }),
   });
 
   const appUrl = `${server.origin}/?t=${token}`;
@@ -179,6 +182,8 @@ async function main(): Promise<void> {
   // 甚至因端口被占而直接启动失败。现在这个变量在 createApiServer（真正 bind 的地方）里就被摘掉
   // 并记一条 warn，单元测试也一并受保护，这里不再重复提示。
 
+  // 端口粘住：把这次真正用起来的端口记下来，下次优先沿用。
+  if (!headless) rememberPort(server.port);
   log.info("main", `本地服务地址：${server.origin}`);
   if (interrupted.length > 0) {
     log.info("main", `有 ${interrupted.length} 个上次未完成的任务，可在界面「任务」中查看`);
@@ -746,14 +751,18 @@ async function healStuckWindow(): Promise<void> {
     }
     if (now - stuckSeen.at < 20_000) return; // 上一轮到现在还没到 20 秒
   }
-  if (now - lastHealAt < 60_000) return; // 救完一分钟内不重复救
+  // 端口漂移（2026-09-30 用户反馈「用着用着就页面拒绝访问」）：错误页 + 想去的老端口
+  // 没人监听了 —— 那是终态，等不来，且用户正盯着"拒绝连接"。这时跳过冷却立刻带回。
+  const stalePort = isStalePort(st, shellButlerUrl);
+  if (!stalePort && now - lastHealAt < 60_000) return; // 救完一分钟内不重复救
   lastHealAt = now;
   stuckSeen = null;
   log.warn(
     "main",
     `窗口卡住了：${href}（标题「${decodeProbeText(st.title)}」${st.error ? "，错误页" : ""}）` +
       ` —— 想去的是 ${st.nav ? redactUrl(st.nav) : "(错误页没留下地址)"}，` +
-      `上一站是 ${expected ?? "(未知)"}，正在救援`,
+      `上一站是 ${expected ?? "(未知)"}，正在救援` +
+      (stalePort ? `（端口已被换走：现在在 ${redactUrl(shellButlerUrl)}，不等冷却直接带回）` : ""),
   );
   recoverWindow("看护发现卡住");
 }
