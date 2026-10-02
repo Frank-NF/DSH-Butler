@@ -14,6 +14,7 @@ import { butlerRoot, dshProfileDir, p, stampOf } from "../../util/paths.ts";
 import { TIMEOUTS } from "../../version.ts";
 import { findDependencyProblems, type LockState, lockFileState } from "./deps.ts";
 import { npmSourceArgs, pmEnvReady, pmSkipped, profileManifestPath } from "./mutate.ts";
+import { normalizeLocalSpecs, readLocalSpecRewrites, type SpecRewrite } from "./local_specs.ts";
 
 /**
  * 读 profile 清单里声明的依赖（依赖体检与定时查更新共用同一份读法，避免两处漂移）。
@@ -29,6 +30,8 @@ export interface DepsReport {
   problems: ReturnType<typeof findDependencyProblems>;
   lock: LockState;
   summary: { duplicates: number; conflicts: number; lockOk: boolean };
+  /** 清单里 npm 认不出来的本地依赖写法（link:/portal:）—— 没命中时为空。 */
+  localSpecs?: SpecRewrite[];
   /** 给界面直接渲染的结论（含 fixAction，按钮会跟着出现）。 */
   findings: Finding[];
 }
@@ -104,6 +107,7 @@ export const pluginDepsAction: ActionDef<Record<string, never>, DepsReport> = {
       problems,
       lock,
       summary: { duplicates, conflicts, lockOk: lock.exists && !lock.corrupt },
+      localSpecs: readLocalSpecRewrites(profileDir),
       findings: [],
     };
     report.findings = depsFindings(report);
@@ -114,6 +118,28 @@ export const pluginDepsAction: ActionDef<Record<string, never>, DepsReport> = {
 /** 把体检结论转成界面能渲染的 findings（动作结果里带上，界面直接显示并可点一键修）。 */
 export function depsFindings(report: DepsReport): Finding[] {
   const out = problemFindings(report.problems, report.lock);
+  // 2026-10-02 用户现场：一条 link: 就能让「卸载任何插件」全部失败回滚，
+  // 而报错只说 npm 不认协议，指不到是清单里哪一条 —— 所以体检必须提前把它点出来。
+  if (report.localSpecs && report.localSpecs.length > 0) {
+    out.push(
+      finding(
+        "plugin.local-protocol",
+        "warn",
+        `清单里有 ${report.localSpecs.length} 条 npm 认不出来的本地依赖写法`,
+        {
+          cause: report.localSpecs
+            .map((r) => `${r.name}：${r.from}`)
+            .join("；") +
+            " —— link:/portal: 是 pnpm 的写法（DSH 装本地开发中的插件就会写成这样），npm 完全不认。",
+          impact:
+            "命中时任何安装 / 卸载 / 重建锁文件都会在调 npm 那一步报 EUNSUPPORTEDPROTOCOL 并整体回滚 —— 卸不掉任何插件，且报错指不到真正原因。",
+          action:
+            "不用管：管家在下一次调 npm 之前会自动把 link:/portal: 改写成 file:（本地目录的落地形态不变，仍是指向源码目录的链接，改源码照常立即生效）。想现在就消掉这条，去清单里把 link: 手工改成 file: 也一样。",
+          evidence: report.localSpecs.map((r) => `${r.name}（${r.field}）：${r.from}`),
+        },
+      ),
+    );
+  }
   if (out.length === 0) {
     out.push(
       finding("plugin.deps-ok", "info", "依赖树没发现版本冲突", {
@@ -200,6 +226,7 @@ async function runSyncLock(ctx: ActionContext): Promise<SyncLockReport> {
   if (pmSkipped()) {
     line("（测试模式：跳过真实 npm 调用）");
   } else {
+    normalizeLocalSpecs(profileDir); // 同 pmInstall：清单里的 link: 不先换掉，npm 必失败
     const r = await runCmd(
       ["npm", "install", "--prefix", profileDir, "--package-lock-only", "--no-audit", "--no-fund", ...npmSourceArgs(), "--legacy-peer-deps", "--loglevel", "error"],
       { timeoutMs: TIMEOUTS.install, allowNonZero: true, scope: "plugin", signal: ctx.signal },

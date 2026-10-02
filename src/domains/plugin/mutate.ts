@@ -61,6 +61,7 @@ import { startDshServer, stopDshServer, type StopOutcome } from "../core/finish_
 import { applyRollbackPoint, createRollbackPoint } from "../backup/rollback.ts";
 import { collectPluginFacts, judgeLayer, locateBundleDir } from "./facts.ts";
 import { repairBlockers } from "./rules.ts";
+import { normalizeLocalSpecs } from "./local_specs.ts";
 import { type PluginListCheck, readPluginLists } from "../core/status.ts";
 
 // ── 测试隔离旋钮 ──────────────────────────────────────────────────
@@ -295,6 +296,7 @@ function tail3(text: string): string {
 async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 注入检查必须先于 skip —— 否则 SKIP_PM_OPS 下失败注入永远轮不到
   if (pmSkipped()) return;
+  normalizeLocalSpecs(profileDir); // npm 认不得 link:/portal:，调它之前先换成 file:（见 local_specs.ts）
   const r = await runCmd(
     [
       "npm",
@@ -328,6 +330,7 @@ async function pmInstall(profileDir: string, spec: string, signal?: AbortSignal)
 export async function pmSync(profileDir: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady(); // 同 pmInstall：注入优先于 skip
   if (pmSkipped()) return;
+  normalizeLocalSpecs(profileDir); // npm 认不得 link:/portal:，调它之前先换成 file:（见 local_specs.ts）
   const r = await runCmd(
     [
       "npm",
@@ -369,6 +372,7 @@ export async function pmSync(profileDir: string, signal?: AbortSignal): Promise<
 async function pmUnlink(profileDir: string, name: string, signal?: AbortSignal): Promise<void> {
   pmEnvReady();
   if (pmSkipped()) return;
+  normalizeLocalSpecs(profileDir); // npm 认不得 link:/portal:，调它之前先换成 file:（见 local_specs.ts）
   const r = await runCmd(
     [
       "npm",
