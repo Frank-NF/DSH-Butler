@@ -351,6 +351,15 @@ export interface InstallOverlayOptions {
   /** 注入前探针用的 DOM id（已存在就不重复注入）。 */
   probeId: string;
   /**
+   * 还要一起在场的 DOM id（默认只查 probeId）。
+   *
+   * 【为什么需要】悬浮条的样式表与宿主 div 是分两次 append 的（一个进 head、一个进 body）。
+   * 页面侧重建 head 会只抹掉样式表，此时只查宿主 div 会永远判定「已存在」，
+   * 于是页面里留一条没有样式的裸 div，再也补不回来（2026-10-02 用户实测）。
+   * 探针改成「这几个 id 全部在，才算已经注入过」。
+   */
+  extraProbeIds?: readonly string[];
+  /**
    * 只在满足条件的页面上注入（拿到的是当前 location.href）。
    * 现在两个界面都要悬浮条，所以没用到它；留着给"某些页面不该注入"的将来。
    */
@@ -358,11 +367,17 @@ export interface InstallOverlayOptions {
 }
 
 /**
- * 在主窗口页面里注入悬浮条，并每 15 秒/每次导航后保证它在。
+ * 在主窗口页面里注入悬浮条，并在每次导航、以及后台保活定时器每 30 秒兜一次。
  *
  * 为什么不用 addEventListener("load")：官方事件表里没有 load，而且 SPA 内部跳转
  * 根本不会触发页面级 load。所以这里用"轮询 readyState + 探针 id"这种最笨也最稳的办法：
- * 页面就绪了、而且还没注入过，就注入一次。
+ * 页面就绪了、而且探针不齐，就注入一次。
+ *
+ * 【为什么必须有周期性兜底】页面整页重载（DSH 重启后 WebView 重新加载、用户手动刷新、
+ * WebView2 崩溃恢复、被错误页自愈导航）会把注入进去的 DOM 一起清空，而管家这边毫无察觉。
+ * 2026-10-02 用户实测右下角小图标经常就没了 —— 当初注释里写的「每 15 秒」其实从来没实现过：
+ * 装完只跑一次，之后只有 navigateMain 才会再跑一次。
+ * 现在由 main.ts 的后台保活定时器调 ensureOverlay() 兜住（见该函数注释）。
  */
 export function installOverlay(opts: InstallOverlayOptions): boolean {
   const win = getMainWindow();
@@ -387,7 +402,12 @@ export function installOverlay(opts: InstallOverlayOptions): boolean {
     return false;
   }
 
-  const inject = async () => {
+  let injecting = false;
+  // 兜底定时器每 30 秒调一次，页面一直不就绪时每轮都会走到超时告警 ——
+  // 不去重的话一晚上能刷几百条，把真正的告警淹了（同一条原因只报第一次，
+  // 真的注入成功过一次之后再允许它重新报）。
+  let timeoutWarned = false;
+  const injectOnce = async () => {
     let lastRaw = "";
     for (let i = 0; i < 120; i++) {
       const w = getMainWindow();
@@ -404,15 +424,17 @@ export function installOverlay(opts: InstallOverlayOptions): boolean {
             const href = String(await evalJs(w, "location.href"));
             if (!opts.shouldInject(href)) return;
           }
-          const existsRaw = await evalJs(
-            w,
-            `!!document.getElementById(${JSON.stringify(opts.probeId)})`,
-          );
+          // 探针 = 宿主 + 附属节点（样式表等）必须同时在，缺一样就当没注入过
+          const probeIds = [opts.probeId, ...(opts.extraProbeIds ?? [])];
+          const probeJs = JSON.stringify(probeIds) +
+            ".every(function (id) { return !!document.getElementById(id); })";
+          const existsRaw = await evalJs(w, probeJs);
           // 不同运行时可能把布尔包一层（字符串 / 对象），两种形状都认
           const exists = existsRaw === true || String(existsRaw) === "true";
           if (!exists) {
             await evalJs(w, opts.script);
             log.info("desktop", `已注入页面悬浮条（${opts.probeId}）`);
+            timeoutWarned = false;
           }
           return;
         }
@@ -422,14 +444,35 @@ export function installOverlay(opts: InstallOverlayOptions): boolean {
       }
       await sleep(500);
     }
-    log.warn("desktop", `悬浮条注入超时（页面一直没就绪）—— 最后一次探测结果：${lastRaw}`);
+    if (!timeoutWarned) {
+      timeoutWarned = true;
+      log.warn("desktop", `悬浮条注入超时（页面一直没就绪）—— 最后一次探测结果：${lastRaw}`);
+    }
+  };
+
+  const inject = (): void => {
+    if (injecting) return;
+    injecting = true;
+    void injectOnce().finally(() => {
+      injecting = false;
+    });
   };
 
   overlayInstaller = () => {
-    void inject();
+    inject();
   };
   overlayInstaller();
   return true;
+}
+
+/**
+ * 幂等补注入 —— 页面整页重载后，那条悬浮条会随页面一起消失，这里是唯一的兜底。
+ *
+ * 由 main.ts 的后台保活定时器每 30 秒调一次（不另开定时器，少一个常驻句柄）。
+ * 幂等由脚本自己保证：宿主与样式表都在就直接返回，缺哪样补哪样。
+ */
+export function ensureOverlay(): void {
+  overlayInstaller?.();
 }
 
 /**

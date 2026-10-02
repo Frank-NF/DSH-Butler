@@ -81,13 +81,60 @@ Deno.test("悬浮条：被注入到 Chromium 错误页时立刻请宿主救援",
 
 Deno.test("悬浮条必须幂等：注入前先查探针 id（防止 SPA 下叠加出好几条）", () => {
   assertEquals(
-    BUTLER_BAR_JS.includes("dsh-butler-dock"),
+    BUTLER_BAR_JS.includes("var HOST_ID = 'dsh-butler-dock'"),
     true,
-    "脚本里没有探针 id，重复注入会叠出多条悬浮条",
+    "脚本里没有宿主探针 id，重复注入会叠出多条悬浮条",
   );
   assertEquals(
-    /getElementById\('dsh-butler-dock'\)\)\s*return/.test(BUTLER_BAR_JS),
+    /var host = document\.getElementById\(HOST_ID\);\s*var style = document\.getElementById\(STYLE_ID\);\s*if \(host && style\) return;/
+      .test(BUTLER_BAR_JS),
     true,
-    "脚本没有「已存在就直接返回」的短路",
+    "脚本没有「宿主与样式表都在就直接返回」的短路",
+  );
+});
+
+// 2026-10-02 用户反馈「右下角管家小图标总丢失，要不就是样式表没了」的防复发断言。
+// 样式表挂在 head、宿主 div 挂在 body，是两次 append；页面侧重建 head（换主题、
+// 重建客户端 bundle）会只抹掉样式表。所以补的时候必须「缺哪样补哪样」，
+// 而且只补样式表那一支必须补完就收手——往下走会把事件再绑一遍。
+Deno.test("悬浮条：样式表被页面抹掉时只补样式表，不重绑事件", () => {
+  assertEquals(
+    BUTLER_BAR_JS.includes("var STYLE_ID = 'dsh-butler-dock-style'"),
+    true,
+    "脚本没有样式表的探针 id —— 只查宿主时，页面重建 head 会留一条没样式的裸 div 再也补不回来",
+  );
+  const branch = BUTLER_BAR_JS.indexOf("if (host) {");
+  const ret = BUTLER_BAR_JS.indexOf("return;", branch);
+  const mount = BUTLER_BAR_JS.indexOf("document.body.appendChild(host)");
+  assertEquals(branch > 0, true, "没有「宿主还在、只补样式表」这一支");
+  assertEquals(
+    ret > branch && ret < mount,
+    true,
+    "只补样式表那一支没有提前 return —— 会继续往下走，把事件和定时器再绑一遍（点一下响应多次）",
+  );
+  assertEquals(
+    BUTLER_BAR_JS.includes("if (!style) {"),
+    true,
+    "宿主没了、样式表还在时不能再塞一个同 id 的 style（重复 id 谁也没法管）",
+  );
+});
+
+// 另一半根因：当初注释写着「每 15 秒保证它在」，其实从来没有那个定时器 ——
+// 页面整页重载（DSH 重启后 WebView 重新加载、用户手动刷新、WebView2 崩溃恢复）
+// 会把注入的 DOM 一起清空，图标从此回不来。这两条断言钉住修复。
+Deno.test("悬浮条：页面整页重载后要有人把它捞回来（探针 + 周期性兜底）", async () => {
+  const mainTs = await Deno.readTextFile(new URL("../main.ts", import.meta.url));
+  assertEquals(
+    mainTs.includes('extraProbeIds: ["dsh-butler-dock-style"]'),
+    true,
+    "宿主侧探针没带上样式表 id —— 页面抹掉样式表后会被判成「已注入」，永远不补",
+  );
+  const tickAt = mainTs.indexOf("const tick = async () => {");
+  const endAt = mainTs.indexOf("void tick();", tickAt);
+  assertEquals(tickAt > 0 && endAt > tickAt, true, "没找到后台保活定时器的 tick，守卫本身失效了");
+  assertEquals(
+    mainTs.slice(tickAt, endAt).includes("ensureOverlay();"),
+    true,
+    "ensureOverlay 没挂在后台保活的 tick 上 —— 页面整页重载后悬浮条就永远回不来",
   );
 });

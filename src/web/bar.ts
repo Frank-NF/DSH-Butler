@@ -21,8 +21,18 @@
  */
 export const BUTLER_BAR_JS = `(function () {
   'use strict';
-  // DSH 是 SPA，路由切换不重载页面；这里再防一手重复注入
-  if (document.getElementById('dsh-butler-dock')) return;
+  // DSH 是 SPA，路由切换不重载页面；这里再防一手重复注入。
+  //
+  // 【2026-10-02 修的根因】样式表挂在 head、宿主 div 挂在 body，是两次 append。
+  // 页面侧重建 head（换主题、重建客户端 bundle）会只抹掉样式表、留下一条没样式的裸 div；
+  // 而旧写法只查宿主 div，宿主还在就整段 return —— 样式表永远补不回来
+  // （用户反馈：「右下角管家小图标总丢失，要不就是样式表没了」）。
+  // 所以改成：两样都在才算注入过，只缺哪样就补哪样。
+  var HOST_ID = 'dsh-butler-dock';
+  var STYLE_ID = 'dsh-butler-dock-style';
+  var host = document.getElementById(HOST_ID);
+  var style = document.getElementById(STYLE_ID);
+  if (host && style) return;
 
   var CSS = [
     '#dsh-butler-dock{position:fixed;right:16px;bottom:16px;z-index:2147483000;',
@@ -57,10 +67,23 @@ export const BUTLER_BAR_JS = `(function () {
     // 【必须放最后】.dbb-hide 与 .dbb-mini 同为单类选择器，谁在后面谁赢；
     // 放前面会让"收起"失效（实测：两个胶囊同时挂在右下角）。
     '.dbb-hide{display:none}',
-  ].join('');  var style = document.createElement('style');
-  style.id = 'dsh-butler-dock-style';
-  style.textContent = CSS;
-  document.head.appendChild(style);
+  ].join('');
+  // 只缺样式表（宿主还在）：事件与定时器都绑在那个 div 上，补完样式就收手 ——
+  // 继续往下走会把事件再绑一遍，点一下就多响应一次。
+  if (host) {
+    var s0 = document.createElement('style');
+    s0.id = STYLE_ID;
+    s0.textContent = CSS;
+    document.head.appendChild(s0);
+    return;
+  }
+  // 宿主没了、样式表还在：别再塞一个同 id 的 style（重复 id 谁也没法管）
+  if (!style) {
+    style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = CSS;
+    document.head.appendChild(style);
+  }
 
   // 自动收起的时长由管家注入（设置里可调）；没有就用 3 秒
   var DBB_IDLE_MS = (typeof window.__DSH_BUTLER_IDLE_MS__ === 'number' && window.__DSH_BUTLER_IDLE_MS__ > 0)
@@ -68,8 +91,8 @@ export const BUTLER_BAR_JS = `(function () {
   // 管家界面的地址前缀（同样是管家注入的）：现在就在管家界面上时，不需要"回管家"这颗按钮
   var DBB_HOME = (typeof window.__DSH_BUTLER_HOME__ === 'string') ? window.__DSH_BUTLER_HOME__ : '';
   var AT_HOME = DBB_HOME !== '' && location.href.indexOf(DBB_HOME) === 0;
-  var host = document.createElement('div');
-  host.id = 'dsh-butler-dock';
+  host = document.createElement('div');
+  host.id = HOST_ID;
   host.setAttribute('data-state', 'expanded');
   // 管家标志：橙红小鲸鱼（与图标同源，用 currentColor 跟着按钮配色走）
   // 官方标志（橙红 D + 鲸鱼）：压在橙底按钮上看不清，所以垫一块奶白小方片

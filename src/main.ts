@@ -51,6 +51,7 @@ import {
   createTray,
   createWindow,
   type DesktopWindow,
+  ensureOverlay,
   evalJs,
   getMainWindow,
   installOverlay,
@@ -358,6 +359,9 @@ function setupButlerOverlay(butlerUrl: string): void {
   installOverlay({
     script: barScript,
     probeId: "dsh-butler-dock",
+    // 样式表也要一起探：只剩一条没样式的裸 div（用户反馈「样式表没了」）同样算缺，
+    // 见 src/web/bar.ts 里 2026-10-02 那段根因注释。
+    extraProbeIds: ["dsh-butler-dock-style"],
     bindingName: "butlerCmd",
     // 两个界面都注入：管家页面上原来"什么按钮都有"，可用户就是找不到"关闭 DSH 服务"
     // （首页状态卡只有一个主行动，停止服务藏在运行状态页里）。现在右下角这条工具条
@@ -826,6 +830,12 @@ function startHousekeeping(tray: TrayHandle | null, opts: { headless?: boolean }
     try {
       await healStuckWindow();
     } catch { /* 自愈失败不影响保活 */ }
+    // 页面整页重载后，注入进去的悬浮条会随页面一起没了（DSH 重启后 WebView 重新加载、
+    // 用户手动刷新、WebView2 崩溃恢复、错误页自愈导航都会这样）。
+    // 每 30 秒兜一次，缺了就补回去 —— 幂等由注入脚本自己保证，已经在就不动。
+    try {
+      ensureOverlay();
+    } catch { /* 补注入失败不影响保活 */ }
     if (!tray) return;
     try {
       const st = await collectRuntimeStatus();
