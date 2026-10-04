@@ -20,6 +20,10 @@ export interface Overview {
     version: string | null;
     headShort: string | null;
     needsFinishUpdate: boolean;
+    /** 上一次「完成更新」的全量重建失败了（见 core/build_state.ts 的台账）。 */
+    buildFailed: boolean;
+    /** 那次失败的一句话原因（给人看的，直接显示给用户）。 */
+    buildFailure: string | null;
     /** 上游最新版（查 npm dist-tags 得到；查不到就是 null）。 */
     latestVersion: string | null;
     /** 这个最新版来自哪个通道：latest / next / alpha。 */
@@ -64,6 +68,10 @@ export async function collectOverview(force = false): Promise<Overview> {
     latestRollbackAt = null;
   }
 
+  // 上一次全量重建失败既会让任务作业失败、也会让状态页多一条 core.build-failed；
+  // 首屏要能直接说出来，否则用户看到的还是「待完成更新」，于是再点一次、再失败一次。
+  const buildFailedFinding = core?.findings.find((f) => f.id === "core.build-failed") ?? null;
+
   const value: Overview = {
     app: { name: APP_NAME, version: APP_VERSION, stage: STAGE_LABEL },
     dsh: {
@@ -72,6 +80,8 @@ export async function collectOverview(force = false): Promise<Overview> {
       version: core?.version ?? null,
       headShort: core?.git?.headShort ?? null,
       needsFinishUpdate: core?.needsFinishUpdate ?? false,
+      buildFailed: Boolean(buildFailedFinding),
+      buildFailure: buildFailedFinding?.cause ?? null,
       latestVersion: coreUpdate?.latest ?? null,
       latestChannel: coreUpdate?.channel ?? null,
       updateAvailable: coreUpdate?.available ?? false,

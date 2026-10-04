@@ -1202,8 +1202,14 @@ export const CLIENT_JS = `(function () {
   function refreshCoreBadge(ov) {
     var el = $('nav-count-core');
     if (!el) return;
-    if (!ov || !ov.dsh) { el.textContent = ''; el.classList.remove('warn'); return; }
-    if (ov.dsh.updateAvailable) {
+    if (!ov || !ov.dsh) { el.textContent = ''; el.classList.remove('warn'); el.classList.remove('err'); return; }
+    if (ov.dsh.buildFailed) {
+      // T12：重建失败时不能再只说「待完成更新」——那正是让用户白点第二次的说法。
+      el.textContent = '重建失败';
+      el.classList.remove('warn');
+      el.classList.add('err');
+      el.title = '上一次「完成更新」没成功：' + (ov.dsh.buildFailure || '构建以非 0 退出码结束');
+    } else if (ov.dsh.updateAvailable) {
       el.textContent = '可更新';
       el.classList.add('warn');
       el.title = '本体有新版本 ' + (ov.dsh.latestVersion || '');
@@ -1214,6 +1220,7 @@ export const CLIENT_JS = `(function () {
     } else {
       el.textContent = '';
       el.classList.remove('warn');
+      el.classList.remove('err');
       el.title = '';
     }
   }
@@ -1293,7 +1300,7 @@ export const CLIENT_JS = `(function () {
         + stat('本体', ov.dsh.installed ? (ov.dsh.version || '已安装') : '未安装', ov.dsh.headShort ? '提交 ' + ov.dsh.headShort : '', true)
         + stat('上游最新版', ov.dsh.latestVersion || '未查到',
           ov.dsh.latestChannel ? ('来自 ' + ov.dsh.latestChannel + ' 通道') : '网络不通或还没查', true)
-        + stat('待完成更新', ov.dsh.needsFinishUpdate ? '是' : '否')
+        + stat('待完成更新', ov.dsh.buildFailed ? '上次失败' : (ov.dsh.needsFinishUpdate ? '是' : '否'))
         + stat('服务', ov.runtime.running ? '运行中' : '未运行', ov.runtime.port ? '端口 ' + ov.runtime.port : '')
         + stat('插件（生效 / 已装）', ov.plugins.active + ' / ' + ov.plugins.declared)
         + '</div></div>';
@@ -1304,13 +1311,16 @@ export const CLIENT_JS = `(function () {
         + navBtn('activity', '运行状态', 'runtime')
         + navBtn('puzzle', '插件', 'plugins')
         + '</div></div>';
+      // T12：上一次「完成更新」失败时，这一屏要先说失败、说原因，而不是
+      // 让用户以为「再点一次就好了」（他上次就是这么点的，结果又失败一次）。
+      var upCard = '';
       if (ov.dsh.updateAvailable || ov.dsh.needsFinishUpdate) {
         // 任务5：一个按钮说清「更新」这件事 —— 有新版就拉取+重建+重启（core.update 本身就含重建六步），
         // 只是产物落后就直接重建（core.finishUpdate）。用户不需要知道是两个动作。
         var upHasNew = !!ov.dsh.updateAvailable;
         var upAction = (ov.dsh.needsFinishUpdate && !upHasNew) ? 'core.finishUpdate' : 'core.update';
         var upLabel = upAction === 'core.update' ? '更新本体' : '完成更新（重建界面）';
-        html += '<div class="card">'
+        upCard = '<div class="card">'
           + '<div class="finding warn"><div class="finding-title"><span class="tag warn">可更新</span>'
           + (upHasNew
             ? '本体有新版本：' + esc(ov.dsh.latestVersion || '') + '（本机 ' + esc(ov.dsh.version || '未知') + '）'
@@ -1325,17 +1335,34 @@ export const CLIENT_JS = `(function () {
           + '<button class="btn primary" data-write="' + upAction + '">' + icon(upAction === 'core.update' ? 'upload' : 'check') + '<span>' + upLabel + '</span></button>'
           + '</div></div></div>';
       }
+      if (ov.dsh.buildFailed) {
+        html += '<div class="card">'
+          + '<div class="finding error"><div class="finding-title"><span class="tag error">上次重建失败</span>'
+          + '上一次「完成更新」没成功，界面还停在旧版本上</div>'
+          + '<div class="finding-cause">'
+          + esc(ov.dsh.buildFailure || '构建以非 0 退出码结束（日志里没有可识别的错误行）')
+          + '。先按这个原因修好（拿不准就把报错发给知行），再点下面的按钮重试；没修好之前再点一次，还会失败一次。'
+          + (ov.dsh.updateAvailable ? '另外，上游已经有新版本 ' + esc(ov.dsh.latestVersion || '') + '，想顺手一起更新就点「更新本体」。' : '')
+          + '</div>'
+          + '<div class="btn-row" style="margin-top:var(--sp-3)">'
+          + '<button class="btn primary" data-write="core.finishUpdate">' + icon('refresh') + '<span>重试「完成更新」</span></button>'
+          + '</div></div></div>';
+      } else {
+        html += upCard;
+      }
       html += '<div class="card"><div class="card-title">问题概览<span class="sub">来自最近一次体检</span></div><div id="overview-findings">'
         + (state.cache.report && state.cache.report.findings ? renderFindings(state.cache.report.findings) : emptyBox('还没有体检结果', '点上面的「运行全面体检」开始检查。'))
         + '</div></div>';
       setMain(html);
       var dshBadge = !ov.dsh.installed
         ? { kind: 'err', text: '未安装本体' }
-        : (ov.dsh.updateAvailable
+        : (ov.dsh.buildFailed
+          ? { kind: 'err', text: '本体上次重建失败' }
+          : (ov.dsh.updateAvailable
           ? { kind: 'warn', text: '本体有新版本 ' + (ov.dsh.latestVersion || '') }
-          : (ov.dsh.needsFinishUpdate
-            ? { kind: 'warn', text: '本体待完成更新' }
-            : { kind: 'ok', text: '本体正常' }));
+            : (ov.dsh.needsFinishUpdate
+              ? { kind: 'warn', text: '本体待完成更新' }
+              : { kind: 'ok', text: '本体正常' })));
       setBadge('badge-dsh', dshBadge.kind, dshBadge.text);
       setBadge('badge-service', ov.runtime.running ? 'ok' : '', ov.runtime.running ? '服务运行中' : '服务未运行');
       // 阶段四 T9：窄窗口时顶栏徽标收进状态栏，内容在这里镜像一份

@@ -23,7 +23,15 @@ import {
   quarantineStampDir,
   sameVolume,
 } from "../../util/paths.ts";
-import { deepCleanInto, isOrphanPackage, isResidueName, isRiskyPath } from "./deep_clean.ts";
+import {
+  deepCleanInto,
+  isInsideVersionedPackage,
+  isOrphanPackage,
+  isResidueName,
+  isRiskyPath,
+  packageRootOf,
+  trackedChangeCount,
+} from "./deep_clean.ts";
 
 // ── 极简断言 ────────────────────────────────────────────────────────
 
@@ -199,9 +207,84 @@ Deno.test("AC-C2 路径规则：隔离区落在源码树父目录下（=同盘�
   assert(q2.includes("dsh-quarantine"), `盘符根的隔离区同样要带标识：${q2}`);
 });
 
-// ══ 端到端：4 孤儿包 + 3 残留下成功（AC-C2 主场景） ════════════════
+// ══ 只读判据：「HEAD 里的包」判定（2026-10-04 误隔离事故的根因） ═════
 
-Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散文件一个不碰，二跑全 0", async () => {
+Deno.test("AC-C2 判据：packageRootOf 只认「包的祖先」，绝不把仓库根当包", () => {
+  const base = Deno.makeTempDirSync();
+  try {
+    writeFile(base, "package.json", '{"name":"root"}\n');
+    writeFile(base, "packages/app/package.json", '{"name":"app"}\n');
+    writeFile(base, "packages/app/src/wip.ts", "export {};\n");
+    writeFile(base, "packages/app/src/deep/nested.ts", "export {};\n");
+    writeFile(base, "packages/demo/src/ghost.ts", "export {};\n");
+    writeFile(base, "loose.ts", "export {};\n");
+
+    assertEq(packageRootOf(base, "packages/app/src/wip.ts"), "packages/app", "取最近的包目录");
+    assertEq(packageRootOf(base, "packages/app/src/deep/nested.ts"), "packages/app", "跨层也要找到");
+    assertEq(
+      packageRootOf(base, "packages/demo/src/ghost.ts"),
+      null,
+      "没有包声明的目录不算包——本地新写的包正是这种形状",
+    );
+    assertEq(
+      packageRootOf(base, "loose.ts"),
+      null,
+      "仓库根的 package.json 属于整个仓库，不能把散文件认成包内文件",
+    );
+  } finally {
+    removeAll(base);
+  }
+});
+
+Deno.test("AC-C2 判据：isInsideVersionedPackage —— 包必须「进过 HEAD」才算老包", () => {
+  const base = Deno.makeTempDirSync();
+  try {
+    writeFile(base, "packages/app/package.json", '{"name":"app"}\n');
+    writeFile(base, "packages/app/src/wip.ts", "export {};\n");
+    writeFile(base, "packages/wip/package.json", '{"name":"wip"}\n');
+    writeFile(base, "packages/wip/src/new.ts", "export {};\n");
+
+    const tracked = new Set(["packages/app/package.json"]);
+    assert(
+      isInsideVersionedPackage(base, "packages/app/src/wip.ts", tracked),
+      "老包里的残留该被隔离",
+    );
+    assert(
+      !isInsideVersionedPackage(base, "packages/wip/src/new.ts", tracked),
+      "包声明不在 HEAD 里（本地新写的包）必须放过",
+    );
+    assert(
+      !isInsideVersionedPackage(base, "packages/wip/src/new.ts", new Set(["package.json"])),
+      "只有仓库根在 HEAD 里时，同样不算包内文件",
+    );
+  } finally {
+    removeAll(base);
+  }
+});
+
+Deno.test("AC-C2 判据：trackedChangeCount —— 脏工作区必须认得出（读不到给 null 不给 0）", async () => {
+  if (!HAS_GIT) return;
+  const base = Deno.makeTempDirSync();
+  const repo = p(base, "repo");
+  try {
+    writeFile(repo, "src/index.ts", "export const a = 1;\n");
+    assertEq(await trackedChangeCount(repo), null, "还不是 git 仓库 → null（不能当成干净的 0）");
+    sh(repo, "init", "-b", "main");
+    sh(repo, "add", "-A");
+    sh(repo, "commit", "-m", "init");
+    assertEq(await trackedChangeCount(repo), 0, "干净检出 → 0");
+    writeFile(repo, "src/index.ts", "export const a = 2;\n");
+    assertEq(await trackedChangeCount(repo), 1, "改了 1 个已跟踪文件 → 1");
+    writeFile(repo, "src/brand-new.ts", "export {};\n");
+    assertEq(await trackedChangeCount(repo), 1, "未跟踪文件不计入「改动」（它另有判据）");
+  } finally {
+    removeAll(base);
+  }
+});
+
+// ══ 端到端：孤儿包 + 陈旧缓存照清，未跟踪源文件按包归属分流 ════════
+
+Deno.test("AC-C2 端到端：孤儿包与陈旧缓存照清，未跟踪源文件只动「HEAD 里的包」内的，二跑全 0", async () => {
   if (!HAS_GIT) return;
   const base = Deno.makeTempDirSync();
   const repo = p(base, "repo");
@@ -244,7 +327,9 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
     writeFile(repo, "packages/gone3/tmp/scratch.log", "noise\n");
     writeFile(repo, "packages/gone4/.typecheck/marker", "x\n");
     writeFile(repo, "packages/gone4/coverage/lcov.info", "TN:\n");
-    // 3 个不属于 HEAD 的残留源文件（危险目录 + 源码扩展名）
+    // ① 真残留：未跟踪 + 危险目录 + 源码扩展名，且所在包在 HEAD 里有 package.json
+    writeFile(repo, "packages/real/src/residue-helper.ts", "export {};\n");
+    // ② 阴性样本：未跟踪源文件，但所在包没进 HEAD（2026-10-04 事故的形状）
     writeFile(repo, "apps/web/tests/leftover.e2e.ts", "export {};\n");
     writeFile(repo, "packages/demo/src/ghost.ts", "export {};\n");
     writeFile(repo, "packages/demo/src/extra.module.css", ".x {}\n");
@@ -255,7 +340,9 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
     const { report, lines } = await deepCleanInto(repo, destRoot);
 
     assertEq(report.orphanPackages, 4, "4 个孤儿包应全部清掉");
-    assertEq(report.quarantined, 3, "3 个残留源文件应全部隔离");
+    assertEq(report.quarantined, 1, "只有「HEAD 里的包」内那个残留源文件该被隔离");
+    assertEq(report.protectedAsUserWork, 3, "3 个看着像新写的东西必须被保护下来");
+    assertEq(report.skippedSourceIsolation, false, "干净的检出不该跳过源文件隔离");
     assertEq(report.staleRemoved, 1, "1 个 .stale-* 应被清掉");
     assertEq(report.tsbuildinfoReset, 1, "1 个编译缓存应被作废");
     assertEq(report.failed.length, 0, `不该有移动失败：${JSON.stringify(report.failed)}`);
@@ -272,6 +359,10 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
       "packages/onlysrc/src/index.ts",
       "packages/tracked-lib/lib/index.js",
       "apps/web/src/main.ts",
+      // 2026-10-04 事故的形状：用户本地写、还没进 HEAD 的源文件一个都不能动
+      "apps/web/tests/leftover.e2e.ts",
+      "packages/demo/src/ghost.ts",
+      "packages/demo/src/extra.module.css",
     ];
     for (const rel of keeps) {
       assert(pathExists(p(repo, ...rel.split("/"))), `必须保留：${rel}`);
@@ -283,8 +374,7 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
     // 是「搬进隔离区」而不是删掉——用户必须能还原
     const movedSamples = [
       "packages/gone1/lib/index.js",
-      "packages/demo/src/ghost.ts",
-      "apps/web/tests/leftover.e2e.ts",
+      "packages/real/src/residue-helper.ts",
       "tsconfig.client.tsbuildinfo",
       "packages/real/lib/types.stale-2026-09-18",
     ];
@@ -296,12 +386,20 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
       movedCount: number;
       moved: string[];
     };
-    assertEq(manifest.movedCount, 9, "清单计数应为 1 缓存 + 1 stale + 4 孤儿 + 3 残留");
-    assertEq(manifest.moved.length, 9, "清单明细条数与计数一致");
+    assertEq(manifest.movedCount, 7, "清单计数应为 1 缓存 + 1 stale + 4 孤儿 + 1 残留源文件");
+    assertEq(manifest.moved.length, 7, "清单明细条数与计数一致");
     assert(lines.some((l) => l.includes("孤儿包")), "汇报里要说清清了几个孤儿包");
     assert(
       lines.some((l) => l.includes("隔离「不属于当前版本」")),
       "汇报里要说清隔离了几个残留文件",
+    );
+    assert(
+      lines.some((l) => l.includes("不在任何已知的包里")),
+      "被保护的源文件必须在汇报里说清楚，否则用户不知道自己的东西被保住了",
+    );
+    assert(
+      lines.some((l) => l.includes("· 保留 packages/demo/src/ghost.ts")),
+      "汇报里要逐条列出保住了哪些文件",
     );
 
     // ── 第二遍：幂等——现场已干净，什么都别再动 ────────────────────────
@@ -310,8 +408,58 @@ Deno.test("AC-C2 端到端：4 孤儿包 + 3 残留全隔离，真包与零散�
     assertEq(again.report.staleRemoved, 0, "二跑不得再清残留");
     assertEq(again.report.tsbuildinfoReset, 0, "二跑不得再动作编译缓存");
     assertEq(again.report.orphanPackages, 0, "二跑不得再清孤儿包");
+    assertEq(again.report.protectedAsUserWork, 3, "二跑仍要认出那 3 个是你写的东西");
     assertEq(again.report.failed.length, 0, "二跑不该有失败");
     assertEq(again.report.quarantineDir, null, "无内容时不该报隔离区");
+  } finally {
+    removeAll(base);
+  }
+});
+
+// ══ 保护：开发检出（有未提交改动）时整步跳过源文件隔离 ═══════════════
+
+Deno.test("AC-C2 保护：工作区有未提交改动时，「隔离源文件」整步跳过，一个都不动", async () => {
+  if (!HAS_GIT) return;
+  const base = Deno.makeTempDirSync();
+  const repo = p(base, "repo");
+  const dest = p(base, "q");
+  try {
+    writeFile(repo, "package.json", '{"name":"fixture-dev","version":"0.0.0"}\n');
+    writeFile(repo, "packages/app/package.json", '{"name":"app"}\n');
+    writeFile(repo, "packages/app/src/index.ts", "export const a = 1;\n");
+    sh(repo, "init", "-b", "main");
+    sh(repo, "add", "-f", "-A");
+    sh(repo, "commit", "-m", "init");
+
+    // 开发现场：有人正在改代码（已跟踪文件有未提交改动）
+    writeFile(repo, "packages/app/src/index.ts", "export const a = 2; // 改到一半\n");
+    // 未跟踪的新文件：旧逻辑会把它们当成残留搬进隔离区
+    writeFile(repo, "packages/app/src/wip.ts", "export {};\n");
+    // 与「谁在写代码」无关的两步照旧：编译缓存 + 孤儿包
+    writeFile(repo, "tsconfig.tsbuildinfo", "{}");
+    writeFile(repo, "packages/gone/lib/index.js", "module.exports = {};\n");
+
+    const { report, lines } = await deepCleanInto(repo, dest);
+
+    assertEq(report.skippedSourceIsolation, true, "开发检出必须跳过源文件隔离");
+    assertEq(report.protectedAsUserWork, 1, "1 个未跟踪源文件被保护");
+    assertEq(report.quarantined, 0, "一个源文件都不许搬");
+    assertEq(report.tsbuildinfoReset, 1, "编译缓存照旧作废（与 git 无关）");
+    assertEq(report.orphanPackages, 1, "孤儿包照旧清理");
+    assertEq(report.failed.length, 0, `不该有失败：${JSON.stringify(report.failed)}`);
+    assert(
+      pathExists(p(repo, "packages", "app", "src", "wip.ts")),
+      "正在写的东西必须原样留在原地",
+    );
+    assert(pathExists(p(repo, "packages", "app", "src", "index.ts")), "已跟踪文件当然也不许动");
+    assert(pathExists(p(dest, "tsconfig.tsbuildinfo")), "编译缓存要进隔离区");
+    assert(pathExists(p(dest, "packages", "gone", "lib", "index.js")), "孤儿包要进隔离区");
+    assert(lines.some((l) => l.includes("工作区有 1 个已跟踪文件未提交")), "必须说清为什么跳过");
+    assert(lines.some((l) => l.includes("已跳过「隔离残留源文件」")), "必须直说这一步跳过了");
+    assert(
+      lines.some((l) => l.includes("· 保留 packages/app/src/wip.ts")),
+      "被保护的文件要逐条列出来",
+    );
   } finally {
     removeAll(base);
   }

@@ -11,6 +11,16 @@
  */
 
 import { stageSafetyProblems } from "../../jobs/registry.ts";
+import { dirname, p } from "../../util/paths.ts";
+import {
+  explainBuildFailure,
+  hasRealBuildError,
+  readBuildState,
+  restoreBuildRecord,
+  snapshotBuildRecord,
+  summarizeBuildFailure,
+  writeBuildState,
+} from "./build_state.ts";
 import {
   coreFinishUpdateAction,
   FINISH_STEPS,
@@ -29,6 +39,14 @@ function assertEq<T>(actual: T, expected: T, msg: string): void {
     throw new Error(
       `断言失败：${msg}\n  期望 ${JSON.stringify(expected)}\n  实际 ${JSON.stringify(actual)}`,
     );
+  }
+}
+
+function removeAll(...dirs: string[]): void {
+  for (const d of dirs) {
+    try {
+      Deno.removeSync(d, { recursive: true });
+    } catch { /* 已删则忽略 */ }
   }
 }
 
@@ -137,3 +155,117 @@ Deno.test("写动作准入：core.finishUpdate 带齐 preflight + steps，防呆
     "阶段安全防呆必须零问题",
   );
 });
+
+// ══ 2026-10-04 事故日志：真错误要捞得出来、还要说成人话 ═════════════
+
+Deno.test("报错挑拣：ENOENT / Build failed with / 退出码 —— 真事故日志不再只剩栈帧", () => {
+  const accident = [
+    "ERROR  Error: Build failed with 1 error:",
+    "Error: ENOENT: no such file or directory, open 'C:\\Users\\niufe\\DeepSeek_Harness\\packages\\client\\ui-dashboard\\src\\client\\index.ts'",
+    "    at async runCLI (file:///C:/Users/niufe/DeepSeek_Harness/node_modules/.pnpm/tsdown@0.22.2/dist/run.mjs:45:3)",
+    "    at ModuleJob.run (node:internal/modules/esm/module_job:561:25)",
+    "[ELIFECYCLE] Command failed with exit code 1.",
+  ].join("\n");
+
+  const errs = pickBuildErrors(accident);
+  assertIncludes(errs, "ENOENT", "缺文件必须被挑出来（旧版五类模式全不中，用户只看到栈帧）");
+  assertIncludes(errs, "Build failed with 1 error", "打包器的总结行也要挑出来");
+  assertIncludes(errs, "Command failed with exit code", "退出码行也要挑出来");
+  assert(!errs.some((l) => l.includes("at async runCLI")), "纯栈帧不算报错行");
+
+  assert(hasRealBuildError(accident), "ENOENT 是「重试也没用」的真错误");
+  assert(!isTransientBuildFailure(accident), "缺文件绝不许当成瞬断去重试三轮");
+
+  const why = explainBuildFailure(errs, accident);
+  assert(why !== null, "必须给出人话解释（否则用户还是只能看到一串栈帧）");
+  assert(why!.includes("不存在的文件"), `解释要先说清是什么事：${why}`);
+  assert(why!.includes("ui-dashboard") && why!.includes("index.ts"), `解释要点出具体文件：${why}`);
+  assert(why!.includes("隔离区"), "解释要给出能动手的下一步（去隔离区搬回来）");
+
+  const most = summarizeBuildFailure(errs, accident);
+  assert(most.includes("ENOENT"), `一句话结论要挑最具体的真错误，不能是打包器的总结行：${most}`);
+  assert(!most.includes("ELIFECYCLE"), "包管理器的总结行不许当结论");
+  assertEq(
+    summarizeBuildFailure(["ELIFECYCLE  Command failed with exit code 1."], ""),
+    "ELIFECYCLE  Command failed with exit code 1.",
+    "只有总结行时也得给出点什么（不能返回空）",
+  );
+});
+
+Deno.test("瞬断判定补充：真瞬断也打 Build failed with，不能因此放弃重试", () => {
+  assert(
+    isTransientBuildFailure("拒绝访问 (os error 5)\nERROR  Error: Build failed with 1 error:"),
+    "真瞬断时 rolldown 也会打这句，必须仍然重试",
+  );
+  assert(!hasRealBuildError("拒绝访问 (os error 5)\nBuild failed with 1 error:"), "这句不算真错误");
+});
+
+// ══ 构建记录抢救：失败之后别再制造「缺记录」催办 ═══════════════════
+
+Deno.test("构建记录抢救：建之前留底、失败后放回，缺记录不再由失败制造", () => {
+  const base = Deno.makeTempDirSync();
+  try {
+    assertEq(snapshotBuildRecord(base), null, "没有记录时留底为 null");
+    assertEq(restoreBuildRecord(base, null), null, "没有留底就不许伪造记录");
+
+    const full = p(base, ".dsh-build", "client-build-environment.json");
+    Deno.mkdirSync(dirname(full), { recursive: true });
+    const original = '{"formatVersion":1,"environment":{"DSH_CLIENT_COMMIT_HASH":"abc1234"}}\n';
+    Deno.writeTextFileSync(full, original);
+
+    const saved = snapshotBuildRecord(base);
+    assertEq(saved, original, "留底必须是原文");
+    assertEq(restoreBuildRecord(base, saved), null, "记录还在（构建没删它）就什么都不做");
+
+    Deno.removeSync(full); // 模拟 scripts/build.ts:47 动手前先 rmSync 掉记录
+    const note = restoreBuildRecord(base, saved);
+    assert(note !== null && note.includes("构建记录"), `放回时要给出人话说明：${note}`);
+    assertEq(Deno.readTextFileSync(full), original, "构建记录必须原样回到原位");
+  } finally {
+    removeAll(base);
+  }
+});
+
+// ══ 台账：失败留下可读痕迹，坏文件不许炸 ═══════════════════════════
+
+Deno.test("台账：写入/读回/坏文件容错/错误行截断", () => {
+  const base = Deno.makeTempDirSync();
+  try {
+    assertEq(readBuildState(base), null, "没有台账 → null");
+    writeBuildState({
+      ok: false,
+      at: "",
+      root: "R:\\dsh",
+      commit: null,
+      errors: ["ENOENT: xxx", "Build failed with 1 error"],
+      summary: "退出码 1：ENOENT: xxx",
+    }, base);
+    const back = readBuildState(base);
+    assert(back !== null, "写进去必须读得回来");
+    assertEq(back!.ok, false, "ok 要原样保留");
+    assert(back!.at.length > 0, "没给时间戳时要自动补上");
+    assertEq(back!.summary, "退出码 1：ENOENT: xxx", "一句话结论要保留");
+    assertEq(back!.errors.length, 2, "错误行要保留");
+
+    writeBuildState({
+      ok: false,
+      at: "2026-10-04T15:27:26.000Z",
+      root: "R:\\dsh",
+      commit: "5badb15",
+      errors: Array.from({ length: 20 }, (_, i) => `err ${i}`),
+      summary: "很多错误",
+    }, base);
+    assertEq(readBuildState(base)!.errors.length, 12, "错误行最多留 12 条（台账不该无限长）");
+
+    Deno.writeTextFileSync(p(base, "last-build.json"), "{ 这不是 JSON");
+    assertEq(readBuildState(base), null, "坏文件必须返回 null 而不是抛");
+    Deno.writeTextFileSync(p(base, "last-build.json"), '{"summary":"缺 ok 字段"}');
+    assertEq(readBuildState(base), null, "字段不对也要当没有");
+
+    writeBuildState({ ok: true, at: "2026-10-04T00:00:00.000Z", root: "R:", commit: "abc", errors: [], summary: "全量重建完成。" }, base);
+    assertEq(readBuildState(base)!.ok, true, "成功也要记（状态页据此区分「上次是失败」）");
+  } finally {
+    removeAll(base);
+  }
+});
+

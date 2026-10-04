@@ -12,6 +12,7 @@ import { run } from "../../host/shell.ts";
 import { isDir, isFile, readJson } from "../../host/fs.ts";
 import { dshProfileDir, p, resolveDshSourceRoot } from "../../util/paths.ts";
 import { type BuildIntegrity, verifyBuildIntegrity } from "./official.ts";
+import { readBuildState } from "./build_state.ts";
 
 export interface GitInfo {
   head: string | null;
@@ -139,8 +140,42 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
     );
   }
 
-  // ── 构建记录 ─────────────────────────────────────────────────
+  // ── 上一次全量重建的结局（台账，见 core/build_state.ts） ──────────
+  // 没有这条，界面在「完成更新」失败后只能反复催「再点一次完成更新」——
+  // 用户的原话就是「过好久才发现还要点一下完成更新」。有台账就能直说原因。
   const recordPath = p(root, BUILD_RECORD_REL);
+  const lastBuild = readBuildState();
+  let rebuiltSince = false;
+  if (lastBuild && !lastBuild.ok) {
+    // 台账之后若又有新产物落盘（比如用户自己跑成功了 pnpm run build），
+    // 这条旧失败就不该再吓人——只认「记录比失败更新」这一种情况。
+    try {
+      const m = Deno.statSync(recordPath).mtime?.getTime() ?? 0;
+      const e = Date.parse(lastBuild.at);
+      rebuiltSince = Number.isFinite(e) && m > e;
+    } catch {
+      rebuiltSince = false;
+    }
+  }
+  const buildFailedFresh = Boolean(lastBuild && !lastBuild.ok && !rebuiltSince);
+  if (buildFailedFresh && lastBuild) {
+    findings.push(
+      finding("core.build-failed", "error", "上一次全量重建失败", {
+        cause: lastBuild.summary || "构建以非 0 退出码结束（日志里没有可识别的错误行）",
+        impact:
+          "这次重建没有产出新产物，DSH 还在跑上一次的版本；原因没修好之前再点「完成更新」还会失败一次",
+        action: "按上面的报错修（拿不准就把报错发给知行），修好后点「完成更新」重试",
+        fixAction: "core.finishUpdate",
+        evidence: [
+          ...lastBuild.errors.slice(0, 6),
+          `记录时间：${lastBuild.at || "未知"}`,
+          `源码根：${lastBuild.root || root}`,
+        ].filter((l) => l.trim().length > 0),
+      }),
+    );
+  }
+
+  // ── 构建记录 ─────────────────────────────────────────────────
   let build: BuildRecord | null = null;
   if (isFile(recordPath)) {
     const raw = readJson<{
@@ -167,7 +202,9 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
       finding("core.no-build-record", "error", "缺少构建记录文件", {
         cause: `未找到 ${BUILD_RECORD_REL}`,
         impact: "无法判断界面产物是否与源码一致，DSH 可能根本起不来",
-        action: "执行一次「完成更新」（含全量重建）以生成构建记录",
+        action: buildFailedFresh
+          ? "上次「完成更新」的全量重建失败了（见上面那条），先按报错修好，再点「完成更新」重试"
+          : "执行一次「完成更新」（含全量重建）以生成构建记录",
         fixAction: "core.finishUpdate",
         evidence: [recordPath],
       }),
@@ -227,7 +264,9 @@ export async function collectCoreStatus(): Promise<CoreStatus> {
           cause: finishReason,
           impact:
             "只执行了拉取源码却没重建，会留下新旧产物混跑的烂摊子（典型症状：界面报某函数不存在、插件面板永久卡住）",
-          action: "点「完成更新」：清理残留 → 装依赖 → 全量重建 → 重启（共 6 步）",
+          action: buildFailedFresh
+            ? "上次全量重建失败了（见上面那条），先按报错修好，再点「完成更新」重试"
+            : "点「完成更新」：清理残留 → 装依赖 → 全量重建 → 重启（共 6 步）",
           fixAction: "core.finishUpdate",
           evidence: [
             `HEAD=${git.head}`,

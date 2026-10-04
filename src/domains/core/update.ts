@@ -274,6 +274,7 @@ async function runCoreUpdate(ctx: ActionContext): Promise<CoreUpdateReport> {
     // 尾段内部进度（finish 口径 0..1）线性映射到 0.3..1.0 —— 防止 pull 完
     // 进度条从尾段起点倒退回更小的值（progress 不强制单调，倒退难看）。
     mapProgress: (v) => 0.3 + v * 0.7,
+    commit: report.toCommit,
   });
   ctx.progress(1);
   report.elapsedMs = Date.now() - t0;

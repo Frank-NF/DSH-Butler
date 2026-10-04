@@ -55,6 +55,15 @@ import {
   TIMEOUTS,
 } from "../../version.ts";
 import { type CleanReport, deepCleanInto } from "./deep_clean.ts";
+import {
+  explainBuildFailure,
+  hasRealBuildError,
+  pickBuildErrors,
+  restoreBuildRecord,
+  snapshotBuildRecord,
+  summarizeBuildFailure,
+  writeBuildState,
+} from "./build_state.ts";
 import { invalidateBuildIntegrityCache, verifyBuildIntegrity } from "./official.ts";
 import { collectCoreStatus } from "./status.ts";
 import { createRollbackPoint } from "../backup/rollback.ts";
@@ -112,31 +121,16 @@ export async function detectPnpm(): Promise<PnpmToolchain | null> {
 
 // ── 构建日志判据（移植旧版，测试钉住） ──────────────────────────────
 
-const BUILD_ERROR_PATTERNS = [
-  "MISSING_EXPORT",
-  "error TS",
-  "Failed to write file",
-  "拒绝访问",
-  "Cannot find module",
-];
-
 /**
- * 从构建日志里挑出真正的报错行（去重，保序）。
+ * 报错挑拣与「说人话」都住在 build_state.ts —— 状态页（status.ts）要读同一份
+ * 判据与解释，放两个地方必然漂移。这里原样转发，既有的
+ * `import { pickBuildErrors } from "./finish_update.ts"` 一行都不用改。
  *
  * 为什么不能只贴最后几行：rolldown 在 Windows 上并发写时会随机报
  * `拒绝访问 (os error 5)`（事后该文件完全可写，属瞬时写竞争），
  * 它往往先炸，把真错误挡在后面——用户拿到的就是一段与故障无关的噪音。
  */
-export function pickBuildErrors(text: string): string[] {
-  const hits: string[] = [];
-  for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trim();
-    if (line.length === 0) continue;
-    if (!BUILD_ERROR_PATTERNS.some((pat) => line.includes(pat))) continue;
-    if (!hits.includes(line)) hits.push(line);
-  }
-  return hits;
-}
+export { pickBuildErrors } from "./build_state.ts";
 
 /**
  * 这次失败是不是「并发写的瞬时拒绝」——重试一次通常就过。
@@ -144,9 +138,7 @@ export function pickBuildErrors(text: string): string[] {
  */
 export function isTransientBuildFailure(text: string): boolean {
   const transient = text.includes("os error 5") || text.includes("拒绝访问");
-  const real = text.includes("MISSING_EXPORT") || text.includes("error TS") ||
-    text.includes("Cannot find module");
-  return transient && !real;
+  return transient && !hasRealBuildError(text);
 }
 
 /** 取文本最后 n 个非空行（挑不到真错误时兜底展示）。 */
@@ -457,6 +449,7 @@ async function runUpdate(ctx: ActionContext): Promise<FinishUpdateReport> {
       FINISH_STEPS[5],
     ],
     mapProgress: (v) => v,
+    commit,
   });
   ctx.progress(1);
   report.elapsedMs = Date.now() - t0;
@@ -479,6 +472,16 @@ interface FinishTailOptions {
   stepTitles: readonly [string, string, string, string, string];
   /** 内部进度（finish 口径 0..1）→ 对外进度；update 传 v => 0.3 + v*0.7 防进度倒退。 */
   mapProgress: (v: number) => number;
+  /** 本次重建的源码提交（写进失败台账，便于状态页指认）。 */
+  commit?: string | null;
+}
+
+/** 构建失败时要带进报错与台账的上下文（可选，不传就等于没有）。 */
+export interface BuildFailureContext {
+  /** 本次清理步骤的结论行 —— 让人一眼看出「是不是清理又搬走了什么」。 */
+  cleanNotes?: string[];
+  /** 本次重建的源码提交（拿得到就写进台账）。 */
+  commit?: string | null;
 }
 
 /**
@@ -486,13 +489,24 @@ interface FinishTailOptions {
  *
  * 只对 Windows 并发写的「瞬时拒绝」重试，最多 BUILD_ATTEMPTS 次；超时与非瞬时失败立即放弃。
  * 抽成函数是为了让「一键部署」用上与本体更新一模一样的构建口径 —— 各写一份必然漂移。
+ *
+ * 失败时多做两件「不留半截」的事（2026-10-04 事故后加的）：
+ *   ① 把构建记录放回去：DSH 的 scripts/build.ts 在建之前就 rmSync 掉
+ *      .dsh-build/client-build-environment.json，构建一失败记录就永久缺位，
+ *      状态页于是只能反复催「点完成更新生成构建记录」——用户的原话就是
+ *      「过好久才发现还要再点一下完成更新」。构建前先把记录读进内存，失败且已被删就写回。
+ *   ② 把这次失败落进台账（build_state.ts）：状态页据此直说「上次重建失败了，原因是 X」。
  */
 export async function runBuildWithRetry(
   ctx: ActionContext,
   root: string,
   tc: PnpmToolchain,
   line: (s: string) => void,
+  context: BuildFailureContext = {},
 ): Promise<void> {
+  // 构建记录先读进内存：DSH 的 scripts/build.ts 在动手【之前】就把它 rmSync 掉，
+  // 构建一失败它就永久缺位（2026-10-04 事故的第二个坑）。
+  const recordBefore = snapshotBuildRecord(root);
   let outcome: RunResult | null = null;
   let attempt = 0;
   let lineCount = 0;
@@ -530,12 +544,39 @@ export async function runBuildWithRetry(
     const why = outcome?.timedOut
       ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束`
       : `退出码 ${outcome?.code ?? -1}`;
+    const hint = explainBuildFailure(brief, text);
+
+    // ① 构建记录被 DSH 自己删了 → 放回去，别让状态页误判成「从来没构建过」
+    const recordNote = restoreBuildRecord(root, recordBefore) ?? "";
+
+    // ② 落台账：状态页据此说「上次重建失败了」，而不是继续催「再点一次」
+    writeBuildState({
+      ok: false,
+      at: new Date().toISOString(),
+      root,
+      commit: context.commit ?? null,
+      errors: brief,
+      summary: `${why}：${summarizeBuildFailure(errs, text)}`,
+    });
+
+    const notes = (context.cleanNotes ?? []).filter((s) => s.trim().length > 0);
     throw new Error(
       `全量重建失败（${why}）。从构建日志里定位到的报错：\n${brief.join("\n")}\n\n` +
+        (hint ? `${hint}\n` : "") +
+        (notes.length > 0 ? `本次清理的情况：\n${notes.slice(0, 6).join("\n")}\n` : "") +
+        (recordNote ? `${recordNote}\n` : "") +
         `产物可能仍处于新旧混合状态——服务已尝试恢复，建议把上面的报错发给知行排查。`,
     );
   }
   line("全量重建：完成");
+  writeBuildState({
+    ok: true,
+    at: new Date().toISOString(),
+    root,
+    commit: context.commit ?? null,
+    errors: [],
+    summary: "全量重建完成。",
+  });
 }
 
 /**
@@ -554,6 +595,8 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
   // ── ② 深度清理（失败不阻断：本就无残留时也可能因权限报错） ──────────
   beginStep(0);
   pg(0.15);
+  /** 清理的结论行：构建若失败要原样带给用户，别让人猜「是不是清理又搬走了什么」。 */
+  let cleanNotes: string[] = [];
   try {
     const { report: clean, lines } = await deepCleanInto(root, destRoot);
     for (const l of lines) ctx.log(l);
@@ -567,9 +610,33 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
     if (clean.quarantineDir) {
       line(`　隔离区（要还原就把里面的文件搬回原位）：${clean.quarantineDir}`);
     }
+    // 源文件隔离这一步的「刹车」：如实告诉用户哪些东西被保护下来了。
+    if (clean.skippedSourceIsolation) {
+      line(
+        `　已跳过源文件隔离，你的源文件一个都没动（${clean.protectedAsUserWork} 个未跟踪源文件按「你正在写的东西」保留）`,
+      );
+    } else if (clean.protectedAsUserWork > 0) {
+      line(
+        `　${clean.protectedAsUserWork} 个未跟踪源文件不在任何已知包里，已按「你正在写的东西」保留，未搬走`,
+      );
+    }
     ctx.detail(
-      `孤儿包 ${clean.orphanPackages} · 残留源文件 ${clean.quarantined} · 编译缓存 ${clean.tsbuildinfoReset}`,
+      `孤儿包 ${clean.orphanPackages} · 残留源文件 ${clean.quarantined} · 编译缓存 ${clean.tsbuildinfoReset}` +
+        (clean.skippedSourceIsolation ? " · 源文件隔离已跳过（开发工作区）" : ""),
     );
+    cleanNotes = [
+      `隔离 ${movedCount} 项（残留源文件 ${clean.quarantined} / 孤儿包 ${clean.orphanPackages} / 历史残留 ${clean.staleRemoved}）` +
+        ` · 作废编译缓存 ${clean.tsbuildinfoReset} 个` +
+        (clean.failed.length ? ` · ${clean.failed.length} 项未移动` : ""),
+      ...(clean.quarantineDir
+        ? [`隔离区：${clean.quarantineDir}（要还原就把它里面的文件按原路搬回）`]
+        : []),
+      ...(clean.skippedSourceIsolation
+        ? [`已跳过「隔离源文件」，${clean.protectedAsUserWork} 个未跟踪源文件被保护、一个都没动`]
+        : clean.protectedAsUserWork > 0
+        ? [`${clean.protectedAsUserWork} 个不在任何已知包里的未跟踪源文件被保护、未搬走`]
+        : []),
+    ];
   } catch (e) {
     line(`清理残留：未能完成（${(e as Error).message}），继续构建`);
   }
@@ -601,7 +668,7 @@ export async function runFinishTail(o: FinishTailOptions): Promise<void> {
   // ── ④ 全量重建（致命；只对纯瞬断重试，最多 3 次） ───────────────────
   beginStep(2);
   pg(0.4);
-  await runBuildWithRetry(ctx, root, tc, line);
+  await runBuildWithRetry(ctx, root, tc, line, { cleanNotes, commit: o.commit ?? null });
   pg(0.85);
   ctx.throwIfCancelled();
 

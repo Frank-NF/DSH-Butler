@@ -16,6 +16,16 @@
  *   - git 清单拿不到时整体保守跳过 ② ③ —— 绝不能把读不到清单
  *     当成"所有未跟踪文件都是残留"；
  *   - 误伤面最小化：仓库根零散文件（pid/yml/log）一律不碰。
+ *
+ * 2026-10-04 加的一条铁律（③ 的补丁）：**「未跟踪」从来不等于「残留」**。
+ * 那次真实事故里，用户在 packages/client/ui-dashboard/ 下新写的一个客户端插件
+ * 被 ③ 整包当残留搬进了隔离区（那一轮共 373 条），随后构建找不到入口直接
+ * ENOENT 失败——用户的代码凭空消失，报错里只有一串栈帧。两个补丁：
+ *   - ③ 只碰「包声明在 HEAD 里」的包（packageRootOf + isInsideVersionedPackage）：
+ *     刚新建、还没提交的包（没有 tracked 的 package.json）一律不碰；
+ *   - 工作区有未提交改动（或读不到 git）就认定这是**开发工作区**，
+ *     整体跳过 ③、只作废编译缓存 —— 一个有人在写代码的检出里，
+ *     正在写的东西永远比 HEAD 新。
  */
 
 import { p, quarantineStampDir, stampOf } from "../../util/paths.ts";
@@ -68,6 +78,13 @@ export interface CleanReport {
   tsbuildinfoReset: number;
   /** 被隔离的孤儿包目录数（不清掉它们，构建会被僵尸 lib/ 引爆）。 */
   orphanPackages: number;
+  /** 因为「这是开发工作区（有未提交改动）」或「读不到 git」而整体跳过了 ③ 源文件隔离。 */
+  skippedSourceIsolation: boolean;
+  /**
+   * 看起来是「用户正在写」、按旧逻辑本来会被搬走、但被新规则保护下来的
+   * 未跟踪源文件数（只报告不搬走）。0 表示这批文件里没有这种嫌疑。
+   */
+  protectedAsUserWork: number;
   /** 隔离区目录（有内容时才有值）。 */
   quarantineDir: string | null;
   /** 移动失败的条目（让用户知道清理不完整）。 */
@@ -114,6 +131,51 @@ export async function untrackedPaths(root: string): Promise<string[]> {
     if (path.length > 0) out.push(path);
   }
   return out;
+}
+
+/**
+ * 工作区里「已跟踪文件」的未提交改动条数（不含未跟踪文件，避免被海量产物干扰）。
+ * 读不到 git 清单返回 null —— 调用方按「保守 = 开发工作区」处理。
+ */
+export async function trackedChangeCount(root: string): Promise<number | null> {
+  const r = await run("git", ["-C", root, "status", "--porcelain", "-z", "--untracked-files=no"], {
+    timeoutMs: 60_000,
+    allowNonZero: true,
+    scope: "git",
+  });
+  if (r.code !== 0) return null;
+  return r.stdout.split("\0").filter((rec) => rec.trim().length > 0).length;
+}
+
+/**
+ * `rel`（仓库相对、正斜杠）往上最近的、含 package.json 的目录。
+ * 只看 `rel` 的祖先目录，**不含仓库根**：根 package.json 属于整个仓库，
+ * 不能用它把仓库里任意一个散文件都认成"包内文件"。找不到返回 null。
+ */
+export function packageRootOf(root: string, rel: string): string | null {
+  const segs = rel.split("/").filter((s) => s.length > 0);
+  // i = 祖先目录的段数；i 至少为 1（排除仓库根自己），最多到「父目录」
+  for (let i = segs.length - 1; i >= 1; i--) {
+    const dir = segs.slice(0, i).join("/");
+    if (pathExists(p(root, ...dir.split("/"), "package.json"))) return dir;
+  }
+  return null;
+}
+
+/**
+ * 这个未跟踪的源文件，是不是落在「当前版本里的包」内部。
+ *
+ * 判据：最近的含 package.json 的祖先目录，其 package.json 必须出现在 HEAD 里。
+ *   - 在   → 包是当前版本的一部分，里面的未跟踪源文件按老语义算残留（可隔离）；
+ *   - 不在 / 找不到包声明 → 本地新写的包或散文件，绝不碰（2026-10-04 事故的教训）。
+ */
+export function isInsideVersionedPackage(
+  root: string,
+  rel: string,
+  tracked: Set<string>,
+): boolean {
+  const pkg = packageRootOf(root, rel);
+  return pkg !== null && tracked.has(`${pkg}/package.json`);
 }
 
 // ── 扫描 ──────────────────────────────────────────────────────────
@@ -254,6 +316,8 @@ export async function deepCleanInto(root: string, destRoot: string): Promise<Cle
     staleRemoved: 0,
     tsbuildinfoReset: 0,
     orphanPackages: 0,
+    skippedSourceIsolation: false,
+    protectedAsUserWork: 0,
     quarantineDir: null,
     failed: [],
   };
@@ -311,19 +375,51 @@ export async function deepCleanInto(root: string, destRoot: string): Promise<Cle
   }
 
   // ── ③ 不属于当前 HEAD 的未跟踪源文件 ─────────────────────────────
+  // 「未跟踪」≠「残留」：本地新写的包、刚下的稿子，都还没进 HEAD。
+  // 详细教训见文件头 2026-10-04 那段。
   if (tracked !== null) {
     const risky = [...new Set(await untrackedPaths(root))]
       .filter((rel) => !tracked.has(rel) && isRiskyPath(rel))
       .sort();
-    before = moved.length;
-    for (const rel of risky) quarantineOne(root, destRoot, rel, moved, report.failed);
-    report.quarantined = moved.length - before;
-    if (report.quarantined > 0) {
+
+    // 工作区有未提交改动 = 有人在写代码 → 一个源文件都不搬。
+    const dirty = await trackedChangeCount(root);
+    if (dirty === null || dirty > 0) {
+      report.skippedSourceIsolation = true;
+      report.protectedAsUserWork = risky.length;
       lines.push(
-        `隔离「不属于当前版本」的文件：${report.quarantined} 个（这些文件会让构建报错，已移到隔离区）`,
+        (dirty === null
+          ? "⚠️ 读不到工作区的改动情况，按最保守的办法处理："
+          : `⚠️ 工作区有 ${dirty} 个已跟踪文件未提交（看起来这是你正在开发的检出）：`) +
+          "已跳过「隔离残留源文件」这一步，你的源文件一个都没动" +
+          (risky.length > 0 ? `（本会被误搬的有 ${risky.length} 个，其中有本地新写的包/文件）。` : "。"),
       );
-      for (const rel of risky.slice(0, 20)) lines.push(`  · ${rel}`);
-      if (risky.length > 20) lines.push(`  · …其余 ${risky.length - 20} 个`);
+      if (risky.length > 0) {
+        for (const rel of risky.slice(0, 10)) lines.push(`  · 保留 ${rel}`);
+        if (risky.length > 10) lines.push(`  · …其余 ${risky.length - 10} 个同样保留`);
+      }
+    } else {
+      // 干净的检出：只有「包声明在 HEAD 里」的包内部的未跟踪源文件才算残留。
+      const movable = risky.filter((rel) => isInsideVersionedPackage(root, rel, tracked));
+      const spared = risky.filter((rel) => !isInsideVersionedPackage(root, rel, tracked));
+      report.protectedAsUserWork = spared.length;
+      if (spared.length > 0) {
+        lines.push(
+          `这些未跟踪源文件不在任何已知的包里（看着像你新写的东西），本次一个都没动：${spared.length} 个`,
+        );
+        for (const rel of spared.slice(0, 10)) lines.push(`  · 保留 ${rel}`);
+        if (spared.length > 10) lines.push(`  · …其余 ${spared.length - 10} 个同样保留`);
+      }
+      before = moved.length;
+      for (const rel of movable) quarantineOne(root, destRoot, rel, moved, report.failed);
+      report.quarantined = moved.length - before;
+      if (report.quarantined > 0) {
+        lines.push(
+          `隔离「不属于当前版本」的文件：${report.quarantined} 个（这些文件会让构建报错，已移到隔离区）`,
+        );
+        for (const rel of movable.slice(0, 20)) lines.push(`  · ${rel}`);
+        if (movable.length > 20) lines.push(`  · …其余 ${movable.length - 20} 个`);
+      }
     }
   }
 

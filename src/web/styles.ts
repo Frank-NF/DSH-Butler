@@ -157,6 +157,8 @@ button { cursor: pointer; }
 .nav-item .nav-count { margin-left: auto; font-size: 12px; color: var(--text-3); }
 /* 侧栏「DSH 本体」的更新徽标：有新版才亮，用警示色区别于普通计数 */
 .nav-count.warn { color: var(--warn); font-weight: 600; }
+/* T12：上次「完成更新」重建失败——比「待完成更新」更硬的信号，用错误色 */
+.nav-count.err { color: var(--err); font-weight: 600; }
 /* 侧栏页脚：钉在左下角（margin-top:auto 把它推到最底），内容左对齐 */
 .nav-foot { margin-top: auto; padding: 10px 0 0; border-top: 1px solid var(--border); color: var(--text-3); font-size: 12px; line-height: 1.55; }
 

@@ -47,6 +47,13 @@ import {
   scanCleanTargets,
   scanOrphanPackages,
 } from "./deep_clean.ts";
+import {
+  explainBuildFailure,
+  restoreBuildRecord,
+  snapshotBuildRecord,
+  summarizeBuildFailure,
+  writeBuildState,
+} from "./build_state.ts";
 import { invalidateBuildIntegrityCache } from "./official.ts";
 import { collectCoreStatus, type CoreStatus } from "./status.ts";
 import { collectLibResidue, libResidueFindings, type LibResidueReport } from "./verify.ts";
@@ -424,6 +431,8 @@ async function runRollback(
 
       ctx.detail("全量重建，通常需要 5-20 分钟");
       ctx.progress(0.6);
+      // 与「完成更新」同样的抢救：构建记录先留底，失败了要放回去（见 build_state.ts）
+      const recordBefore = snapshotBuildRecord(root);
       let outcome: RunResult | null = null;
       let attempt = 0;
       let lineCount = 0;
@@ -458,12 +467,32 @@ async function runRollback(
         const why = outcome?.timedOut
           ? `超过 ${Math.round(TIMEOUTS.build / 60_000)} 分钟未结束`
           : `退出码 ${outcome?.code ?? -1}`;
+        const hint = explainBuildFailure(brief, text);
+        const recordNote = restoreBuildRecord(root, recordBefore) ?? "";
+        writeBuildState({
+          ok: false,
+          at: new Date().toISOString(),
+          root,
+          commit: null,
+          errors: brief,
+          summary: `${why}：${summarizeBuildFailure(errs, text)}`,
+        });
         throw new Error(
           `源码已还原，但重建失败（${why}）。从构建日志里定位到的报错：\n${brief.join("\n")}\n\n` +
+            (hint ? `${hint}\n` : "") +
+            (recordNote ? `${recordNote}\n` : "") +
             `产物可能处于新旧混合状态——建议把上面的报错发给知行排查。`,
         );
       }
       invalidateBuildIntegrityCache();
+      writeBuildState({
+        ok: true,
+        at: new Date().toISOString(),
+        root,
+        commit: null,
+        errors: [],
+        summary: "回滚后重建完成。",
+      });
       report.rebuild = "done";
       line("重建：完成");
     }
