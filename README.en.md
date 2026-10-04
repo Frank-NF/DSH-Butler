@@ -8,7 +8,7 @@
 [![Tests](https://img.shields.io/badge/tests-302%20passed-brightgreen.svg)](src)
 [![Deno](https://img.shields.io/badge/Deno-2.x-black.svg)](https://deno.com)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-lightgrey.svg)](https://dsh.huilinsh.cn)
-[![Release](https://img.shields.io/badge/release-v2.0.0--rc.2-orange.svg)](https://dsh.huilinsh.cn)
+[![Release](https://img.shields.io/badge/release-v2.0.1-orange.svg)](https://dsh.huilinsh.cn)
 
 > **Keeping DSH always usable.** A local desktop console that folds install, repair, plugin management and data safety into one window.
 
@@ -32,12 +32,12 @@ A single executable that **binds to loopback only**, writes no registry keys and
 
 ## Quick start
 
-**Download and run (recommended)**: get `DSH-Butler-v2.0.0-win-x64.zip` (~32 MB) from <https://dsh.huilinsh.cn>, unzip and run `dsh-butler.exe`.
+**Download and run (recommended)**: get `DSH-Butler-v2.0.1-win-x64.zip` (~32 MB) from <https://dsh.huilinsh.cn>, unzip and run `dsh-butler.exe`.
 
 Verify the download (SHA256 is published in <https://dsh.huilinsh.cn/butler/version.json>):
 
 ```powershell
-Get-FileHash .\DSH-Butler-v2.0.0-win-x64.zip -Algorithm SHA256
+Get-FileHash .\DSH-Butler-v2.0.1-win-x64.zip -Algorithm SHA256
 ```
 
 **Build from source** (Deno 2.x, Windows 10/11 with WebView2):

@@ -26,7 +26,7 @@ export const WINDOW_TITLE = `${APP_NAME} · ${APP_TAGLINE}`;
 /** 旧产品名，仅用于识别历史数据目录。 */
 export const APP_NAME_LEGACY = "DSH插件管家";
 export const APP_ID = "com.dsh.plugin-updater";
-export const APP_VERSION = "2.0.0";
+export const APP_VERSION = "2.0.1";
 
 /** 官网地址（界面「官网」入口与更新日志下载页共用）。 */
 export const OFFICIAL_SITE = "https://dsh.huilinsh.cn";
